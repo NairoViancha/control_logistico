@@ -3,225 +3,306 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b131e" />
-  <meta name="description" content="EYC Muebles - Control Logístico · Gestión de pedidos, pendientes y tiempos de entrega" />
-  <title>EYC Muebles - Control Logístico</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🪚</text></svg>" />
+  <meta name="theme-color" content="#f8fafc" />
+  <meta name="description" content="MODUGAL - espacios renovados · Control de producción de cocinas integrales y mobiliario de alta gama" />
+  <title>MODUGAL - espacios renovados</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏠</text></svg>" />
   <!-- Tailwind CSS (CDN) + FontAwesome (CDN) · Sin build de por medio -->
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="bg-slate-50 text-slate-900 font-sans min-h-screen">
 
   <!-- ============================================================
-       HEADER · Título · Indicador de sincronización · Selector de rol
+       HEADER FIJO · Isotipo MG · Logotipo · Buscador · Rol · Nuevo Pedido
        ============================================================ -->
-  <header id="app-header" class="app-header">
-    <div class="app-header__inner">
-      <div class="app-header__top">
-        <div class="min-w-0">
-          <h1 class="app-title">EYC Muebles <span>Control Logístico</span></h1>
-          <p class="sync" id="sync-indicator">
-            <span class="sync-dot" id="sync-dot"></span>
-            <span id="sync-status">Sincronizado en tiempo real</span>
-          </p>
-        </div>
-
-        <!-- Selector de rol: Operador / Secretaria / Dueño -->
-        <div class="role-selector" id="role-selector" role="tablist" aria-label="Seleccionar rol del usuario">
-          <button type="button" class="role-btn active" data-rol="operador">Operador</button>
-          <button type="button" class="role-btn" data-rol="secretaria">Secretaria</button>
-          <button type="button" class="role-btn" data-rol="dueno">Dueño</button>
-        </div>
+  <header id="mg-header" class="fixed top-0 inset-x-0 z-50 bg-white border-b border-slate-200 shadow-sm">
+    <div class="max-w-7xl mx-auto px-3 sm:px-5 h-16 flex items-center gap-2 sm:gap-3">
+      <!-- Isotipo -->
+      <div class="mg-isotipo w-10 h-10 rounded-xl bg-red-600 text-white font-extrabold flex items-center justify-center text-lg shadow-sm shrink-0" aria-label="MG">MG</div>
+      <div class="leading-tight shrink-0">
+        <p class="text-sm font-extrabold tracking-wide text-slate-900">MODUGAL</p>
+        <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-500">espacios renovados</p>
       </div>
 
-      <!-- Búsqueda rápida por Cliente, Proyecto o ID de pedido -->
-      <div class="search-bar">
-        <i class="fas fa-magnifying-glass" aria-hidden="true"></i>
-        <input id="search-input" type="search" placeholder="Buscar cliente, proyecto o ID de pedido..." autocomplete="off" />
+      <!-- Buscador global -->
+      <div class="mg-search flex-1 min-w-0 relative ml-2">
+        <i class="fas fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+        <input id="mg-search-input" type="search" placeholder="Buscar proyecto, cliente o mueble..." autocomplete="off"
+          class="w-full bg-slate-100 border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600" />
       </div>
 
-      <!-- Filtros rápidos -->
-      <div class="quick-filters" id="quick-filters">
-        <button type="button" class="chip active" data-filter="todos">Todos</button>
-        <button type="button" class="chip" data-filter="vencidos">Vencidos</button>
-        <button type="button" class="chip" data-filter="hoy">Entregas de Hoy</button>
-        <button type="button" class="chip" data-filter="semana">Esta Semana</button>
+      <!-- Selector de rol dinámico -->
+      <div id="mg-role-selector" class="flex bg-slate-100 rounded-lg p-1 border border-slate-200 shrink-0" role="tablist" aria-label="Rol del usuario">
+        <button type="button" class="mg-role-btn active px-2.5 py-1.5 rounded-md text-xs font-bold transition-colors" data-rol="gerencia">Gerencia</button>
+        <button type="button" class="mg-role-btn px-2.5 py-1.5 rounded-md text-xs font-bold transition-colors text-slate-500" data-rol="arquitecto">Arquitecto</button>
+        <button type="button" class="mg-role-btn px-2.5 py-1.5 rounded-md text-xs font-bold transition-colors text-slate-500" data-rol="carpintero">Carpintero</button>
       </div>
+
+      <!-- Botón Nuevo Pedido -->
+      <button type="button" id="btn-nuevo-pedido" class="shrink-0 bg-red-600 hover:bg-red-700 text-white text-sm font-bold px-4 py-2 rounded-lg shadow-sm flex items-center gap-2 transition-colors">
+        <i class="fas fa-plus" aria-hidden="true"></i> <span class="hidden sm:inline">Nuevo Pedido</span><span class="sm:hidden">+</span>
+      </button>
     </div>
   </header>
 
   <!-- ============================================================
-       CONTENIDO PRINCIPAL · Métricas + Vista conmutante
+       NAVEGACIÓN POR PESTAÑAS
        ============================================================ -->
-  <main id="app-main">
-
-    <!-- Panel de Métricas / Resumen Matutino -->
-    <section class="metrics-grid" id="metrics-panel" aria-label="Resumen matutino de logística">
-      <article class="metric-card" id="metric-hoy">
-        <p class="metric-label"><i class="fas fa-truck" aria-hidden="true"></i> Entregas para hoy</p>
-        <p class="metric-value"><span id="metric-hoy-value">0</span></p>
-        <p class="metric-hint" id="metric-hoy-hint">Sin entregas programadas</p>
-      </article>
-
-      <article class="metric-card metric-card--alert" id="metric-vencidos">
-        <p class="metric-label"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> Pendientes vencidos</p>
-        <p class="metric-value"><span id="metric-vencidos-value">0</span></p>
-        <p class="metric-hint" id="metric-vencidos-hint">Revisar urgencias</p>
-      </article>
-
-      <article class="metric-card" id="metric-produccion">
-        <p class="metric-label"><i class="fas fa-tools" aria-hidden="true"></i> En producción</p>
-        <p class="metric-value"><span id="metric-produccion-value">0</span></p>
-        <p class="metric-hint" id="metric-produccion-hint">Obras en taller</p>
-      </article>
-    </section>
-
-    <!-- Control de vista -->
-    <div class="view-toggle" id="view-toggle">
-      <button type="button" class="view-btn active" data-view="board" id="btn-view-board">
-        <i class="fas fa-columns" aria-hidden="true"></i> Tablero
-      </button>
-      <button type="button" class="view-btn" data-view="list" id="btn-view-list">
-        <i class="fas fa-table-list" aria-hidden="true"></i> Lista
-      </button>
+  <nav id="mg-tabs" class="bg-white border-b border-slate-200 sticky top-16 z-40" aria-label="Módulos MODUGAL">
+    <div class="max-w-7xl mx-auto px-3 sm:px-5">
+      <div class="flex overflow-x-auto scrollbar-hide -mx-3 sm:mx-0">
+        <button type="button" class="mg-tab active px-4 py-3 text-sm font-bold border-b-2 border-red-600 text-red-600 whitespace-nowrap" data-tab="produccion">
+          <i class="fas fa-industry mr-2" aria-hidden="true"></i>Producción
+        </button>
+        <button type="button" class="mg-tab px-4 py-3 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-900 whitespace-nowrap" data-tab="equipo">
+          <i class="fas fa-users mr-2" aria-hidden="true"></i>Equipo
+        </button>
+        <button type="button" class="mg-tab px-4 py-3 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-900 whitespace-nowrap" data-tab="comercial">
+          <i class="fas fa-chart-line mr-2" aria-hidden="true"></i>Comercial
+        </button>
+        <button type="button" class="mg-tab px-4 py-3 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-900 whitespace-nowrap" data-tab="stats">
+          <i class="fas fa-chart-bar mr-2" aria-hidden="true"></i>Estadísticas
+        </button>
+        <button type="button" class="mg-tab px-4 py-3 text-sm font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-900 whitespace-nowrap" data-tab="pedidos">
+          <i class="fas fa-shopping-cart mr-2" aria-hidden="true"></i>Pedidos
+        </button>
+      </div>
     </div>
+  </nav>
 
-    <!-- VISTA 1 · Tablero Kanban -->
-    <section class="view-panel" id="view-board">
-      <div class="board" id="board" aria-label="Tablero Kanban de pedidos"></div>
+  <!-- ============================================================
+       CONTENIDO PRINCIPAL
+       ============================================================ -->
+  <main id="mg-main" class="pt-16">
+
+    <!-- ============================================================ MÓDULO A · TABLERO DE PRODUCCIÓN (FÁBRICA EN VIVO) -->
+    <section id="tab-produccion" class="tab-panel p-4">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-extrabold text-slate-900">Fábrica en Vivo</h2>
+        <span class="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1">Producción Online</span>
+      </div>
+
+      <!-- KPIs superiores -->
+      <div id="kpi-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        <div class="kpi-card bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+          <p class="kpi-label">Proyectos Activos</p>
+          <p class="kpi-value" id="kpi-activos">0</p>
+        </div>
+        <div class="kpi-card bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+          <p class="kpi-label">Detenidos</p>
+          <p class="kpi-value" id="kpi-detenidos">0</p>
+        </div>
+        <div class="kpi-card bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+          <p class="kpi-label">Muebles en Bodega</p>
+          <p class="kpi-value" id="kpi-bodega">0</p>
+        </div>
+        <div class="kpi-card bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+          <p class="kpi-label">Operarios en Planta</p>
+          <p class="kpi-value" id="kpi-operarios">0</p>
+        </div>
+      </div>
+
+      <!-- Filtros de estado -->
+      <div id="filtros-produccion" class="flex gap-2 overflow-x-auto pb-1 mb-4 scrollbar-hide">
+        <button type="button" class="f-chip active bg-red-600 text-white border-red-600" data-filtro="todos">Todos</button>
+        <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="en_proceso">En Proceso</button>
+        <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="detenido">Detenido</button>
+        <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="completado">Completado</button>
+      </div>
+
+      <!-- Grid de tarjetas de proyectos -->
+      <div id="proyectos-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
     </section>
 
-    <!-- VISTA 2 · Lista / Tabla Ejecutiva -->
-    <section class="view-panel is-hidden" id="view-list">
-      <div class="list-panel">
-        <div class="list-scroll">
-          <table class="list-table">
-            <thead>
-              <tr>
-                <th scope="col">ID</th>
-                <th scope="col">Cliente</th>
-                <th scope="col">Mueble / Proyecto</th>
-                <th scope="col" class="sortable" id="th-fecha">
-                  <span class="th-label">Fecha de Entrega</span>
-                  <i class="fas fa-sort-up" id="sort-icon" aria-hidden="true"></i>
-                </th>
-                <th scope="col">Estado</th>
-                <th scope="col">Responsable</th>
-              </tr>
-            </thead>
-            <tbody id="list-body"></tbody>
-          </table>
+    <!-- ============================================================ MÓDULO B · EQUIPO & ASIGNACIONES -->
+    <section id="tab-equipo" class="tab-panel p-4">
+      <h2 class="text-lg font-extrabold text-slate-900 mb-3">Equipo & Asignaciones</h2>
+      <div id="equipo-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+    </section>
+
+    <!-- ============================================================ MÓDULO C · SEGUIMIENTO COMERCIAL (KANBAN) -->
+    <section id="tab-comercial" class="tab-panel p-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <h2 class="text-lg font-extrabold text-slate-900">Seguimiento Comercial</h2>
+        <div id="comercial-quarter" class="flex gap-2">
+          <button type="button" class="f-chip active bg-red-600 text-white border-red-600" data-quarter="Q4-2026">Q4 - 2026</button>
+          <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-quarter="Q1-2027">Q1 - 2027</button>
         </div>
+      </div>
+      <div id="comercial-board" class="flex gap-3 overflow-x-auto pb-4 scrollbar-hide"></div>
+    </section>
+
+    <!-- ============================================================ MÓDULO D · ESTADÍSTICAS & RENDIMIENTO -->
+    <section id="tab-stats" class="tab-panel p-4">
+      <h2 class="text-lg font-extrabold text-slate-900 mb-3">Estadísticas & Rendimiento</h2>
+      <div id="stats-view" class="bg-white border border-slate-200 rounded-xl shadow-sm p-4"></div>
+    </section>
+
+    <!-- ============================================================ MÓDULO E · REGISTRO DE PEDIDOS / COMPRAS -->
+    <section id="tab-pedidos" class="tab-panel p-4">
+      <h2 class="text-lg font-extrabold text-slate-900 mb-3">Registro de Pedidos / Compras</h2>
+      <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
+        <form id="pedido-form" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label for="pedido-proyecto" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Proyecto</label>
+            <select id="pedido-proyecto" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600">
+              <option value="">Seleccionar proyecto...</option>
+            </select>
+          </div>
+          <div>
+            <label for="pedido-categoria" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Categoría</label>
+            <select id="pedido-categoria" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600">
+              <option value="">Seleccionar categoría...</option>
+              <option>Herrajes</option>
+              <option>Madecor</option>
+              <option>Vidrios</option>
+              <option>Ferretería</option>
+            </select>
+          </div>
+          <div>
+            <label for="pedido-producto" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Producto</label>
+            <input id="pedido-producto" type="text" placeholder="Ej. Cierre Lento" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600" />
+          </div>
+          <div>
+            <label for="pedido-proveedor" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Proveedor</label>
+            <input id="pedido-proveedor" type="text" placeholder="Ej. Herrajes SRL" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600" />
+          </div>
+          <div>
+            <label for="pedido-guia" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Guía / Pedido</label>
+            <input id="pedido-guia" type="text" placeholder="Ej. PUR-8842" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600" />
+          </div>
+          <div>
+            <label for="pedido-estado" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Estado</label>
+            <select id="pedido-estado" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600">
+              <option value="pendiente">Pendiente</option>
+              <option value="en_transit">En tránsito</option>
+              <option value="recibido">Recibido</option>
+            </select>
+          </div>
+          <div class="sm:col-span-2">
+            <button type="submit" id="pedido-guardar" class="bg-red-600 hover:bg-red-700 text-white font-bold text-sm px-6 py-2.5 rounded-lg shadow-sm">
+              <i class="fas fa-check mr-2" aria-hidden="true"></i> Registrar Pedido
+            </button>
+          </div>
+        </form>
       </div>
     </section>
   </main>
 
   <!-- ============================================================
-       MODAL · Registro / Edición de Nuevo Pendiente
+       MODAL · FICHA DE PROYECTO (5 SUBPESTAÑAS)
        ============================================================ -->
-  <div class="modal-overlay is-hidden" id="modal-overlay">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <div class="modal-header">
-        <h2 class="modal-title" id="modal-title">Nuevo Pendiente</h2>
-        <button type="button" class="modal-close" id="modal-close" aria-label="Cerrar">
-          <i class="fas fa-xmark" aria-hidden="true"></i>
+  <div id="modal-ficha" class="is-hidden fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center">
+    <div class="ficha-modal bg-white w-full sm:w-[92vw] sm:max-w-3xl max-h-[92vh] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+      <!-- Header del modal + subpestañas -->
+      <div class="p-4 border-b border-slate-200 flex items-center justify-between gap-3 bg-white">
+        <h3 id="ficha-titulo" class="font-extrabold text-slate-900">Ficha del Proyecto</h3>
+        <button type="button" id="ficha-close" class="p-2 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Cerrar">
+          <i class="fas fa-xmark text-lg" aria-hidden="true"></i>
         </button>
       </div>
+      <div id="ficha-subtabs" class="flex border-b border-slate-200 bg-slate-50 overflow-x-auto scrollbar-hide">
+        <button type="button" class="f-subtab active px-4 py-2.5 text-sm font-bold text-red-600 border-b-2 border-red-600 bg-white" data-sub="resumen">Resumen</button>
+        <button type="button" class="f-subtab px-4 py-2.5 text-sm font-bold text-slate-500 border-b-2 border-transparent" data-sub="muebles">Muebles</button>
+        <button type="button" class="f-subtab px-4 py-2.5 text-sm font-bold text-slate-500 border-b-2 border-transparent" data-sub="pedidos">Pedidos</button>
+        <button type="button" class="f-subtab px-4 py-2.5 text-sm font-bold text-slate-500 border-b-2 border-transparent" data-sub="bloqueos">Bloqueos</button>
+        <button type="button" class="f-subtab px-4 py-2.5 text-sm font-bold text-slate-500 border-b-2 border-transparent" data-sub="archivos">Archivos</button>
+      </div>
 
-      <form id="pending-form" autocomplete="off">
-        <div class="field">
-          <label for="field-cliente">Cliente *</label>
-          <input id="field-cliente" type="text" placeholder="Ej. María Pérez" required />
-        </div>
-
-        <div class="field">
-          <label for="field-proyecto">Nombre del Mueble / Proyecto *</label>
-          <input id="field-proyecto" type="text" placeholder="Ej. Juego de Cocina Integral" required />
-        </div>
-
-        <div class="form-row">
-          <div class="field">
-            <label for="field-fecha">Fecha Prometida de Entrega *</label>
-            <input id="field-fecha" type="date" required />
-          </div>
-          <div class="field">
-            <label for="field-estado">Estado</label>
-            <select id="field-estado">
-              <option value="pedido">Por Iniciar / Pedido</option>
-              <option value="fabricacion">En Fabricación</option>
-              <option value="listo">Listo para Despacho</option>
-              <option value="entregado">Entregado / Instalado</option>
-            </select>
+      <div class="overflow-y-auto">
+        <!-- Subpestaña: Resumen -->
+        <div id="ficha-resumen" class="p-4">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 h-44 flex items-center justify-center text-white text-5xl">
+              <i class="fas fa-home" aria-hidden="true"></i>
+            </div>
+            <div>
+              <h4 id="ficha-cliente" class="font-extrabold text-slate-900"></h4>
+              <p id="ficha-direccion" class="text-sm text-slate-500 mt-1"></p>
+              <p class="text-sm text-slate-500 mt-1"><i class="fas fa-map-marker-alt mr-1 text-red-600" aria-hidden="true"></i><span id="ficha-gps"></span></p>
+              <p class="text-sm text-slate-500 mt-1"><i class="fas fa-calendar mr-1 text-red-600" aria-hidden="true"></i>Fecha prometida: <span id="ficha-fecha-prom"></span></p>
+              <p class="text-sm text-slate-500 mt-1"><i class="fas fa-dollar-sign mr-1 text-red-600" aria-hidden="true"></i>Presupuesto: $<span id="ficha-presupuesto"></span></p>
+            </div>
           </div>
         </div>
 
-        <div class="field">
-          <label for="field-responsable">Responsable</label>
-          <input id="field-responsable" type="text" placeholder="Ej. Operador / Taller / Instalador" />
+        <!-- Subpestaña: Muebles -->
+        <div id="ficha-muebles" class="p-4 is-hidden">
+          <div id="ficha-muebles-list" class="space-y-3"></div>
         </div>
 
-        <div class="field">
-          <label for="field-notas">Notas especiales</label>
-          <textarea id="field-notas" placeholder="Ej. Medidas especiales, observaciones de entrega..."></textarea>
+        <!-- Subpestaña: Pedidos -->
+        <div id="ficha-pedidos" class="p-4 is-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm border-collapse">
+              <thead>
+                <tr class="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <th class="p-2 border-b border-slate-200">Categoría</th>
+                  <th class="p-2 border-b border-slate-200">Producto</th>
+                  <th class="p-2 border-b border-slate-200">Proveedor</th>
+                  <th class="p-2 border-b border-slate-200">Guía</th>
+                  <th class="p-2 border-b border-slate-200">Estado</th>
+                </tr>
+              </thead>
+              <tbody id="ficha-pedidos-tbody"></tbody>
+            </table>
+          </div>
         </div>
 
-        <div class="modal-actions">
-          <button type="button" class="btn btn-ghost" id="btn-cancelar">Cancelar</button>
-          <button type="submit" class="btn btn-primary" id="btn-guardar">
-            <i class="fas fa-check" aria-hidden="true"></i> Guardar
-          </button>
+        <!-- Subpestaña: Bloqueos -->
+        <div id="ficha-bloqueos" class="p-4 is-hidden">
+          <ul id="ficha-bloqueos-list" class="space-y-2"></ul>
         </div>
-      </form>
+
+        <!-- Subpestaña: Archivos -->
+        <div id="ficha-archivos" class="p-4 is-hidden">
+          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Dropbox · Proxy de Seguridad</p>
+          <div id="dropbox-publico" class="border border-slate-200 rounded-xl p-3 mb-3 bg-slate-50">
+            <p class="text-sm font-bold text-slate-900"><i class="fas fa-unlock text-emerald-600 mr-2" aria-hidden="true"></i> Carpeta Pública</p>
+            <p class="text-xs text-slate-500">Planos y renders autorizados.</p>
+          </div>
+          <div id="dropbox-privado" class="border border-slate-200 rounded-xl p-3 bg-white">
+            <p class="text-sm font-bold text-slate-900"><i class="fas fa-lock text-slate-500 mr-2" aria-hidden="true"></i> Carpeta Privada Financiera</p>
+            <p class="text-xs text-slate-500">Presupuestos, facturas y decisiones críticas.</p>
+            <button type="button" id="dropbox-privado-lock" class="mt-2 w-full py-2 rounded-lg bg-slate-100 text-slate-400 text-sm font-bold cursor-not-allowed">
+              <i class="fas fa-lock mr-2" aria-hidden="true"></i> BLOQUEADA · Requiere rol Gerencia
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
   <!-- ============================================================
-       ASISTENTE IA / WHATSAPP · Widget flotante
+       ASISTENTE VIRTUAL IA / BOT DE WHATSAPP (HERENCIA)
        ============================================================ -->
   <div class="chat-widget">
-    <div class="chat-panel" id="chat-panel">
+    <div id="chat-panel" class="chat-panel">
       <div class="chat-header">
         <div class="chat-header-info">
           <span class="chat-avatar"><i class="fas fa-robot" aria-hidden="true"></i></span>
           <div>
-            <p class="chat-title">Asistente IA</p>
+            <p class="chat-title">Asistente IA · MODUGAL</p>
             <p class="chat-status"><span class="chat-status-dot"></span> En línea · WhatsApp simulado</p>
           </div>
         </div>
-        <button type="button" class="chat-close" id="chat-close" aria-label="Cerrar chat">
-          <i class="fas fa-xmark" aria-hidden="true"></i>
-        </button>
+        <button type="button" id="chat-close" class="chat-close" aria-label="Cerrar chat"><i class="fas fa-xmark" aria-hidden="true"></i></button>
       </div>
-
-      <div class="chat-messages" id="chat-messages"></div>
-
-      <div class="chat-quick" id="chat-quick">
+      <div id="chat-messages" class="chat-messages"></div>
+      <div id="chat-quick" class="chat-quick">
         <button type="button" class="chat-chip" data-q="¿Qué entregas hay para hoy?">¿Qué entregas hay para hoy?</button>
-        <button type="button" class="chat-chip" data-q="¿Pendientes del cliente Pérez?">¿Pendientes del Pérez?</button>
-        <button type="button" class="chat-chip" data-q="¿Hay pendientes vencidos?">¿Vencidos?</button>
+        <button type="button" class="chat-chip" data-q="¿Qué proyectos del cliente X tienen materiales faltantes?">Materiales faltantes</button>
+        <button type="button" class="chat-chip" data-q="¿Qué proyectos están detenidos?">Proyectos detenidos</button>
       </div>
-
-      <form class="chat-input-row" id="chat-form">
+      <form id="chat-form" class="chat-input-row">
         <input id="chat-input" type="text" placeholder="Escribe tu consulta..." autocomplete="off" />
-        <button type="submit" class="chat-send" id="chat-send" aria-label="Enviar mensaje">
-          <i class="fas fa-paper-plane" aria-hidden="true"></i>
-        </button>
+        <button type="submit" class="chat-send" id="chat-send" aria-label="Enviar mensaje"><i class="fas fa-paper-plane" aria-hidden="true"></i></button>
       </form>
     </div>
-
-    <button type="button" class="chat-fab" id="chat-fab" aria-label="Abrir asistente IA">
-      <i class="fas fa-comment-dots" aria-hidden="true"></i>
-    </button>
+    <button type="button" id="chat-fab" class="chat-fab" aria-label="Abrir asistente IA"><i class="fas fa-comment-dots" aria-hidden="true"></i></button>
   </div>
-
-  <!-- ============================================================
-       BOTÓN FLOTANTE · NUEVO PENDIENTE
-       ============================================================ -->
-  <button type="button" class="fab" id="fab-nuevo" aria-label="Registrar nuevo pendiente">
-    <i class="fas fa-plus" aria-hidden="true"></i>
-  </button>
 
   <script src="app.js"></script>
 </body>
