@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b131e" />
+  <meta name="description" content="EYC Muebles - Control Logístico · Gestión de pedidos, pendientes y tiempos de entrega" />
+  <title>EYC Muebles - Control Logístico</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🪚</text></svg>" />
+  <!-- Tailwind CSS (CDN) + FontAwesome (CDN) · Sin build de por medio -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ============================================================
+       HEADER · Título · Indicador de sincronización · Selector de rol
+       ============================================================ -->
+  <header id="app-header" class="app-header">
+    <div class="app-header__inner">
+      <div class="app-header__top">
+        <div class="min-w-0">
+          <h1 class="app-title">EYC Muebles <span>Control Logístico</span></h1>
+          <p class="sync" id="sync-indicator">
+            <span class="sync-dot" id="sync-dot"></span>
+            <span id="sync-status">Sincronizado en tiempo real</span>
+          </p>
+        </div>
+
+        <!-- Selector de rol: Operador / Secretaria / Dueño -->
+        <div class="role-selector" id="role-selector" role="tablist" aria-label="Seleccionar rol del usuario">
+          <button type="button" class="role-btn active" data-rol="operador">Operador</button>
+          <button type="button" class="role-btn" data-rol="secretaria">Secretaria</button>
+          <button type="button" class="role-btn" data-rol="dueno">Dueño</button>
+        </div>
+      </div>
+
+      <!-- Búsqueda rápida por Cliente, Proyecto o ID de pedido -->
+      <div class="search-bar">
+        <i class="fas fa-magnifying-glass" aria-hidden="true"></i>
+        <input id="search-input" type="search" placeholder="Buscar cliente, proyecto o ID de pedido..." autocomplete="off" />
+      </div>
+
+      <!-- Filtros rápidos -->
+      <div class="quick-filters" id="quick-filters">
+        <button type="button" class="chip active" data-filter="todos">Todos</button>
+        <button type="button" class="chip" data-filter="vencidos">Vencidos</button>
+        <button type="button" class="chip" data-filter="hoy">Entregas de Hoy</button>
+        <button type="button" class="chip" data-filter="semana">Esta Semana</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============================================================
+       CONTENIDO PRINCIPAL · Métricas + Vista conmutante
+       ============================================================ -->
+  <main id="app-main">
+
+    <!-- Panel de Métricas / Resumen Matutino -->
+    <section class="metrics-grid" id="metrics-panel" aria-label="Resumen matutino de logística">
+      <article class="metric-card" id="metric-hoy">
+        <p class="metric-label"><i class="fas fa-truck" aria-hidden="true"></i> Entregas para hoy</p>
+        <p class="metric-value"><span id="metric-hoy-value">0</span></p>
+        <p class="metric-hint" id="metric-hoy-hint">Sin entregas programadas</p>
+      </article>
+
+      <article class="metric-card metric-card--alert" id="metric-vencidos">
+        <p class="metric-label"><i class="fas fa-triangle-exclamation" aria-hidden="true"></i> Pendientes vencidos</p>
+        <p class="metric-value"><span id="metric-vencidos-value">0</span></p>
+        <p class="metric-hint" id="metric-vencidos-hint">Revisar urgencias</p>
+      </article>
+
+      <article class="metric-card" id="metric-produccion">
+        <p class="metric-label"><i class="fas fa-tools" aria-hidden="true"></i> En producción</p>
+        <p class="metric-value"><span id="metric-produccion-value">0</span></p>
+        <p class="metric-hint" id="metric-produccion-hint">Obras en taller</p>
+      </article>
+    </section>
+
+    <!-- Control de vista -->
+    <div class="view-toggle" id="view-toggle">
+      <button type="button" class="view-btn active" data-view="board" id="btn-view-board">
+        <i class="fas fa-columns" aria-hidden="true"></i> Tablero
+      </button>
+      <button type="button" class="view-btn" data-view="list" id="btn-view-list">
+        <i class="fas fa-table-list" aria-hidden="true"></i> Lista
+      </button>
+    </div>
+
+    <!-- VISTA 1 · Tablero Kanban -->
+    <section class="view-panel" id="view-board">
+      <div class="board" id="board" aria-label="Tablero Kanban de pedidos"></div>
+    </section>
+
+    <!-- VISTA 2 · Lista / Tabla Ejecutiva -->
+    <section class="view-panel is-hidden" id="view-list">
+      <div class="list-panel">
+        <div class="list-scroll">
+          <table class="list-table">
+            <thead>
+              <tr>
+                <th scope="col">ID</th>
+                <th scope="col">Cliente</th>
+                <th scope="col">Mueble / Proyecto</th>
+                <th scope="col" class="sortable" id="th-fecha">
+                  <span class="th-label">Fecha de Entrega</span>
+                  <i class="fas fa-sort-up" id="sort-icon" aria-hidden="true"></i>
+                </th>
+                <th scope="col">Estado</th>
+                <th scope="col">Responsable</th>
+              </tr>
+            </thead>
+            <tbody id="list-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============================================================
+       MODAL · Registro / Edición de Nuevo Pendiente
+       ============================================================ -->
+  <div class="modal-overlay is-hidden" id="modal-overlay">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-header">
+        <h2 class="modal-title" id="modal-title">Nuevo Pendiente</h2>
+        <button type="button" class="modal-close" id="modal-close" aria-label="Cerrar">
+          <i class="fas fa-xmark" aria-hidden="true"></i>
+        </button>
+      </div>
+
+      <form id="pending-form" autocomplete="off">
+        <div class="field">
+          <label for="field-cliente">Cliente *</label>
+          <input id="field-cliente" type="text" placeholder="Ej. María Pérez" required />
+        </div>
+
+        <div class="field">
+          <label for="field-proyecto">Nombre del Mueble / Proyecto *</label>
+          <input id="field-proyecto" type="text" placeholder="Ej. Juego de Cocina Integral" required />
+        </div>
+
+        <div class="form-row">
+          <div class="field">
+            <label for="field-fecha">Fecha Prometida de Entrega *</label>
+            <input id="field-fecha" type="date" required />
+          </div>
+          <div class="field">
+            <label for="field-estado">Estado</label>
+            <select id="field-estado">
+              <option value="pedido">Por Iniciar / Pedido</option>
+              <option value="fabricacion">En Fabricación</option>
+              <option value="listo">Listo para Despacho</option>
+              <option value="entregado">Entregado / Instalado</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="field-responsable">Responsable</label>
+          <input id="field-responsable" type="text" placeholder="Ej. Operador / Taller / Instalador" />
+        </div>
+
+        <div class="field">
+          <label for="field-notas">Notas especiales</label>
+          <textarea id="field-notas" placeholder="Ej. Medidas especiales, observaciones de entrega..."></textarea>
+        </div>
+
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="btn-cancelar">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btn-guardar">
+            <i class="fas fa-check" aria-hidden="true"></i> Guardar
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       ASISTENTE IA / WHATSAPP · Widget flotante
+       ============================================================ -->
+  <div class="chat-widget">
+    <div class="chat-panel" id="chat-panel">
+      <div class="chat-header">
+        <div class="chat-header-info">
+          <span class="chat-avatar"><i class="fas fa-robot" aria-hidden="true"></i></span>
+          <div>
+            <p class="chat-title">Asistente IA</p>
+            <p class="chat-status"><span class="chat-status-dot"></span> En línea · WhatsApp simulado</p>
+          </div>
+        </div>
+        <button type="button" class="chat-close" id="chat-close" aria-label="Cerrar chat">
+          <i class="fas fa-xmark" aria-hidden="true"></i>
+        </button>
+      </div>
+
+      <div class="chat-messages" id="chat-messages"></div>
+
+      <div class="chat-quick" id="chat-quick">
+        <button type="button" class="chat-chip" data-q="¿Qué entregas hay para hoy?">¿Qué entregas hay para hoy?</button>
+        <button type="button" class="chat-chip" data-q="¿Pendientes del cliente Pérez?">¿Pendientes del Pérez?</button>
+        <button type="button" class="chat-chip" data-q="¿Hay pendientes vencidos?">¿Vencidos?</button>
+      </div>
+
+      <form class="chat-input-row" id="chat-form">
+        <input id="chat-input" type="text" placeholder="Escribe tu consulta..." autocomplete="off" />
+        <button type="submit" class="chat-send" id="chat-send" aria-label="Enviar mensaje">
+          <i class="fas fa-paper-plane" aria-hidden="true"></i>
+        </button>
+      </form>
+    </div>
+
+    <button type="button" class="chat-fab" id="chat-fab" aria-label="Abrir asistente IA">
+      <i class="fas fa-comment-dots" aria-hidden="true"></i>
+    </button>
+  </div>
+
+  <!-- ============================================================
+       BOTÓN FLOTANTE · NUEVO PENDIENTE
+       ============================================================ -->
+  <button type="button" class="fab" id="fab-nuevo" aria-label="Registrar nuevo pendiente">
+    <i class="fas fa-plus" aria-hidden="true"></i>
+  </button>
+
+  <script src="app.js"></script>
+</body>
+</html>
