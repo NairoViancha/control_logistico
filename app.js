@@ -279,7 +279,7 @@ function cerrarChat() {
 function badgeEstadoHTML(estado) {
   const map = { en_proceso: 'badge-en_proceso', detenido: 'badge-detencion', completado: 'badge-completado' };
   const labels = { en_proceso: 'En Proceso', detenido: 'Detenido', completado: 'Completado' };
-  return `<span class="badge ${map[estado] ?? ''}">${labels[estado] ?? estado}</span>`;
+  return map[estado] ?? '';
 }
 
 function stepperHTML(completadas, estado) {
@@ -304,8 +304,10 @@ function crearTarjetaProduccion(p) {
   card.className = 'proyecto-card bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden';
   card.innerHTML = `
     <div class="render-hd">
-      <span class="badge ${badgeEstadoHTML(p.estado)} absolute top-2 left-2 z-10">${p.estado.replace('_', ' ')}</span>
-      <span class="badge bg-white/90 text-slate-900 absolute top-2 right-2 z-10">${p.id}</span>
+      <div class="flex items-center justify-between">
+        <span class="badge ${badgeEstadoHTML(p.estado)}">${p.estado.replace('_', ' ')}</span>
+        <span class="badge bg-white text-slate-900">${p.id}</span>
+      </div>
     </div>
     <div class="p-3">
       <p class="font-extrabold text-slate-900 text-sm">${p.id} · ${p.nombre}</p>
