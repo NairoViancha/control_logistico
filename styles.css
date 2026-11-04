@@ -177,3 +177,118 @@
 .f-chip { border-radius: 999px; display: inline-flex; align-items: center; }
 .f-subtab { padding: 0.75rem 1rem; font-size: 0.75rem; font-weight: 700; color: var(--muted); border-bottom: 2px solid transparent; background: transparent; border-top: 0; border-left: 0; border-right: 0; cursor: pointer; white-space: nowrap; }
 .f-subtab.active { color: var(--brand); border-bottom-color: var(--brand); background: var(--surface); }
+
+/* ============================================================
+   FICHA DE PROYECTO · COMPLETITUD Y DOCUMENTACIÓN
+   ============================================================ */
+.ficha-completitud { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 0.9rem; }
+.ficha-completitud-bar { height: 8px; background: var(--border); border-radius: 999px; overflow: hidden; }
+.ficha-completitud-bar > div { height: 100%; background: var(--success); border-radius: 999px; transition: width .3s ease; }
+.ficha-completitud-alerta { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: var(--radius); padding: 0.7rem 0.9rem; font-size: 12px; font-weight: 600; }
+
+.dropbox-archivo-item { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 0.6rem 0.75rem; font-size: 0.8rem; }
+.dropbox-visual { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-lg); min-height: 240px; display: flex; align-items: center; justify-content: center; padding: 1rem; text-align: center; }
+.dropbox-visual img { width: 100%; max-height: 420px; object-fit: contain; border-radius: var(--radius); }
+.dropbox-visual iframe { width: 100%; height: 420px; border: 0; border-radius: var(--radius); background: #fff; }
+.dropbox-visual .visor-3d { display: flex; flex-direction: column; align-items: center; gap: 0.5rem; color: var(--muted); font-size: 0.8rem; font-weight: 600; }
+
+.btn-avanza { background: var(--success); color: #fff; border: 0; }
+.btn-avanza:hover { background: #047857; }
+
+/* ============================================================
+   TABLA GENERAL DE PROYECTOS (VISTA EXCEL)
+   ============================================================ */
+.tabla-general th, .tabla-general td { padding: 0.65rem 0.85rem; }
+.tabla-general tbody tr { transition: background .15s; }
+.tabla-general tbody tr:hover { background: var(--bg); }
+
+/* ============================================================
+   TEMA OSCURO · activado con la clase .tema-oscuro en <html>
+   ============================================================ */
+html.tema-oscuro {
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --border: #334155;
+  --text: #e2e8f0;
+  --muted: #94a3b8;
+  --brand: #ef4444;
+  --brand-dark: #dc2626;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+}
+
+html.tema-oscuro body { background-color: #0f172a; color: #e2e8f0; }
+
+html.tema-oscuro .bg-slate-50 { background-color: #0f172a; }
+html.tema-oscuro .bg-slate-100 { background-color: #1e293b; }
+html.tema-oscuro .bg-slate-200 { background-color: #334155; }
+html.tema-oscuro .bg-slate-200\/60 { background-color: #334155; }
+html.tema-oscuro .bg-white { background-color: #1e293b; }
+html.tema-oscuro .bg-white\/95 { background-color: rgba(30, 41, 59, 0.95); }
+html.tema-oscuro .bg-slate-900 { background-color: #0f172a; }
+html.tema-oscuro .bg-slate-800 { background-color: #0f172a; }
+html.tema-oscuro .bg-gray-50 { background-color: #1e293b; }
+html.tema-oscuro .bg-gray-100 { background-color: #334155; }
+
+html.tema-oscuro .text-slate-900 { color: #f1f5f9; }
+html.tema-oscuro .text-slate-800 { color: #e2e8f0; }
+html.tema-oscuro .text-slate-700 { color: #cbd5e1; }
+html.tema-oscuro .text-slate-600 { color: #94a3b8; }
+html.tema-oscuro .text-slate-500 { color: #94a3b8; }
+html.tema-oscuro .text-slate-400 { color: #64748b; }
+html.tema-oscuro .text-slate-300 { color: #cbd5e1; }
+html.tema-oscuro .text-gray-500 { color: #94a3b8; }
+
+html.tema-oscuro .border-slate-200 { border-color: #334155; }
+html.tema-oscuro .border-slate-100 { border-color: #334155; }
+html.tema-oscuro .border-red-100, html.tema-oscuro .border-red-200 { border-color: #7f1d1d; }
+html.tema-oscuro .border-emerald-100, html.tema-oscuro .border-emerald-200 { border-color: #064e3b; }
+html.tema-oscuro .border-amber-100 { border-color: #78350f; }
+
+html.tema-oscuro .bg-red-50 { background-color: #450a0a; }
+html.tema-oscuro .bg-red-100 { background-color: #450a0a; }
+html.tema-oscuro .bg-red-600 { background-color: #dc2626; }
+html.tema-oscuro .bg-red-700 { background-color: #b91c1c; }
+html.tema-oscuro .text-red-500 { color: #f87171; }
+html.tema-oscuro .text-red-600 { color: #f87171; }
+html.tema-oscuro .text-red-700 { color: #fca5a5; }
+html.tema-oscuro .text-red-800 { color: #fecaca; }
+
+html.tema-oscuro .bg-emerald-50 { background-color: #022c22; }
+html.tema-oscuro .bg-emerald-100 { background-color: #022c22; }
+html.tema-oscuro .bg-emerald-600 { background-color: #059669; }
+html.tema-oscuro .bg-emerald-700 { background-color: #047857; }
+html.tema-oscuro .text-emerald-600 { color: #34d399; }
+html.tema-oscuro .text-emerald-700 { color: #6ee7b7; }
+
+html.tema-oscuro .bg-amber-50 { background-color: #451a03; }
+html.tema-oscuro .bg-amber-100 { background-color: #451a03; }
+html.tema-oscuro .bg-amber-600 { background-color: #d97706; }
+html.tema-oscuro .text-amber-600 { color: #fbbf24; }
+
+html.tema-oscuro .bg-blue-50 { background-color: #172554; }
+html.tema-oscuro .bg-blue-100 { background-color: #172554; }
+html.tema-oscuro .bg-blue-600 { background-color: #2563eb; }
+html.tema-oscuro .text-blue-600 { color: #60a5fa; }
+
+html.tema-oscuro input, html.tema-oscuro select, html.tema-oscuro textarea { background-color: #1e293b; color: #e2e8f0; border-color: #334155; }
+html.tema-oscuro input::placeholder, html.tema-oscuro textarea::placeholder { color: #64748b; }
+html.tema-oscuro input:focus, html.tema-oscuro select:focus, html.tema-oscuro textarea:focus { border-color: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.25); }
+
+html.tema-oscuro .chat-messages { background: #0f172a; }
+html.tema-oscuro .chat-msg { background: #1e293b; border-color: #334155; }
+html.tema-oscuro .chat-msg--user { background: #dc2626; color: #fff; }
+html.tema-oscuro .chat-quick { background: #1e293b; border-color: #334155; }
+html.tema-oscuro .chat-input-row { background: #1e293b; border-color: #334155; }
+html.tema-oscuro .chat-chip { background: #1e293b; border-color: #334155; color: #94a3b8; }
+html.tema-oscuro .chat-close { background: #1e293b; border-color: #334155; color: #94a3b8; }
+html.tema-oscuro .chat-header { background: #1e293b; border-color: #334155; }
+
+html.tema-oscuro .modal-overlay { background: rgba(2, 6, 23, 0.75); }
+html.tema-oscuro .modal { background: #1e293b; border-color: #334155; }
+html.tema-oscuro .modal-close { background: #1e293b; border-color: #334155; color: #94a3b8; }
+html.tema-oscuro .field label { color: #94a3b8; }
+html.tema-oscuro .field input, html.tema-oscuro .field select, html.tema-oscuro .field textarea { background: #0f172a; color: #e2e8f0; border-color: #334155; }
+html.tema-oscuro .btn-ghost { background: #1e293b; color: #e2e8f0; border-color: #334155; }
+html.tema-oscuro .btn-ghost:hover { background: #334155; }

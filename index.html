@@ -15,6 +15,78 @@
 <body class="bg-slate-50 text-slate-900 font-sans min-h-screen">
 
   <!-- ============================================================
+       PANTALLA DE LOGIN / REGISTRO
+       ============================================================ -->
+  <div id="login-screen" class="fixed inset-0 z-[70] bg-slate-50 flex items-center justify-center p-4">
+    <div class="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-md p-8">
+      <div class="flex items-center space-x-3 mb-6">
+        <div class="w-12 h-12 rounded-full border-2 border-red-600 bg-white flex items-center justify-center shadow-md shrink-0">
+          <span class="text-red-600 font-black text-xl tracking-tighter">MG</span>
+        </div>
+        <div>
+          <div class="flex items-center">
+            <span class="text-2xl font-black text-slate-800 tracking-widest">MODU</span>
+            <span class="text-2xl font-black text-red-600 tracking-widest">GAL</span>
+            <span class="text-[10px] text-slate-400 align-top">®</span>
+          </div>
+          <p class="text-[10px] text-slate-500 tracking-[0.25em] font-semibold uppercase -mt-1">espacios renovados</p>
+        </div>
+      </div>
+
+      <h2 class="text-2xl font-black text-slate-900 mb-1">Acceso a MODUGAL</h2>
+      <p class="text-xs text-slate-500 mb-6">Inicia sesión o crea tu cuenta corporativa</p>
+
+      <form id="login-form" class="space-y-4">
+        <div>
+          <label for="login-email" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Correo electrónico</label>
+          <input id="login-email" type="email" placeholder="correo@empresa.com" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" required />
+        </div>
+        <div>
+          <label for="login-password" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Contraseña</label>
+          <input id="login-password" type="password" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" required />
+        </div>
+        <div>
+          <label for="login-cargo" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Cargo</label>
+          <select id="login-cargo" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white">
+            <option value="arquitecto">Arquitecto</option>
+            <option value="operativo">Operativo</option>
+            <option value="administrativo">Administrativo</option>
+          </select>
+        </div>
+        <button type="submit" id="login-submit" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 rounded-xl shadow-md text-sm mt-2 transition-all">
+          <i class="fas fa-lock mr-2" aria-hidden="true"></i> Iniciar Sesión
+        </button>
+        <p id="login-error" class="text-red-600 text-xs font-bold hidden"></p>
+        <button type="button" id="login-toggle" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition-colors">
+          Crear cuenta
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Olvidé mi contraseña -->
+  <div id="login-forgot-modal" class="is-hidden fixed inset-0 z-[80] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl p-6">
+      <h3 class="text-xl font-black text-slate-900 mb-1">Restablecer contraseña</h3>
+      <p class="text-xs text-slate-500 mb-4">Ingresa tu correo y la nueva contraseña para recuperar el acceso.</p>
+      <div class="space-y-3">
+        <div>
+          <label for="forgot-email" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Correo electrónico</label>
+          <input id="forgot-email" type="email" placeholder="correo@empresa.com" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+        </div>
+        <div>
+          <label for="forgot-pass" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Nueva contraseña</label>
+          <input id="forgot-pass" type="password" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+        </div>
+      </div>
+      <div class="flex space-x-2 mt-5">
+        <button type="button" id="forgot-reset" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">Restablecer</button>
+        <button type="button" id="forgot-close" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
        HEADER FIJO · Isotipo MG · Marca · Buscador · Rol · Nuevo Pedido
        ============================================================ -->
   <header id="mg-header" class="fixed top-0 inset-x-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm">
@@ -47,15 +119,26 @@
           <i class="fas fa-shield-alt text-red-600 mr-2 w-4 h-4" aria-hidden="true"></i>
           <span class="text-xs text-slate-500 font-medium mr-2 hidden sm:inline">Perfil:</span>
           <select id="mg-rol-select" class="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer" data-rol-select>
-            <option value="gerencia">Gerencia (Full)</option>
+            <option value="administrativo">Administrativo</option>
             <option value="arquitecto">Arquitecto</option>
-            <option value="carpintero">Carpintero</option>
+            <option value="operativo">Operativo</option>
           </select>
+        </div>
+
+        <div id="mg-user" class="hidden flex items-center bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 shadow-inner">
+          <i class="fas fa-user w-3.5 h-3.5 text-slate-500 mr-1" aria-hidden="true"></i>
+          <span id="mg-user-info" class="text-xs font-bold text-slate-800"></span>
+          <button type="button" id="btn-logout" class="ml-2 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50 transition-colors" aria-label="Cerrar sesión">
+            <i class="fas fa-right-from-bracket" aria-hidden="true"></i> Salir
+          </button>
         </div>
 
         <button type="button" id="btn-nuevo-pedido" class="hidden sm:flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md hover:shadow-lg">
           <i class="fas fa-plus w-4 h-4" aria-hidden="true"></i>
           <span>Nuevo Pedido</span>
+        </button>
+        <button type="button" id="btn-tema" class="shrink-0 w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-900 flex items-center justify-center" aria-label="Alternar modo oscuro">
+          <i class="fas fa-moon w-4 h-4" aria-hidden="true"></i>
         </button>
       </div>
     </div>
@@ -79,6 +162,12 @@
         <button type="button" class="mg-tab" data-tab="stats">
           <i class="fas fa-chart-bar mr-2" aria-hidden="true"></i>Estadísticas & Rendimiento
         </button>
+        <button type="button" class="mg-tab" data-tab="tabla">
+          <i class="fas fa-table mr-2" aria-hidden="true"></i>Tabla General
+        </button>
+        <button type="button" class="mg-tab" data-tab="trimestral">
+          <i class="fas fa-calendar-alt mr-2" aria-hidden="true"></i>Proyectos Trimestrales
+        </button>
         <button type="button" class="mg-tab sm:hidden" data-tab="new-order">
           <i class="fas fa-plus mr-2" aria-hidden="true"></i>Nuevo Pedido
         </button>
@@ -93,7 +182,6 @@
 
     <!-- ============================================================ MÓDULO A · TABLERO DE PRODUCCIÓN (FÁBRICA EN VIVO) -->
     <section id="tab-produccion" class="tab-panel p-4">
-      {/* KPIs */}
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <div class="kpi-card bg-white border border-slate-200/80 p-5 rounded-2xl shadow-sm flex items-center justify-between">
           <div>
@@ -130,12 +218,31 @@
           <h2 class="text-xl font-black text-slate-900 tracking-wide">Fábrica & Producción en Vivo</h2>
           <p class="text-xs text-slate-500 mt-0.5">Control visual por proyecto de cocinas integrales y modulares</p>
         </div>
-        <div id="filtros-produccion" class="flex items-center space-x-1 bg-slate-200/60 p-1 rounded-xl border border-slate-200">
+        <div id="filtros-produccion" class="flex flex-wrap items-center gap-2 bg-slate-200/60 p-1 rounded-xl border border-slate-200" style="display: flex; gap: 8px; flex-wrap: wrap;">
           <button type="button" class="f-chip active bg-red-600 text-white border-red-600" data-filtro="todos">Todos</button>
           <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="Detenido">Detenido</button>
           <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="En proceso">En proceso</button>
           <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="Completado">Completado</button>
         </div>
+      </div>
+
+      <!-- Filtros trimestrales / ciudad -->
+      <div class="flex flex-wrap gap-2 mt-4">
+        <select id="filtro-year" class="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold text-slate-900" aria-label="Año">
+          <option value="2026">2026</option>
+          <option value="2027">2027</option>
+        </select>
+        <select id="filtro-quarter" class="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold text-slate-900" aria-label="Trimestre">
+          <option value="Q4 - 2026">Q4 - 2026 (Oct - Dic)</option>
+          <option value="Q3 - 2026">Q3 - 2026 (Jul - Sep)</option>
+          <option value="Q1 - 2027">Q1 - 2027 (Ene - Mar)</option>
+        </select>
+        <select id="filtro-city" class="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm font-bold text-slate-900" aria-label="Ciudad">
+          <option value="Todos">Todas las ciudades</option>
+          <option value="Floridablanca">Floridablanca</option>
+          <option value="San Gil">San Gil</option>
+          <option value="Bucaramanga">Bucaramanga</option>
+        </select>
       </div>
 
       <!-- Grid de tarjetas de proyectos -->
@@ -172,12 +279,77 @@
       <div id="comercial-board" class="flex gap-4 overflow-x-auto pb-4"></div>
     </section>
 
+    <!-- ============================================================ PÁGINA · PROYECTOS TRIMESTRALES -->
+    <section id="tab-trimestral" class="tab-panel p-4">
+      <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm mb-6">
+        <h2 class="text-xl font-black text-slate-900 tracking-wide">Proyectos Trimestrales</h2>
+        <p class="text-xs text-slate-500 mb-5">Filtros por año, trimestre y ciudad para planeación de la fábrica</p>
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex items-center space-x-2">
+            <i class="fas fa-calendar w-4 h-4 text-slate-400" aria-hidden="true"></i>
+            <select id="trim-year" class="bg-slate-50 text-xs font-bold text-slate-900 rounded-lg p-1.5 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-red-600">
+              <option value="2026">2026</option>
+              <option value="2027">2027</option>
+              <option value="Todos">Todos los años</option>
+            </select>
+          </div>
+          <div class="flex items-center space-x-2">
+            <i class="fas fa-layer-group w-4 h-4 text-slate-400" aria-hidden="true"></i>
+            <select id="trim-quarter" class="bg-slate-50 text-xs font-bold text-slate-900 rounded-lg p-1.5 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-red-600">
+              <option value="Q4 - 2026">Q4 - 2026</option>
+              <option value="Q3 - 2026">Q3 - 2026</option>
+              <option value="Q2 - 2026">Q2 - 2026</option>
+              <option value="Q1 - 2026">Q1 - 2026</option>
+              <option value="Todos los Trimestres">Todos los Trimestres</option>
+            </select>
+          </div>
+          <div class="flex items-center space-x-2">
+            <i class="fas fa-location-dot w-4 h-4 text-slate-400" aria-hidden="true"></i>
+            <select id="trim-city" class="bg-slate-50 text-xs font-bold text-slate-900 rounded-lg p-1.5 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-red-600">
+              <option value="Todos">Todas las ciudades</option>
+              <option value="Floridablanca">Floridablanca</option>
+              <option value="San Gil">San Gil</option>
+              <option value="Bucaramanga">Bucaramanga</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div id="trim-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+    </section>
+
     <!-- ============================================================ MÓDULO D · ESTADÍSTICAS & RENDIMIENTO -->
     <section id="tab-stats" class="tab-panel p-4">
       <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
         <h2 class="text-xl font-black text-slate-900 mb-1">Medición de Tiempos por Fase</h2>
         <p class="text-xs text-slate-500 mb-6">Promedio de duración en días por etapa de carpintería</p>
-        <div id="stats-view" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+        <div id="stats-view" class="grid gap-4" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));"></div>
+      </div>
+    </section>
+
+    <!-- ============================================================ VISTA TABULAR GENERAL DE PROYECTOS -->
+    <section id="tab-tabla" class="tab-panel p-4">
+      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <div class="p-4 border-b border-slate-200 flex items-center justify-between">
+          <h2 class="text-xl font-black text-slate-900 tracking-wide">Tabla General de Proyectos</h2>
+          <span class="text-xs font-bold text-slate-500">Vista tipo Excel</span>
+        </div>
+        <div class="overflow-x-auto">
+          <table id="tabla-general" class="w-full text-left text-xs">
+            <thead class="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+              <tr>
+                <th class="p-3">ID</th>
+                <th class="p-3">Cliente</th>
+                <th class="p-3">Ciudad</th>
+                <th class="p-3">Fase Actual</th>
+                <th class="p-3">Carpintero Asignado</th>
+                <th class="p-3">Estado de Materiales</th>
+                <th class="p-3">Fecha de Entrega</th>
+                <th class="p-3">Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-tbody" class="divide-y divide-slate-200"></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
@@ -278,10 +450,23 @@
             <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
               <p class="text-slate-500">Fase: <strong class="text-slate-900" id="ficha-fase"></strong></p>
               <p class="text-slate-500">Estado: <strong class="text-slate-900" id="ficha-estado"></strong></p>
+              <select id="ficha-estado-select" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2 text-xs font-bold text-slate-900">
+                <option value="En proceso">En proceso</option>
+                <option value="Detenido">Detenido</option>
+                <option value="Completado">Completado</option>
+              </select>
               <p class="text-slate-500">Fecha prometida: <strong class="text-slate-900" id="ficha-fecha-prom"></strong></p>
               <p class="text-slate-500">Presupuesto: <strong class="text-slate-900" id="ficha-presupuesto"></strong></p>
               <p class="text-slate-500">Alerta: <strong class="text-slate-900" id="ficha-alerta"></strong></p>
             </div>
+          </div>
+          <div class="ficha-completitud">
+            <div class="flex items-center justify-between mb-2">
+              <p class="text-xs font-bold text-slate-500 uppercase tracking-wide">Completitud de la Ficha</p>
+              <p class="text-sm font-black text-slate-900" id="ficha-completitud-pct">0%</p>
+            </div>
+            <div class="ficha-completitud-bar"><div id="ficha-completitud-bar" style="width: 0%"></div></div>
+            <p id="ficha-completitud-alerta" class="ficha-completitud-alerta hidden mt-2"></p>
           </div>
         </div>
 
@@ -333,11 +518,47 @@
               Acceso Restringido para <span id="dropbox-privado-rol">Gerencia</span>.
             </div>
           </div>
+
+          <div class="bg-white border border-slate-200 p-4 rounded-xl space-y-2">
+            <h5 class="font-bold text-slate-900">Adjuntar Documentación</h5>
+            <input id="archivo-input" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.glb,.3d,.dwg,.dxf,.zip" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 file:mr-2 file:rounded-lg file:bg-red-600 file:text-white" />
+            <button type="button" id="archivo-add" class="w-full bg-slate-900 text-white font-bold py-2 rounded-xl text-xs">Adjuntar Archivo</button>
+          </div>
+
+          <div id="dropbox-archivos-list" class="space-y-2"></div>
+          <div id="dropbox-visual" class="hidden dropbox-visual"></div>
         </div>
       </div>
 
       <div class="bg-slate-50 p-4 border-t border-slate-200 flex justify-end">
         <button type="button" id="ficha-close-footer" class="bg-slate-800 text-white font-bold px-4 py-2 rounded-xl text-xs hover:bg-slate-900 transition-colors">Cerrar Ficha</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================================
+       MODAL · ASIGNACIÓN DE TAREA A CARPINTERO
+       ============================================================ -->
+  <div id="tarea-modal" class="is-hidden fixed inset-0 z-[80] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl p-6">
+      <h3 class="text-xl font-black text-slate-900 mb-4">Asignar Tarea</h3>
+      <div class="space-y-3 text-xs">
+        <div>
+          <label class="block font-bold text-slate-500 uppercase mb-1">Carpintero</label>
+          <p class="font-bold text-slate-900" id="tarea-carpintero"></p>
+        </div>
+        <div>
+          <label for="tarea-proyecto" class="block font-bold text-slate-500 uppercase mb-1">Proyecto</label>
+          <select id="tarea-proyecto" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900"></select>
+        </div>
+        <div>
+          <label for="tarea-texto" class="block font-bold text-slate-500 uppercase mb-1">Descripción de la Tarea</label>
+          <input id="tarea-texto" type="text" placeholder="Ej. Trazado de isla - Proyecto X" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
+        </div>
+      </div>
+      <div class="flex space-x-2 mt-5">
+        <button type="button" id="tarea-guardar" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">Asignar</button>
+        <button type="button" id="tarea-close" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm">Cancelar</button>
       </div>
     </div>
   </div>
