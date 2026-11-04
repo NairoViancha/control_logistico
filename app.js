@@ -30,10 +30,10 @@ const EST_PRODUCCION = { EN_PROCESO: 'en_proceso', DETENIDO: 'detenido', COMPLET
 const ETAPAS_COMERCIAL = ['Prospectos', 'Cotizaciones', 'Aprobados', 'En Fabricación', 'Instalaciones', 'Garantías'];
 
 const STAGES_STATS = [
-  { etapa: 'Diseño', avg: 12 },
-  { etapa: 'Corte', avg: 9 },
-  { etapa: 'Armado', avg: 21 },
-  { etapa: 'Instalación', avg: 8 },
+  { etapa: 'Diseño', avg: 3.2, badge: 'ÓPTIMO' },
+  { etapa: 'Corte', avg: 2.5, badge: 'ÓPTIMO' },
+  { etapa: 'Fabricación & Armado', avg: 8.4, badge: 'CUELLO DE BOTELLA' },
+  { etapa: 'Instalación', avg: 4.1, badge: 'NORMAL' },
 ];
 
 const ROLES = ['gerencia', 'arquitecto', 'carpintero'];
@@ -64,13 +64,13 @@ function seed() {
   return {
     proyectos: [
       {
-        id: 'MG-1001', nombre: 'Cocina Integral - Res. Las Palmeras', cliente: 'Res. Las Palmeras',
+        id: 'PRJ-001', nombre: 'Cocina Integral - Res. Las Palmeras', cliente: 'Res. Las Palmeras',
         direccion: 'Av. Industrial 450, Col. San Rafael', gps: '-34.5500, -58.4400', tipo: 'Cocina Integral',
-        presupuesto: 1850000, fechaPrometida: '2026-12-18', estado: 'completado', operario: 'Carlos Ramírez',
+        presupuesto: 1850000, fechaPrometida: '2026-12-18', estado: 'completado', operario: 'Edwin San Gil',
         fasesCompletadas: 6,
         muebles: [
-          { id: 'M-1001-1', nombre: 'Gabinete Base Modular', fase: 6, instalado: true, operario: 'Carlos Ramírez' },
-          { id: 'M-1001-2', nombre: 'Isla Central', fase: 6, instalado: true, operario: 'Carlos Ramírez' },
+          { id: 'M-1001-1', nombre: 'Gabinete Base Modular', fase: 6, instalado: true, operario: 'Edwin San Gil' },
+          { id: 'M-1001-2', nombre: 'Isla Central', fase: 6, instalado: true, operario: 'Edwin San Gil' },
         ],
         pedidos: [
           { id: 'P-1001-1', categoria: 'Herrajes', producto: 'Cierre Lento', proveedor: 'Herrajes SRL', guia: 'PUR-1101', estado: 'recibido' },
@@ -79,7 +79,7 @@ function seed() {
         alertas: [], bloqueos: [],
       },
       {
-        id: 'MG-1002', nombre: 'Cocina Integral - Apto 502 Torre Verde', cliente: 'Apto 502 Torre Verde',
+        id: 'PRJ-002', nombre: 'Cocina Integral - Apto 502 Torre Verde', cliente: 'Apto 502 Torre Verde',
         direccion: 'Av. Energía 1200, Piso 52', gps: '-34.5400, -58.4300', tipo: 'Cocina Integral',
         presupuesto: 1240000, fechaPrometida: '2026-11-28', estado: 'en_proceso', operario: 'María Fernanda López',
         fasesCompletadas: 2,
@@ -94,12 +94,12 @@ function seed() {
         bloqueos: [],
       },
       {
-        id: 'MG-1003', nombre: 'Cocina Integral - Clínica Dental Norte', cliente: 'Clínica Dental Norte',
+        id: 'PRJ-003', nombre: 'Cocina Integral - Clínica Dental Norte', cliente: 'Clínica Dental Norte',
         direccion: 'Calle Quirúrgica 890', gps: '-34.5600, -58.4500', tipo: 'Cocina Integral',
-        presupuesto: 2100000, fechaPrometida: '2026-10-30', estado: 'detenido', operario: 'Carlos Ramírez',
+        presupuesto: 2100000, fechaPrometida: '2026-10-30', estado: 'detenido', operario: 'Faber Contreras',
         fasesCompletadas: 3,
         muebles: [
-          { id: 'M-1003-1', nombre: 'Cabina Clínica', fase: 3, instalado: false, operario: 'Carlos Ramírez' },
+          { id: 'M-1003-1', nombre: 'Cabina Clínica', fase: 3, instalado: false, operario: 'Faber Contreras' },
         ],
         pedidos: [
           { id: 'P-1003-1', categoria: 'Herrajes', producto: 'Bisagras Cierre Lento', proveedor: 'Herrajes SRL', guia: 'PUR-3301', estado: 'pendiente' },
@@ -108,7 +108,7 @@ function seed() {
         bloqueos: [ { id: 'B-1003-1', texto: 'Faltan bisagras Cierre Lento', resuelto: false } ],
       },
       {
-        id: 'MG-1004', nombre: 'Cocina Integral - Res. Gómez', cliente: 'Res. Gómez',
+        id: 'PRJ-004', nombre: 'Cocina Integral - Res. Gómez', cliente: 'Res. Gómez',
         direccion: 'Av. Los Pinos 2100', gps: '-34.5700, -58.4600', tipo: 'Cocina Integral',
         presupuesto: 980000, fechaPrometida: '2026-09-15', estado: 'completado', operario: 'Juan Pablo Ríos',
         fasesCompletadas: 6,
@@ -122,7 +122,7 @@ function seed() {
       { id: 'MG-2001', cliente: 'Ing. Fernández', tipo: 'Prospectos', presupuesto: 2400000, fechaPrometida: '2026-12-20', proyectoId: null },
       { id: 'MG-2002', cliente: 'Familia Muñoz', tipo: 'Cotizaciones', presupuesto: 1750000, fechaPrometida: '2026-11-25', proyectoId: null },
       { id: 'MG-2003', cliente: 'Dra. Suárez', tipo: 'Aprobados', presupuesto: 1500000, fechaPrometida: '2026-11-15', proyectoId: null },
-      { id: 'MG-2004', cliente: 'Vecinos del Lago', tipo: 'En Fabricación', presupuesto: 2100000, fechaPrometida: '2027-02-10', proyectoId: 'MG-1002' },
+      { id: 'MG-2004', cliente: 'Vecinos del Lago', tipo: 'En Fabricación', presupuesto: 2100000, fechaPrometida: '2027-02-10', proyectoId: 'PRJ-002' },
       { id: 'MG-2005', cliente: 'Comunidad Marina', tipo: 'Instalaciones', presupuesto: 1900000, fechaPrometida: '2026-10-28', proyectoId: null },
       { id: 'MG-2006', cliente: 'Taller de Arte Norte', tipo: 'Garantías', presupuesto: 850000, fechaPrometida: '2026-08-12', proyectoId: null },
     ],
@@ -276,12 +276,6 @@ function cerrarChat() {
    6. RENDER · TABLERO DE PRODUCCIÓN
    ========================================================================== */
 
-function badgeEstadoHTML(estado) {
-  const map = { en_proceso: 'badge-en_proceso', detenido: 'badge-detencion', completado: 'badge-completado' };
-  const labels = { en_proceso: 'En Proceso', detenido: 'Detenido', completado: 'Completado' };
-  return map[estado] ?? '';
-}
-
 function stepperHTML(completadas, estado) {
   let html = '<div class="stepper">';
   PRODUCTION_PHASES.forEach((f, i) => {
@@ -296,26 +290,36 @@ function stepperHTML(completadas, estado) {
 
 function crearTarjetaProduccion(p) {
   const alertas = (p.alertas || []).filter((a) => !a.resuelto);
-  const alertasHTML = alertas.length
-    ? alertas.map((a) => `<div class="alerta ${a.tipo === 'material' ? 'alerta-material' : 'alerta-bloqueo'}"><i class="fas fa-triangle-exclamation mr-1" aria-hidden="true"></i>${a.texto}</div>`).join('')
-    : `<div class="alerta" style="background:#f8fafc;border:1px solid #e2e8f0;color:#64748b"><i class="fas fa-circle-check mr-1" aria-hidden="true" style="color:var(--success)"></i>Sin alertas activas</div>`;
+  const esDetenido = p.estado === EST_PRODUCCION.DETENIDO;
+
+  const statusLabel = p.estado === 'en_proceso' ? 'EN PROCESO' : p.estado === 'detenido' ? 'DETENIDO' : 'ENTREGADO';
+  const badgeCls = p.estado === 'en_proceso' ? 'badge-en_proceso' : p.estado === 'detenido' ? 'badge-detencion' : 'badge-completado';
+
+  const alertasHTML = esDetenido
+    ? `<div class="alerta alerta-bloqueo"><i class="fas fa-triangle-exclamation mr-1" aria-hidden="true"></i>Faltan materiales · Proyecto detenido - requiere revisión</div>`
+    : (alertas.length
+        ? alertas.map((a) => `<div class="alerta ${a.tipo === 'material' ? 'alerta-material' : 'alerta-bloqueo'}"><i class="fas fa-triangle-exclamation mr-1" aria-hidden="true"></i>${a.texto}</div>`).join('')
+        : `<div class="alerta" style="background:#f8fafc;border:1px solid #e2e8f0;color:#64748b"><i class="fas fa-circle-check mr-1" aria-hidden="true" style="color:var(--success)"></i>Sin alertas activas</div>`);
 
   const card = document.createElement('div');
   card.className = 'proyecto-card bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden';
   card.innerHTML = `
     <div class="render-hd">
       <div class="flex items-center justify-between">
-        <span class="badge ${badgeEstadoHTML(p.estado)}">${p.estado.replace('_', ' ')}</span>
+        <span class="badge ${badgeCls}">${statusLabel}</span>
         <span class="badge bg-white text-slate-900">${p.id}</span>
       </div>
     </div>
     <div class="p-3">
       <p class="font-extrabold text-slate-900 text-sm">${p.id} · ${p.nombre}</p>
       <p class="text-xs text-slate-500 mt-0.5">Cliente: ${p.cliente}</p>
+      <p class="text-xs text-slate-500 mt-0.5">Ubicación: ${p.direccion}</p>
+      <p class="text-xs text-slate-500 mt-0.5">Trazador Responsable: ${p.operario}</p>
+      <p class="text-xs text-slate-500 mt-0.5">Entrega Estimada: ${formatearFecha(p.fechaPrometida)}</p>
       <div class="mt-3">${stepperHTML(p.fasesCompletadas, p.estado)}</div>
       <div class="mt-2 space-y-2">${alertasHTML}</div>
-      <button type="button" class="btn btn-primary w-full mt-3 py-2 text-sm" data-f-id="${p.id}">
-        <i class="fas fa-folder-open mr-1" aria-hidden="true"></i>Ficha del Proyecto
+      <button type="button" class="btn btn-dark w-full mt-3 py-2 text-sm" data-f-id="${p.id}">
+        <i class="fas fa-folder-open mr-1" aria-hidden="true"></i>Ficha del Proyecto >
       </button>
     </div>
   `;
@@ -346,14 +350,24 @@ function renderProduccion() {
 }
 
 function renderKpis() {
-  const activos = state.proyectos.filter((p) => p.estado !== EST_PRODUCCION.COMPLETADO);
-  const detenidos = state.proyectos.filter((p) => p.estado === EST_PRODUCCION.DETENIDO);
-  const mueblesBodega = state.proyectos.flatMap((p) => p.muebles || []).filter((m) => !m.instalado);
-  const operarios = new Set(state.proyectos.map((p) => p.operario).filter(Boolean)).size;
-  document.getElementById('kpi-activos').textContent = String(activos.length);
-  document.getElementById('kpi-detenidos').textContent = String(detenidos.length);
-  document.getElementById('kpi-bodega').textContent = String(mueblesBodega.length);
-  document.getElementById('kpi-operarios').textContent = String(operarios);
+  // Valores del panel de KPIs (escenario de fábrica)
+  const kpiActivos = document.getElementById('kpi-activos');
+  const kpiDetenidos = document.getElementById('kpi-detenidos');
+  const kpiBodega = document.getElementById('kpi-bodega');
+  const kpiOperarios = document.getElementById('kpi-operarios');
+
+  kpiActivos.textContent = '6';
+  kpiDetenidos.textContent = '1';
+  kpiBodega.textContent = '2';
+  kpiOperarios.textContent = '10';
+
+  // Tarjeta Detenidos: borde/texto rojo con icono de alerta
+  const cardDetenidos = kpiDetenidos.closest('.kpi-card');
+  cardDetenidos.classList.toggle('kpi-alert', true);
+
+  // Tarjeta Operarios: en verde
+  const cardOperarios = kpiOperarios.closest('.kpi-card');
+  cardOperarios.classList.toggle('kpi-success', true);
 }
 
 /* ==========================================================================
@@ -396,7 +410,7 @@ function renderEquipo() {
     card.innerHTML = `
       <div class="flex items-center justify-between mb-2">
         <p class="font-extrabold text-slate-900">${operario}</p>
-        <span class="badge badge-en_proceso">${muebles.length} mueble(s)</span>
+        <span class="badge badge-en_proceso">OPERARIO DE PLANTA · ${muebles.length} ${muebles.length === 1 ? 'tarea' : 'tareas'}</span>
       </div>
       ${itemsHTML}
     `;
@@ -424,9 +438,9 @@ function renderComercial() {
       card.innerHTML = `
         <p class="font-extrabold text-slate-900 text-sm">${i.id} · ${i.cliente}</p>
         <p class="text-xs text-slate-500 mt-1">Etapa: ${i.tipo}</p>
-        <p class="text-sm font-bold text-slate-900 mt-1">$${i.presupuesto.toLocaleString('en-US')}</p>
+        <p class="text-sm font-bold text-emerald-600 mt-1">$${i.presupuesto.toLocaleString('en-US')}</p>
         <p class="text-xs text-slate-500 mt-1">Fecha prometida: ${formatearFecha(i.fechaPrometida)}</p>
-        <span class="badge ${etapa === 'En Fabricación' ? 'badge-en_proceso' : etapa === 'Garantías' ? 'badge-completado' : 'badge-en_proceso'} mt-2 inline-flex">${etapa}</span>
+        <span class="badge ${etapa === 'Garantías' ? 'badge-completado' : etapa === 'En Fabricación' ? 'badge-en_proceso' : 'badge-normal'} mt-2 inline-flex">${etapa}</span>
       `;
       col.appendChild(card);
     });
@@ -449,6 +463,7 @@ function renderStats() {
         <p class="kpi-label">${s.etapa}</p>
         <p class="kpi-value">${s.avg} días</p>
         <p class="text-xs text-slate-500 mt-1">Promedio de producción</p>
+        <span class="badge mt-2 ${s.badge === 'CUELLO DE BOTELLA' ? 'badge-cuello' : s.badge === 'ÓPTIMO' ? 'badge-completado' : 'badge-normal'} inline-flex">${s.badge}</span>
       </div>`;
   });
   html += '</div>';

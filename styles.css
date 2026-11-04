@@ -64,6 +64,8 @@
 /* ============================================================
    TARJETAS KPI
    ============================================================ */
+.kpi-card.kpi-alert { border-color: #fecaca; background: #fef2f2; }
+.kpi-card.kpi-success { border-color: #a7f3d0; background: #ecfdf5; }
 .kpi-card { border-radius: var(--radius); }
 .kpi-value { font-size: 2rem; font-weight: 800; color: var(--text); line-height: 1.1; }
 .kpi-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
@@ -168,5 +170,10 @@
    UTILIDADES
    ============================================================ */
 .tab-panel { padding-bottom: 2rem; }
+
+.btn-dark { background: #0f172a; color: #ffffff; }
+.btn-dark:hover { background: #1e293b; }
+
+.f-chip { border-radius: 999px; display: inline-flex; align-items: center; }
 .f-subtab { padding: 0.65rem 1rem; font-size: 0.8rem; font-weight: 700; color: var(--muted); border-bottom: 2px solid transparent; background: transparent; border-top: 0; border-left: 0; border-right: 0; cursor: pointer; white-space: nowrap; }
 .f-subtab.active { color: var(--brand); border-bottom-color: var(--brand); background: var(--surface); }

@@ -20,22 +20,21 @@
   <header id="mg-header" class="fixed top-0 inset-x-0 z-50 bg-white border-b border-slate-200 shadow-sm">
     <div class="max-w-7xl mx-auto px-3 sm:px-5 h-16 flex items-center gap-2 sm:gap-3">
       <!-- Isotipo -->
-      <div class="mg-isotipo w-10 h-10 rounded-xl bg-red-600 text-white font-extrabold flex items-center justify-center text-lg shadow-sm shrink-0" aria-label="MG">MG</div>
+      <div class="mg-isotipo w-10 h-10 rounded-full bg-red-600 text-white font-extrabold flex items-center justify-center text-lg shadow-sm shrink-0" aria-label="MG">MG</div>
       <div class="leading-tight shrink-0">
-        <p class="text-sm font-extrabold tracking-wide text-slate-900">MODUGAL</p>
-        <p class="text-[10px] font-semibold uppercase tracking-widest text-slate-500">espacios renovados</p>
+        <p class="text-sm font-extrabold tracking-wide text-slate-900">MODUGAL ESPACIOS RENOVADOS</p>
       </div>
 
       <!-- Buscador global -->
       <div class="mg-search flex-1 min-w-0 relative ml-2">
         <i class="fas fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
         <input id="mg-search-input" type="search" placeholder="Buscar proyecto, cliente o mueble..." autocomplete="off"
-          class="w-full bg-slate-100 border border-slate-200 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600" />
+          class="w-full bg-slate-100 border border-slate-200 rounded-full pl-9 pr-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600" />
       </div>
 
       <!-- Selector de rol dinámico -->
       <div id="mg-role-selector" class="flex bg-slate-100 rounded-lg p-1 border border-slate-200 shrink-0" role="tablist" aria-label="Rol del usuario">
-        <button type="button" class="mg-role-btn active px-2.5 py-1.5 rounded-md text-xs font-bold transition-colors" data-rol="gerencia">Gerencia</button>
+        <button type="button" class="mg-role-btn active px-2.5 py-1.5 rounded-md text-xs font-bold transition-colors" data-rol="gerencia">Gerencia (Full)</button>
         <button type="button" class="mg-role-btn px-2.5 py-1.5 rounded-md text-xs font-bold transition-colors text-slate-500" data-rol="arquitecto">Arquitecto</button>
         <button type="button" class="mg-role-btn px-2.5 py-1.5 rounded-md text-xs font-bold transition-colors text-slate-500" data-rol="carpintero">Carpintero</button>
       </div>
@@ -54,16 +53,16 @@
     <div class="max-w-7xl mx-auto px-3 sm:px-5">
       <div class="flex overflow-x-auto scrollbar-hide -mx-3 sm:mx-0">
         <button type="button" class="mg-tab active px-4 py-3 text-sm font-bold whitespace-nowrap" data-tab="produccion">
-          <i class="fas fa-industry mr-2" aria-hidden="true"></i>Producción
+          <i class="fas fa-th mr-2" aria-hidden="true"></i>Producción
         </button>
         <button type="button" class="mg-tab px-4 py-3 text-sm font-bold whitespace-nowrap" data-tab="equipo">
           <i class="fas fa-users mr-2" aria-hidden="true"></i>Equipo
         </button>
         <button type="button" class="mg-tab px-4 py-3 text-sm font-bold whitespace-nowrap" data-tab="comercial">
-          <i class="fas fa-chart-line mr-2" aria-hidden="true"></i>Comercial
+          <i class="fas fa-briefcase mr-2" aria-hidden="true"></i>Comercial
         </button>
         <button type="button" class="mg-tab px-4 py-3 text-sm font-bold whitespace-nowrap" data-tab="stats">
-          <i class="fas fa-chart-bar mr-2" aria-hidden="true"></i>Estadísticas
+          <i class="fas fa-chart-line mr-2" aria-hidden="true"></i>Estadísticas
         </button>
         <button type="button" class="mg-tab px-4 py-3 text-sm font-bold whitespace-nowrap" data-tab="pedidos">
           <i class="fas fa-shopping-cart mr-2" aria-hidden="true"></i>Pedidos
@@ -90,25 +89,26 @@
           <p class="kpi-label">Proyectos Activos</p>
           <p class="kpi-value" id="kpi-activos">0</p>
         </div>
-        <div class="kpi-card bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-          <p class="kpi-label">Detenidos</p>
+        <div class="kpi-card bg-white border border-slate-200 rounded-xl shadow-sm p-4 kpi-alert">
+          <p class="kpi-label">Detenidos por Material</p>
           <p class="kpi-value" id="kpi-detenidos">0</p>
+          <i class="fas fa-triangle-exclamation text-red-600 mt-2" aria-hidden="true"></i>
         </div>
         <div class="kpi-card bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-          <p class="kpi-label">Muebles en Bodega</p>
+          <p class="kpi-label">Bodegas de Stock</p>
           <p class="kpi-value" id="kpi-bodega">0</p>
         </div>
-        <div class="kpi-card bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-          <p class="kpi-label">Operarios en Planta</p>
+        <div class="kpi-card bg-white border border-slate-200 rounded-xl shadow-sm p-4 kpi-success">
+          <p class="kpi-label">Carpinteros en Campo</p>
           <p class="kpi-value" id="kpi-operarios">0</p>
         </div>
       </div>
 
       <!-- Filtros de estado -->
-      <div id="filtros-produccion" class="flex gap-2 overflow-x-auto pb-1 mb-4 scrollbar-hide">
+      <div id="filtros-produccion" class="flex gap-2 justify-end overflow-x-auto pb-1 mb-4 scrollbar-hide">
         <button type="button" class="f-chip active bg-red-600 text-white border-red-600" data-filtro="todos">Todos</button>
-        <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="en_proceso">En Proceso</button>
         <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="detenido">Detenido</button>
+        <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="en_proceso">En proceso</button>
         <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="completado">Completado</button>
       </div>
 
@@ -127,7 +127,7 @@
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <h2 class="text-lg font-extrabold text-slate-900">Seguimiento Comercial</h2>
         <div id="comercial-quarter" class="flex gap-2">
-          <button type="button" class="f-chip active bg-red-600 text-white border-red-600" data-quarter="Q4-2026">Q4 - 2026</button>
+          <button type="button" class="f-chip active bg-red-600 text-white border-red-600" data-quarter="Q4-2026">Q4 - 2026 (Oct - Dic)</button>
           <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-quarter="Q1-2027">Q1 - 2027</button>
         </div>
       </div>
