@@ -1,23 +1,22 @@
 /* ==========================================================================
    MODUGAL - espacios renovados · app.js
    --------------------------------------------------------------------------
-   Plataforma SaaS B2B de fabricación de cocinas integrales y mobiliario
-   de alta gama.
+   Plataforma B2B para producción de cocinas integrales y mobiliario de alta
+   gama. Estado global reactivo persistido en localStorage, preparado para
+   migrar a Supabase.
 
    Módulos:
-     1. Estado global + datos mock + persistencia (localStorage)
-     2. Autenticación (login / registro / recuperación) por correo + cargo
-     3. Stepper de 6 fases (PRODUCTION_PHASES)
-     4. Tablero de Producción (KPIs + tarjetas + filtros)
-     5. Equipo & Asignaciones (con tareas asignables)
-     6. Seguimiento Comercial (Kanban + trimestre + validación de prospectos)
-     7. Estadísticas & Rendimiento
-     8. Registro de Pedidos / Compras
-     9. Modal Ficha de Proyecto (5 subpestañas + docs + completitud)
-    10. Tabla General de Proyectos
-    11. Proyectos Trimestrales (año + trimestre + ciudad)
-    12. Asistente IA / Bot de WhatsApp
-    13. Inicialización
+     1. Constantes, estado global y datos semilla
+     2. Persistencia, migración y utilidades
+     3. Autenticación, roles y matriz de permisos
+     4. Pendientes unificados y fases bidireccionales
+     5. Tablero de Producción y módulo Proyectos
+     6. Equipo & Asignaciones (editar, reasignar, eliminar, fase por mueble)
+     7. Seguimiento Comercial (drag & drop, ficha comercial, aprobar/rechazar)
+     8. Centro de Control Logístico
+     9. Tabla General y Estadísticas
+    10. Ficha de Proyecto (edición, imagen, documentos)
+    11. Registro de compras, asistente IA y eventos
    ========================================================================== */
 
 'use strict';
@@ -39,12 +38,37 @@ const STAGES_STATS = [
   { phase: 'Instalación Final', days: '4.1 Días', label: 'Normal', color: 'border-slate-200 bg-slate-50 text-slate-800' },
 ];
 
-const ROLES = ['arquitecto', 'operativo', 'administrativo'];
+const ROLE_LABELS = {
+  administrativo: 'Gerencia',
+  operativo: 'Logística / Operativo',
+  secretaria: 'Secretaría',
+  arquitecto: 'Arquitecto',
+};
+
+const TIPO_PENDIENTE_LABEL = {
+  material: 'Material',
+  requerimiento: 'Requerimiento',
+  bloqueo: 'Bloqueo',
+  otro: 'Otro',
+};
+
 const STORAGE_KEY = 'modugal_estado_v1';
 const ROL_KEY = 'modugal_rol';
 const USUARIOS_KEY = 'modugal_usuarios';
 const SESION_KEY = 'modugal_sesion';
 const TEMA_KEY = 'modugal_tema';
+
+const DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1556910103-1c02745a872e?auto=format&fit=crop&w=1200&q=80';
+
+const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const MESES_TITULO = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+const DEMO_USERS = [
+  { email: 'gerencia@modugal.com', password: 'demo1234', cargo: 'administrativo', nombre: 'Gerencia General' },
+  { email: 'arquitecto@modugal.com', password: 'demo1234', cargo: 'arquitecto', nombre: 'Felipe Mora' },
+  { email: 'operativo@modugal.com', password: 'demo1234', cargo: 'operativo', nombre: 'Wilyer Operaciones' },
+  { email: 'secretaria@modugal.com', password: 'demo1234', cargo: 'secretaria', nombre: 'Secretaría Comercial' },
+];
 
 /* ==========================================================================
    2. ESTADO GLOBAL
@@ -53,24 +77,35 @@ const TEMA_KEY = 'modugal_tema';
 const state = {
   proyectos: [],
   comercial: [],
+  tareas: {},
   rol: 'administrativo',
   tab: 'produccion',
   fProduccion: 'todos',
   search: '',
-  quarter: 'Q4 - 2026',
+  year: 'Todos',
+  quarter: 'Todos los Trimestres',
+  city: 'Todos',
+  comercialTrimestre: 'Todos los Trimestres',
+  proyectosEstado: 'activos',
+  proyectosYear: 'Todos',
+  proyectosQuarter: 'Todos los Trimestres',
+  proyectosCity: 'Todos',
   fichaId: null,
   fichaSub: 'resumen',
-  newOrder: { projectId: '', category: '', item: '', supplier: '', guide: '', expectedDate: '' },
+  proyectoModalMode: 'crear',
+  proyectoModalId: null,
+  proyectoModalFocus: null,
+  tareaCtx: null,
+  pendienteCtx: null,
+  comercialCtx: null,
+  rechazoId: null,
+  newOrderProjectId: null,
   tema: localStorage.getItem(TEMA_KEY) || 'claro',
   user: null,
-  year: '2026',
-  quarter: 'Q4 - 2026',
-  city: 'Todos',
-  tareas: {},
 };
 
 /* ==========================================================================
-   3. DATOS MOCK (PROYECTOS + PROSPECTOS COMERCIALES)
+   3. DATOS SEMILLA
    ========================================================================== */
 
 function seed() {
@@ -84,23 +119,27 @@ function seed() {
         neighborhood: 'Ruitoque Condominio',
         address: 'Calle de los Caracoles, Casa 14',
         phone: '+57 315 890 1234',
-        phase: 'Fabricación',
+        phase: 'Armado',
         manufacturingPhase: 'Armado',
         status: 'Detenido',
         commercialStage: 'En Fabricación',
         trimester: 'Q4 - 2026',
-        budget: 18500000,
-        alert: 'Falta Herrajes Blum y Mesón Quarztone',
+        commercialDetail: 'Martha Pinos: COCINA INTEGRAL - MUEBLE BAJO E ISLA + ALACENA Y MUEBLE ALTO + MUEBLE DE BAÑO PRINCIPAL. Acabado madera natural, herrajes Blum y mesón de cuarzo.',
         leadCarpenter: 'Edwin San Gil',
         logisticOperator: 'Wilyer',
         dateStart: '15 Oct 2026',
         dateExpected: '20 Nov 2026',
         image: 'https://images.unsplash.com/photo-1556910103-1c02745a872e?auto=format&fit=crop&w=1200&q=80',
         arquitecto: 'Felipe Mora',
+        pendientes: [
+          { id: 'pd-001-1', text: 'Falta herrajes Blum (correderas integradas)', tipo: 'material', prioridad: 'alta', createdAt: '2026-11-01' },
+          { id: 'pd-001-2', text: 'Falta mesón de cuarzo Quarztone', tipo: 'material', prioridad: 'alta', createdAt: '2026-11-02' },
+          { id: 'pd-001-3', text: 'Confirmar fecha de instalación con el cliente', tipo: 'requerimiento', prioridad: 'media', createdAt: '2026-11-03' },
+        ],
         muebles: [
-          { id: 'm1', name: 'Cocina - Mueble Bajo e Isla', carpenter: 'Edwin San Gil', status: 'Fabricación', manufacturingPhase: 'Armado' },
-          { id: 'm2', name: 'Cocina - Alacena y Mueble Alto', carpenter: 'Faber Contreras', status: 'Corte', manufacturingPhase: 'Recepción' },
-          { id: 'm3', name: 'Mueble de Baño Principal', carpenter: 'Carlos Martinez', status: 'Completado', manufacturingPhase: 'Despacho' },
+          { id: 'm1', name: 'Cocina - Mueble Bajo e Isla', carpenter: 'Edwin San Gil', status: 'Armado', manufacturingPhase: 'Armado' },
+          { id: 'm2', name: 'Cocina - Alacena y Mueble Alto', carpenter: 'Faber Contreras', status: 'Recepción', manufacturingPhase: 'Recepción' },
+          { id: 'm3', name: 'Mueble de Baño Principal', carpenter: 'Carlos Martinez', status: 'Presentación', manufacturingPhase: 'Presentación' },
         ],
         pedidos: [
           { id: 'p1', category: 'Herrajes', item: 'Sistema de correderas integradas Blum', supplier: 'Serviherrajes', guide: 'GUI-88912', expected: '05 Nov 2026', status: 'En tránsito', qc: 'Pendiente' },
@@ -110,6 +149,7 @@ function seed() {
         bloqueos: [
           { id: 'b1', reason: 'Retraso en importación de herrajes Blum por el proveedor', responsible: 'Serviherrajes', date: '01 Nov 2026', solved: false, action: 'Se contactó a proveedor secundario para préstamo de stock' },
         ],
+        archivos: [],
         dropboxFiles: {
           publicFiles: [
             { name: 'Render_Cocina_MarthaPinos_v3.jpg', type: 'image', size: '4.2 MB', date: '16 Oct 2026' },
@@ -125,32 +165,35 @@ function seed() {
       },
       {
         id: 'PRJ-002',
-        name: 'Edwin San Gil',
+        name: 'Familia San Gil',
         client: 'Familia San Gil',
         city: 'San Gil',
         neighborhood: 'Zona Centro',
         address: 'Carrera 9 #11-45',
         phone: '+57 318 456 7890',
-        phase: 'Trazos',
+        phase: 'Asignación',
         manufacturingPhase: 'Asignación',
         status: 'En proceso',
         commercialStage: 'En Fabricación',
         trimester: 'Q4 - 2026',
-        budget: 12000000,
-        alert: '',
+        commercialDetail: 'Familia San Gil: COCINA INTEGRAL LINEAL - MUEBLES BAJOS, ALACENA Y TORRE DE HORNOS. Madecor gris nube y mesón en cuarzo.',
         leadCarpenter: 'Faber Contreras',
         logisticOperator: 'Wilyer',
         dateStart: '25 Oct 2026',
         dateExpected: '10 Dec 2026',
         image: 'https://images.unsplash.com/photo-1556909212-d5b604d0c14d?auto=format&fit=crop&w=1200&q=80',
         arquitecto: 'Felipe Mora',
+        pendientes: [
+          { id: 'pd-002-1', text: 'Revisar planos de trazos y despieces', tipo: 'requerimiento', prioridad: 'baja', createdAt: '2026-10-27' },
+        ],
         muebles: [
-          { id: 'm4', name: 'Cocina Integral Lineal', carpenter: 'Faber Contreras', status: 'Trazos', manufacturingPhase: 'Asignación' },
+          { id: 'm4', name: 'Cocina Integral Lineal', carpenter: 'Faber Contreras', status: 'Asignación', manufacturingPhase: 'Asignación' },
         ],
         pedidos: [
           { id: 'p4', category: 'Madecor', item: 'Madecor Gris Nube 18mm', supplier: 'Districondor', guide: 'GUI-11029', expected: '08 Nov 2026', status: 'Bodega', qc: 'Aprobado' },
         ],
         bloqueos: [],
+        archivos: [],
         dropboxFiles: {
           publicFiles: [
             { name: 'Render_Cocina_SanGil.jpg', type: 'image', size: '3.8 MB', date: '26 Oct 2026' },
@@ -169,27 +212,30 @@ function seed() {
         neighborhood: 'Cabecera del Llano',
         address: 'Calle 48 #34-12, Apto 802',
         phone: '+57 300 123 4567',
-        phase: 'Despacho',
+        phase: 'Embalaje',
         manufacturingPhase: 'Embalaje',
         status: 'En proceso',
         commercialStage: 'En Fabricación',
         trimester: 'Q4 - 2026',
-        budget: 8200000,
-        alert: 'Coordinar flete especial',
+        commercialDetail: 'Silvia Carrara: MUEBLE DE TELEVISIÓN PARA SALA + JUEGO DE PUERTAS ENTAMBADAS (6 UNIDADES) + ESPEJOS BRONCE PARA BAÑOS.',
         leadCarpenter: 'Edwin San Gil',
         logisticOperator: 'Wilyer',
         dateStart: '01 Oct 2026',
         dateExpected: '08 Nov 2026',
         image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=1200&q=80',
         arquitecto: 'Felipe Mora',
+        pendientes: [
+          { id: 'pd-003-1', text: 'Coordinar flete especial para espejos y puertas', tipo: 'requerimiento', prioridad: 'media', createdAt: '2026-11-01' },
+        ],
         muebles: [
-          { id: 'm5', name: 'Mueble de Televisión Sala', carpenter: 'Edwin San Gil', status: 'Embalado', manufacturingPhase: 'Embalaje' },
+          { id: 'm5', name: 'Mueble de Televisión Sala', carpenter: 'Edwin San Gil', status: 'Embalaje', manufacturingPhase: 'Embalaje' },
           { id: 'm6', name: 'Juego de Puertas Entambadas (6 un)', carpenter: 'Carlos Martinez', status: 'Despacho', manufacturingPhase: 'Despacho' },
         ],
         pedidos: [
           { id: 'p5', category: 'Vidrios', item: 'Espejos bronce 4mm con bisel', supplier: 'Vidrios Santander', guide: 'GUI-77123', expected: '30 Oct 2026', status: 'Entregado', qc: 'Aprobado' },
         ],
         bloqueos: [],
+        archivos: [],
         dropboxFiles: {
           publicFiles: [
             { name: 'Diseño_Mobiliario_SilviaCarrara.pdf', type: 'pdf', size: '15.1 MB', date: '02 Oct 2026' },
@@ -207,24 +253,25 @@ function seed() {
         neighborhood: 'Ruitoque Country Club',
         address: 'Condominio El Roble, Lote 45',
         phone: '+57 316 777 8899',
-        phase: 'Instalación',
+        phase: 'Despacho',
         manufacturingPhase: 'Despacho',
         status: 'Completado',
         commercialStage: 'Instalaciones',
         trimester: 'Q3 - 2026',
-        budget: 24000000,
-        alert: '',
+        commercialDetail: 'Claudia Ruitoque: COCINA INTEGRAL PREMIUM + TORRE DE CALORES. Proyecto instalado y entregado; en periodo de garantía.',
         leadCarpenter: 'Carlos Martinez',
         logisticOperator: 'Wilyer',
         dateStart: '10 Sep 2026',
         dateExpected: '30 Oct 2026',
         image: 'https://images.unsplash.com/photo-1556912172-45b73e51f847?auto=format&fit=crop&w=1200&q=80',
         arquitecto: 'Felipe Mora',
+        pendientes: [],
         muebles: [
-          { id: 'm7', name: 'Cocina Integral Premium + Torre de Calores', carpenter: 'Carlos Martinez', status: 'Completado', manufacturingPhase: 'Despacho' },
+          { id: 'm7', name: 'Cocina Integral Premium + Torre de Calores', carpenter: 'Carlos Martinez', status: 'Despacho', manufacturingPhase: 'Despacho' },
         ],
         pedidos: [],
         bloqueos: [],
+        archivos: [],
         dropboxFiles: {
           publicFiles: [
             { name: 'Fotos_Finales_Instalacion.pdf', type: 'pdf', size: '22.4 MB', date: '30 Oct 2026' },
@@ -234,12 +281,229 @@ function seed() {
           ],
         },
       },
+      {
+        id: 'PRJ-005',
+        name: 'Andrés Mejía',
+        client: 'Andrés Mejía',
+        city: 'Bucaramanga',
+        neighborhood: 'Cañaveral',
+        address: 'Carrera 33 #56-20, Casa 7',
+        phone: '+57 310 442 1188',
+        phase: 'Embalaje',
+        manufacturingPhase: 'Embalaje',
+        status: 'En proceso',
+        commercialStage: 'Instalaciones',
+        trimester: 'Q4 - 2026',
+        commercialDetail: 'Andrés Mejía: CLÓSET VESTIER - HABITACIÓN PRINCIPAL + MUEBLE DE BAÑO MÁSTER. Entrega programada para hoy.',
+        leadCarpenter: 'Carlos Martinez',
+        logisticOperator: 'Wilyer',
+        dateStart: formatFechaLarga(new Date()),
+        dateExpected: formatFechaLarga(new Date()),
+        image: 'https://images.unsplash.com/photo-1558997519-83ea9252edf8?auto=format&fit=crop&w=1200&q=80',
+        arquitecto: 'Felipe Mora',
+        pendientes: [
+          { id: 'pd-005-1', text: 'Confirmar disponibilidad de parqueadero para el despacho', tipo: 'requerimiento', prioridad: 'alta', createdAt: hoyISO() },
+        ],
+        muebles: [
+          { id: 'm8', name: 'Clóset Vestier Habitación Principal', carpenter: 'Carlos Martinez', status: 'Embalaje', manufacturingPhase: 'Embalaje' },
+        ],
+        pedidos: [],
+        bloqueos: [],
+        archivos: [],
+        dropboxFiles: {
+          publicFiles: [
+            { name: 'Render_Closet_AndresMejia.jpg', type: 'image', size: '5.1 MB', date: hoyISO() },
+          ],
+          privateFiles: [],
+        },
+      },
     ],
     comercial: [
-      { id: 'COM-005', cliente: 'Dr. Fernando Lopez', etapa: 'Cotizaciones', trimester: 'Q4 - 2026', budget: 35000000, status: 'En proceso', dateExpected: 'Por definir', proyectoId: null, alert: 'Esperando aprobación de diseño 3D' },
-      { id: 'COM-006', cliente: 'Camila Reyes', etapa: 'Prospectos', trimester: 'Q1 - 2027', budget: 14500000, status: 'En proceso', dateExpected: 'Por definir', proyectoId: null, alert: 'Visita técnica programada para el viernes' },
+      {
+        id: 'COM-005',
+        cliente: 'Dr. Fernando López',
+        etapa: 'Cotizaciones',
+        trimester: 'Q4 - 2026',
+        status: 'En proceso',
+        dateExpected: 'Por definir',
+        proyectoId: null,
+        alert: 'Esperando aprobación de diseño 3D',
+        detalle: 'Dr. Fernando López: CLÓSET - HABITACIÓN PRINCIPAL + MUEBLE BAÑO MÁSTER. Acabado nogal, herrajes Blum e iluminación LED interior.',
+        rechazado: false,
+        motivo: '',
+      },
+      {
+        id: 'COM-006',
+        cliente: 'Camila Reyes',
+        etapa: 'Prospectos',
+        trimester: 'Q1 - 2027',
+        status: 'En proceso',
+        dateExpected: 'Por definir',
+        proyectoId: null,
+        alert: 'Visita técnica programada para el viernes',
+        detalle: 'Camila Reyes: COCINA INTEGRAL - ISLA CENTRAL + DESPENSERO + MUEBLE DE LAVANDERÍA. Diseño preliminar 3D en revisión con la cliente.',
+        rechazado: false,
+        motivo: '',
+      },
     ],
+    tareas: {},
   };
+}
+/* ==========================================================================
+   4. PERSISTENCIA, MIGRACIÓN Y UTILIDADES
+   ========================================================================== */
+
+function hoyISO() {
+  const d = new Date();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+function formatFechaLarga(date) {
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return 'Por definir';
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${day} ${MESES_TITULO[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function parseFecha(str) {
+  if (!str) return null;
+  const value = String(str).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(value)) {
+    const d = new Date(`${value.slice(0, 10)}T00:00:00`);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  const m = value.match(/(\d{1,2})\s+([A-Za-zÁÉÍÓÚáéíóú]+)\s+(\d{4})/);
+  if (!m) return null;
+  const mes = MESES_CORTOS.indexOf(m[2].toLowerCase().slice(0, 3));
+  if (mes < 0) return null;
+  const d = new Date(parseInt(m[3], 10), mes, parseInt(m[1], 10));
+  return isNaN(d.getTime()) ? null : d;
+}
+
+function esHoy(fecha) {
+  const d = parseFecha(fecha);
+  if (!d) return false;
+  const hoy = new Date();
+  return d.getFullYear() === hoy.getFullYear() && d.getMonth() === hoy.getMonth() && d.getDate() === hoy.getDate();
+}
+
+function esFechaVencida(fecha) {
+  const d = parseFecha(fecha);
+  if (!d) return false;
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  return d.getTime() < hoy.getTime();
+}
+
+function esc(str) {
+  const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+  return String(str ?? '').replace(/[&<>"']/g, (c) => map[c]);
+}
+
+function uid(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function labelCargo(rol) {
+  return ROLE_LABELS[rol] || 'Gerencia';
+}
+
+function labelPendiente(tipo) {
+  return TIPO_PENDIENTE_LABEL[tipo] || 'Otro';
+}
+
+function normalizarPendiente(x, index) {
+  if (typeof x === 'string') {
+    return { id: `pd-mig-${index}`, text: x, tipo: 'material', prioridad: 'media', createdAt: hoyISO() };
+  }
+  const item = x && typeof x === 'object' ? x : {};
+  return {
+    id: item.id || `pd-mig-${index}`,
+    text: String(item.text || item.descripcion || 'Pendiente sin descripción'),
+    tipo: TIPO_PENDIENTE_LABEL[item.tipo] ? item.tipo : 'material',
+    prioridad: ['alta', 'media', 'baja'].includes(item.prioridad) ? item.prioridad : 'media',
+    createdAt: item.createdAt || hoyISO(),
+  };
+}
+
+function normalizarMueble(m, index) {
+  const item = m || {};
+  return {
+    id: item.id || `m-mig-${index}`,
+    name: item.name || `Mueble ${index + 1}`,
+    carpenter: item.carpenter || '',
+    status: item.status || item.manufacturingPhase || 'Recepción',
+    manufacturingPhase: PRODUCTION_PHASES.includes(item.manufacturingPhase) ? item.manufacturingPhase : 'Recepción',
+  };
+}
+
+function normalizarProyecto(p) {
+  if (!p || typeof p !== 'object') return null;
+  p.id = p.id || generarIdProyecto();
+  p.name = p.name || p.client || p.id;
+  p.client = p.client || p.name;
+  p.city = p.city || 'Por definir';
+  p.neighborhood = p.neighborhood || '';
+  p.address = p.address || 'Por definir';
+  p.phone = p.phone || '';
+  p.manufacturingPhase = PRODUCTION_PHASES.includes(p.manufacturingPhase) ? p.manufacturingPhase : 'Recepción';
+  p.phase = p.manufacturingPhase;
+  p.status = [EST_PRODUCCION.EN_PROCESO, EST_PRODUCCION.DETENIDO, EST_PRODUCCION.COMPLETADO].includes(p.status) ? p.status : EST_PRODUCCION.EN_PROCESO;
+  p.commercialStage = ETAPAS_COMERCIAL.includes(p.commercialStage) ? p.commercialStage : (p.status === EST_PRODUCCION.COMPLETADO ? 'Garantías' : 'En Fabricación');
+  p.trimester = p.trimester || 'Q4 - 2026';
+  p.image = p.image || DEFAULT_IMAGE;
+  p.arquitecto = p.arquitecto || 'Felipe Mora';
+  p.leadCarpenter = p.leadCarpenter || '';
+  p.logisticOperator = p.logisticOperator || 'Wilyer';
+  p.dateStart = p.dateStart || 'Por definir';
+  p.dateExpected = p.dateExpected || 'Por definir';
+  p.muebles = Array.isArray(p.muebles) ? p.muebles.map(normalizarMueble) : [];
+  p.pedidos = Array.isArray(p.pedidos) ? p.pedidos : [];
+  p.bloqueos = Array.isArray(p.bloqueos) ? p.bloqueos : [];
+  p.archivos = Array.isArray(p.archivos) ? p.archivos : [];
+  p.dropboxFiles = {
+    publicFiles: Array.isArray(p.dropboxFiles?.publicFiles) ? p.dropboxFiles.publicFiles : [],
+    privateFiles: Array.isArray(p.dropboxFiles?.privateFiles) ? p.dropboxFiles.privateFiles : [],
+  };
+
+  if (!Array.isArray(p.pendientes)) {
+    const derivados = [];
+    const vistos = new Set();
+    const push = (text, tipo, prioridad) => {
+      const limpio = String(text || '').trim();
+      if (!limpio || vistos.has(limpio)) return;
+      vistos.add(limpio);
+      derivados.push({ id: `pd-mig-${p.id}-${derivados.length}`, text: limpio, tipo, prioridad, createdAt: hoyISO() });
+    };
+    if (p.alert) push(p.alert, 'material', 'alta');
+    (p.bloqueos || []).forEach((b) => { if (!b.solved) push(b.reason, 'bloqueo', 'alta'); });
+    (p.pedidos || []).forEach((pedido) => {
+      if (!['Bodega', 'Entregado'].includes(pedido.status)) push(`${pedido.item} (${pedido.supplier || 'proveedor'})`, 'material', 'media');
+    });
+    p.pendientes = derivados;
+  }
+  p.pendientes = p.pendientes.map(normalizarPendiente);
+  p.alert = p.pendientes.length ? p.pendientes[0].text : '';
+  p.commercialDetail = p.commercialDetail || detalleProyecto(p);
+  return p;
+}
+
+function normalizarComercial(c) {
+  if (!c || typeof c !== 'object') return null;
+  c.id = c.id || generarIdComercial();
+  c.cliente = c.cliente || 'Cliente sin nombre';
+  c.etapa = ETAPAS_COMERCIAL.includes(c.etapa) ? c.etapa : 'Prospectos';
+  c.trimester = c.trimester || 'Q4 - 2026';
+  c.status = c.status || EST_PRODUCCION.EN_PROCESO;
+  c.dateExpected = c.dateExpected || 'Por definir';
+  c.proyectoId = c.proyectoId || null;
+  c.alert = c.alert || '';
+  c.detalle = c.detalle || `${c.cliente}: Pedido por definir.`;
+  c.rechazado = Boolean(c.rechazado);
+  c.motivo = c.motivo || '';
+  return c;
 }
 
 function cargarEstado() {
@@ -248,39 +512,136 @@ function cargarEstado() {
     if (raw) {
       const data = JSON.parse(raw);
       if (data && Array.isArray(data.proyectos) && Array.isArray(data.comercial)) {
-        return { proyectos: data.proyectos, comercial: data.comercial };
+        return {
+          proyectos: data.proyectos.map(normalizarProyecto).filter(Boolean),
+          comercial: data.comercial.map(normalizarComercial).filter(Boolean),
+          tareas: data.tareas && typeof data.tareas === 'object' ? data.tareas : {},
+        };
       }
     }
   } catch (e) {
-    console.warn('[MODUGAL] Error leyendo localStorage, se usa datos semilla.', e);
+    console.warn('[MODUGAL] Error leyendo localStorage, se usan datos semilla.', e);
   }
-  const s = seed();
-  return { proyectos: s.proyectos, comercial: s.comercial };
+  const base = seed();
+  return {
+    proyectos: base.proyectos.map(normalizarProyecto),
+    comercial: base.comercial.map(normalizarComercial),
+    tareas: base.tareas,
+  };
 }
 
 function guardarEstado() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ proyectos: state.proyectos, comercial: state.comercial }));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+      proyectos: state.proyectos,
+      comercial: state.comercial,
+      tareas: state.tareas,
+      savedAt: new Date().toISOString(),
+    }));
+  } catch (e) {
+    console.warn('[MODUGAL] No se pudo persistir el estado.', e);
+  }
 }
 
+function commit() {
+  guardarEstado();
+  renderAll();
+}
+
+function generarIdProyecto() {
+  const nums = state.proyectos
+    .map((p) => parseInt(String(p.id || '').replace(/\D/g, ''), 10))
+    .filter((n) => !isNaN(n));
+  const max = nums.length ? Math.max(...nums) : 0;
+  return `PRJ-${String(max + 1).padStart(3, '0')}`;
+}
+
+function generarIdComercial() {
+  const nums = state.comercial
+    .map((c) => parseInt(String(c.id || '').replace(/\D/g, ''), 10))
+    .filter((n) => !isNaN(n));
+  const max = nums.length ? Math.max(...nums, 4) : 4;
+  return `COM-${String(max + 1).padStart(3, '0')}`;
+}
+
+function detalleProyecto(p) {
+  if (p.commercialDetail) return p.commercialDetail;
+  const muebles = (p.muebles || []).map((m) => m.name).filter(Boolean);
+  return `${p.client || p.name || 'Cliente'}: ${muebles.length ? muebles.join(' + ') : 'Pedido por definir'}`;
+}
+
+function etapaComercialProyecto(p) {
+  if (ETAPAS_COMERCIAL.includes(p.commercialStage) && p.commercialStage !== 'Prospecto No Continuado') return p.commercialStage;
+  if (p.status === EST_PRODUCCION.COMPLETADO) return 'Garantías';
+  return 'En Fabricación';
+}
+
+function completitudFicha(p) {
+  const checks = [p.name, p.client, p.city, p.address, p.phone, p.leadCarpenter, p.dateExpected, p.manufacturingPhase, p.image];
+  let ok = 0;
+  checks.forEach((c) => { if (c !== undefined && c !== null && c !== '' && c !== 'Por definir') ok++; });
+  if (Array.isArray(p.muebles) && p.muebles.length > 0) ok++;
+  if (Array.isArray(p.pedidos) && p.pedidos.length > 0) ok++;
+  return Math.round((ok / (checks.length + 2)) * 100);
+}
+
+function carpentersList() {
+  const nombres = new Set();
+  state.proyectos.forEach((p) => (p.muebles || []).forEach((m) => { if (m.carpenter) nombres.add(m.carpenter); }));
+  Object.keys(state.tareas || {}).forEach((k) => { if (k) nombres.add(k); });
+  return Array.from(nombres).sort((a, b) => a.localeCompare(b));
+}
+
+function proyectosActivos() {
+  return state.proyectos.filter((p) => p.status !== EST_PRODUCCION.COMPLETADO);
+}
+
+function primerPendiente(p) {
+  return (p.pendientes || [])[0] || null;
+}
+
+function showToast(mensaje) {
+  const el = document.getElementById('toast');
+  if (!el) return;
+  el.textContent = mensaje;
+  el.classList.remove('is-hidden');
+  requestAnimationFrame(() => el.classList.add('show'));
+  clearTimeout(window.__mgToastTimer);
+  window.__mgToastTimer = setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => el.classList.add('is-hidden'), 220);
+  }, 2800);
+}
+
+/* ==========================================================================
+   5. AUTENTICACIÓN · SESIÓN · TEMA · PERMISOS
+   ========================================================================== */
+
 function getUsuarios() {
+  let usuarios = [];
   try {
     const raw = localStorage.getItem(USUARIOS_KEY);
     if (raw) {
-      const u = JSON.parse(raw);
-      if (Array.isArray(u) && u.length) return u;
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) usuarios = parsed;
     }
-  } catch (e) { /* se recartan usuarios demo */ }
-  const demo = [
-    { email: 'gerencia@modugal.com', password: 'demo1234', cargo: 'administrativo', nombre: 'Gerencia General' },
-    { email: 'arquitecto@modugal.com', password: 'demo1234', cargo: 'arquitecto', nombre: 'Felipe Mora' },
-    { email: 'operativo@modugal.com', password: 'demo1234', cargo: 'operativo', nombre: 'Operativo Demo' },
-  ];
-  try { localStorage.setItem(USUARIOS_KEY, JSON.stringify(demo)); } catch (e) { /* noop */ }
-  return demo;
+  } catch (e) { /* se reconstruyen los demo */ }
+
+  let cambiado = false;
+  DEMO_USERS.forEach((demo) => {
+    if (!usuarios.some((u) => String(u.email || '').toLowerCase() === demo.email)) {
+      usuarios.push({ ...demo });
+      cambiado = true;
+    }
+  });
+  if (cambiado || !localStorage.getItem(USUARIOS_KEY)) {
+    try { localStorage.setItem(USUARIOS_KEY, JSON.stringify(usuarios)); } catch (e) { /* noop */ }
+  }
+  return usuarios;
 }
 
-function guardarUsuarios(u) {
-  localStorage.setItem(USUARIOS_KEY, JSON.stringify(u));
+function guardarUsuarios(usuarios) {
+  localStorage.setItem(USUARIOS_KEY, JSON.stringify(usuarios));
 }
 
 function getSesion() {
@@ -296,77 +657,6 @@ function clearSesion() {
   localStorage.removeItem(SESION_KEY);
   state.user = null;
 }
-
-function generarId(prefix) {
-  const nums = state.proyectos.map((p) => parseInt(String(p.id).replace(/\D/g, ''), 10)).filter((n) => !isNaN(n));
-  const max = nums.length ? Math.max(...nums) : 1000;
-  return `${prefix}-${max + 1}`;
-}
-
-/* ==========================================================================
-   4. UTILIDADES
-   ========================================================================== */
-
-function hoyStr() {
-  const d = new Date();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${d.getFullYear()}-${m}-${day}`;
-}
-
-function parseFecha(str) {
-  if (!str) return null;
-  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-    const d = new Date(`${str}T00:00:00`);
-    return isNaN(d.getTime()) ? null : d;
-  }
-  const m = String(str).match(/(\d{1,2})\s+([A-Za-z]+)\s+(\d{4})/);
-  if (!m) return null;
-  const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
-  const mes = meses.indexOf(m[2].toLowerCase());
-  if (mes < 0) return null;
-  const d = new Date(parseInt(m[3], 10), mes, parseInt(m[1], 10));
-  return isNaN(d.getTime()) ? null : d;
-}
-
-function fmtMoney(m) {
-  return '$' + Number(m || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-}
-
-function esc(str) {
-  const map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-  return String(str ?? '').replace(/[&<>"']/g, (c) => map[c]);
-}
-
-function labelCargo(r) {
-  const map = { arquitecto: 'Arquitecto', operativo: 'Operativo', administrativo: 'Administrativo' };
-  return map[r] || 'Gerencia';
-}
-
-function completitudFicha(p) {
-  const checks = [
-    p.name, p.client, p.city, p.address, p.phone, p.budget, p.leadCarpenter, p.dateExpected, p.manufacturingPhase,
-  ];
-  let ok = 0;
-  checks.forEach((c) => { if (c !== undefined && c !== null && c !== '' && c !== 0) ok++; });
-  const mueblesOk = Array.isArray(p.muebles) && p.muebles.length > 0;
-  const pedidosOk = Array.isArray(p.pedidos) && p.pedidos.length > 0;
-  if (mueblesOk) ok++;
-  if (pedidosOk) ok++;
-  return Math.round((ok / (checks.length + 2)) * 100);
-}
-
-function estadoMateriales(p) {
-  const pedidos = p.pedidos || [];
-  const pendientes = pedidos.filter((x) => !['Bodega', 'Entregado'].includes(x.status));
-  if (pedidos.length === 0) return 'Sin pedidos';
-  if (pendientes.length === 0) return 'Completos';
-  return `${pendientes.length} Pendientes`;
-}
-
-/* ==========================================================================
-   5. AUTENTICACIÓN · SESIÓN · TEMA
-   ========================================================================== */
 
 function iniciarSesion(email, password, cargo) {
   const usuarios = getUsuarios();
@@ -400,12 +690,14 @@ function cerrarSesion() {
   localStorage.setItem(ROL_KEY, state.rol);
   ocultarLogin();
   updateUserChip();
+  aplicarPermisosUI();
   switchTab('produccion');
 }
 
 function updateUserChip() {
   const userEl = document.getElementById('mg-user');
   const info = document.getElementById('mg-user-info');
+  if (!userEl || !info) return;
   if (state.user) {
     userEl.classList.remove('hidden');
     info.textContent = `${state.user.nombre || state.user.email} · ${labelCargo(state.rol)}`;
@@ -428,34 +720,98 @@ function toggleTema() {
 }
 
 function mostrarLogin() {
-  document.getElementById('login-screen').classList.remove('is-hidden');
+  document.getElementById('login-screen')?.classList.remove('is-hidden');
 }
 
 function ocultarLogin() {
-  document.getElementById('login-screen').classList.add('is-hidden');
+  document.getElementById('login-screen')?.classList.add('is-hidden');
+}
+
+/* ---- Matriz de permisos (simulada; preparada para backend) ---- */
+
+function esGerencia() {
+  return state.rol === 'administrativo';
 }
 
 function puedeAvanzar() {
   return state.rol === 'operativo' || state.rol === 'administrativo';
 }
 
+function puedeAsignar() {
+  return puedeAvanzar();
+}
+
+function puedeGestionarPendientes() {
+  return puedeAvanzar();
+}
+
+function puedeEditarFicha() {
+  return ['administrativo', 'operativo', 'secretaria'].includes(state.rol);
+}
+
+function puedeCrearProyecto() {
+  return ['administrativo', 'operativo', 'secretaria'].includes(state.rol);
+}
+
+function puedeGestionarComercial() {
+  return ['administrativo', 'operativo', 'secretaria'].includes(state.rol);
+}
+
+function puedeCrearProspecto() {
+  return ['administrativo', 'secretaria'].includes(state.rol);
+}
+
+function puedeAprobarProspecto() {
+  return ['administrativo', 'secretaria'].includes(state.rol);
+}
+
 function puedeGestionarCompras() {
-  return state.rol === 'administrativo';
+  return state.rol === 'administrativo' || state.rol === 'operativo';
+}
+
+function puedeVerFinanzas() {
+  return esGerencia();
 }
 
 function tabsPermitidos() {
-  if (state.rol === 'administrativo') return ['produccion', 'equipo', 'comercial', 'stats', 'tabla', 'trimestral', 'new-order'];
-  if (state.rol === 'operativo') return ['produccion', 'equipo', 'new-order'];
-  if (state.rol === 'arquitecto') return ['produccion', 'comercial'];
-  return ['produccion'];
+  const mapa = {
+    administrativo: ['produccion', 'equipo', 'comercial', 'tabla', 'proyectos', 'centro', 'stats', 'new-order'],
+    operativo: ['produccion', 'equipo', 'comercial', 'tabla', 'proyectos', 'centro', 'new-order'],
+    secretaria: ['produccion', 'comercial', 'tabla', 'proyectos'],
+    arquitecto: ['produccion', 'comercial', 'tabla', 'proyectos'],
+  };
+  return mapa[state.rol] || ['produccion'];
 }
 
+function aplicarPermisosUI() {
+  const permitidos = tabsPermitidos();
+  document.querySelectorAll('#mg-tabs [data-tab]').forEach((btn) => {
+    btn.classList.toggle('hidden', !permitidos.includes(btn.dataset.tab));
+  });
+  const rolSelect = document.getElementById('mg-rol-select');
+  if (rolSelect) rolSelect.value = state.rol;
+
+  document.querySelectorAll('[data-accion="nuevo-proyecto"]').forEach((btn) => {
+    const permitido = puedeCrearProyecto();
+    btn.classList.toggle('hidden', !permitido);
+    btn.style.display = permitido ? '' : 'none';
+  });
+  document.querySelectorAll('[data-accion="nuevo-prospecto"]').forEach((btn) => {
+    const permitido = puedeCrearProspecto();
+    btn.classList.toggle('hidden', !permitido);
+    btn.style.display = permitido ? '' : 'none';
+  });
+  const btnTarea = document.getElementById('equipo-nueva-tarea');
+  if (btnTarea) btnTarea.classList.toggle('hidden', !puedeAsignar());
+  updateUserChip();
+}
 /* ==========================================================================
    6. ASISTENTE IA / BOT DE WHATSAPP
    ========================================================================== */
 
 function pushMensaje(autor, texto) {
   const container = document.getElementById('chat-messages');
+  if (!container) return;
   const msg = document.createElement('div');
   msg.className = `chat-msg ${autor === 'user' ? 'chat-msg--user' : 'chat-msg--bot'}`;
   msg.textContent = texto;
@@ -467,34 +823,29 @@ function generarRespuestaBot(texto) {
   const q = texto.toLowerCase();
 
   if (/hoy|entrega|entregar|despacho|despachar|entregas/i.test(q)) {
-    const hoy = new Date();
-    const entregasHoy = state.proyectos.filter((p) => {
-      const d = parseFecha(p.dateExpected);
-      return d && d.getFullYear() === hoy.getFullYear() && d.getMonth() === hoy.getMonth() && d.getDate() === hoy.getDate();
-    });
+    const entregasHoy = state.proyectos.filter((p) => esHoy(p.dateExpected));
     if (entregasHoy.length === 0) return '📭 No hay entregas programadas para hoy. ¡Buen ritmo! 🎉';
     const lines = entregasHoy.map((p) => `• ${p.name} · ${p.client} · ${p.id}`);
     return `📦 Proyectos con entregas programadas para hoy:\n${lines.join('\n')}\n\n¿Necesitas despacho o instalación?`;
   }
 
-  if (/material|falta|faltan|herraje|madecor|vidrio|insumo|blum|cuarzo/i.test(q)) {
-    const conAlerta = state.proyectos.filter((p) => p.alert);
-    if (conAlerta.length === 0) return '✅ ¡Sin faltantes de materiales! Todo en orden. 🎉';
-    const lines = conAlerta.map((p) => `• ${p.name} · ${p.alert}`);
-    return `⚠️ Proyectos con materiales faltantes:\n${lines.join('\n')}`;
+  if (/material|falta|faltan|herraje|madecor|vidrio|insumo|blum|cuarzo|pendiente/i.test(q)) {
+    const conPendientes = state.proyectos.filter((p) => (p.pendientes || []).length);
+    if (conPendientes.length === 0) return '✅ ¡Sin faltantes de materiales! Todo en orden. 🎉';
+    const lines = conPendientes.map((p) => `• ${p.name} · ${p.pendientes.map((x) => x.text).join(' / ')}`);
+    return `⚠️ Proyectos con pendientes o materiales faltantes:\n${lines.join('\n')}`;
   }
 
   if (/detenido|detenidos|paralizo|paralizada/i.test(q)) {
     const detenidos = state.proyectos.filter((p) => p.status === EST_PRODUCCION.DETENIDO);
     if (detenidos.length === 0) return '✅ Sin proyectos detenidos actualmente.';
-    const lines = detenidos.map((p) => `• ${p.name} · ${p.bloqueos[0]?.reason || 'Bloqueo activo'}`);
+    const lines = detenidos.map((p) => `• ${p.name} · ${primerPendiente(p)?.text || 'Bloqueo activo'}`);
     return `⚠️ Proyectos detenidos:\n${lines.join('\n')}`;
   }
 
-  const tokens = texto.toLowerCase().split(/[^a-z0-9]+/).map((t) => t.trim()).filter((t) => t.length > 1);
-  const term = tokens.join(' ').trim();
+  const term = texto.toLowerCase().split(/[^a-z0-9áéíóúñ]+/).filter((t) => t.length > 1).join(' ').trim();
   if (term) {
-    const resultados = state.proyectos.filter((p) => `${p.id} ${p.client} ${p.name}`.toLowerCase().includes(term.toLowerCase()));
+    const resultados = state.proyectos.filter((p) => `${p.id} ${p.client} ${p.name} ${p.city}`.toLowerCase().includes(term));
     if (resultados.length > 0) {
       const lines = resultados.map((p) => `• ${p.name} · ${p.client} · Estado: ${p.status}`);
       return `🔎 Proyectos encontrados para "${term}":\n${lines.join('\n')}`;
@@ -507,15 +858,16 @@ function generarRespuestaBot(texto) {
 
 function enviarMensaje(texto) {
   const input = document.getElementById('chat-input');
-  const msg = String(texto ?? input.value ?? '').trim();
+  const msg = String(texto ?? input?.value ?? '').trim();
   if (!msg) return;
   pushMensaje('user', msg);
-  input.value = '';
+  if (input) input.value = '';
   setTimeout(() => pushMensaje('bot', generarRespuestaBot(msg)), 450);
 }
 
 function abrirChat() {
   const panel = document.getElementById('chat-panel');
+  if (!panel) return;
   panel.classList.add('open');
   if (document.querySelectorAll('#chat-messages .chat-msg').length === 0) {
     pushMensaje('bot', '¡Hola! 👋 Soy el Asistente IA de MODUGAL.\nPuedo consultar entregas de hoy, proyectos con materiales faltantes o clientes. Prueba: "¿Qué entregas hay para hoy?"');
@@ -523,188 +875,300 @@ function abrirChat() {
 }
 
 function cerrarChat() {
-  document.getElementById('chat-panel').classList.remove('open');
+  document.getElementById('chat-panel')?.classList.remove('open');
 }
 
 /* ==========================================================================
-   7. RENDER · TABLERO DE PRODUCCIÓN
+   7. PENDIENTES UNIFICADOS · SINCRONIZACIÓN GLOBAL
    ========================================================================== */
 
-function stepColor(p, idx, currentIdx) {
-  if (p.status === 'Detenido') {
-    if (idx === currentIdx) return 'bg-red-600';
-    if (idx < currentIdx) return 'bg-red-300';
-    return 'bg-slate-100';
-  }
-  if (idx === currentIdx) return 'bg-slate-900';
-  if (idx < currentIdx) return 'bg-emerald-500';
-  return 'bg-slate-100';
+function pendientesHTML(p, opts = {}) {
+  const lista = p.pendientes || [];
+  const puede = puedeGestionarPendientes();
+  const compact = opts.compact ? 'pendientes-box--compact' : '';
+  return `
+    <div class="pendientes-box ${compact}">
+      <div class="pendientes-head">
+        <span class="pendientes-title"><i class="fas fa-clipboard-list" aria-hidden="true"></i> Pendientes o Requerimientos <span class="pendientes-count">${lista.length}</span></span>
+        ${puede ? `<button type="button" class="pendientes-add" data-pend-add="${esc(p.id)}"><i class="fas fa-plus" aria-hidden="true"></i> Agregar</button>` : ''}
+      </div>
+      <div class="pendientes-list">
+        ${lista.length ? lista.map((x) => `
+          <div class="pendiente-item" title="Prioridad ${esc(x.prioridad)}">
+            <span class="pendiente-tipo pendiente-tipo--${esc(x.tipo)}">${esc(labelPendiente(x.tipo))}</span>
+            <span class="pendiente-text">${esc(x.text)}</span>
+            <span class="pendiente-prio pendiente-prio--${esc(x.prioridad)}" aria-label="Prioridad ${esc(x.prioridad)}"></span>
+            ${puede ? `<span class="pendiente-actions">
+              <button type="button" data-pend-edit="${esc(x.id)}" data-pend-project="${esc(p.id)}" title="Editar pendiente" aria-label="Editar pendiente"><i class="fas fa-pen" aria-hidden="true"></i></button>
+              <button type="button" data-pend-del="${esc(x.id)}" data-pend-project="${esc(p.id)}" title="Eliminar pendiente" aria-label="Eliminar pendiente"><i class="fas fa-trash" aria-hidden="true"></i></button>
+            </span>` : ''}
+          </div>`).join('') : '<p class="pendiente-empty"><i class="fas fa-circle-check" aria-hidden="true"></i> Sin pendientes registrados.</p>'}
+      </div>
+    </div>`;
 }
+
+function abrirPendienteModal(projectId, pendienteId) {
+  const p = state.proyectos.find((x) => x.id === projectId);
+  if (!p || !puedeGestionarPendientes()) return;
+  const item = pendienteId ? (p.pendientes || []).find((x) => x.id === pendienteId) : null;
+  state.pendienteCtx = { projectId, pendienteId: pendienteId || null };
+  document.getElementById('pendiente-modal-title').textContent = item ? 'Editar Pendiente' : 'Agregar Pendiente';
+  document.getElementById('pendiente-modal-sub').textContent = `${p.id} · ${p.client}`;
+  document.getElementById('pendiente-texto').value = item ? item.text : '';
+  document.getElementById('pendiente-tipo').value = item ? item.tipo : 'material';
+  document.getElementById('pendiente-prioridad').value = item ? item.prioridad : 'media';
+  document.getElementById('pendiente-modal').classList.remove('is-hidden');
+  setTimeout(() => document.getElementById('pendiente-texto')?.focus(), 40);
+}
+
+function cerrarPendienteModal() {
+  document.getElementById('pendiente-modal')?.classList.add('is-hidden');
+  state.pendienteCtx = null;
+}
+
+function guardarPendiente(e) {
+  e.preventDefault();
+  const ctx = state.pendienteCtx;
+  if (!ctx) return;
+  const p = state.proyectos.find((x) => x.id === ctx.projectId);
+  if (!p) return;
+  const texto = document.getElementById('pendiente-texto').value.trim();
+  if (!texto) return;
+  const tipo = document.getElementById('pendiente-tipo').value;
+  const prioridad = document.getElementById('pendiente-prioridad').value;
+  if (ctx.pendienteId) {
+    const item = p.pendientes.find((x) => x.id === ctx.pendienteId);
+    if (item) {
+      item.text = texto;
+      item.tipo = tipo;
+      item.prioridad = prioridad;
+    }
+  } else {
+    p.pendientes.push({ id: uid('pd'), text: texto, tipo, prioridad, createdAt: hoyISO() });
+  }
+  p.alert = p.pendientes.length ? p.pendientes[0].text : '';
+  commit();
+  cerrarPendienteModal();
+  showToast('Pendiente sincronizado en todas las vistas.');
+}
+
+function eliminarPendiente(projectId, pendienteId) {
+  const p = state.proyectos.find((x) => x.id === projectId);
+  if (!p || !puedeGestionarPendientes()) return;
+  const item = (p.pendientes || []).find((x) => x.id === pendienteId);
+  if (!item) return;
+  if (!window.confirm(`¿Eliminar el pendiente "${item.text}"?`)) return;
+  p.pendientes = p.pendientes.filter((x) => x.id !== pendienteId);
+  p.alert = p.pendientes.length ? p.pendientes[0].text : '';
+  commit();
+  showToast('Pendiente eliminado.');
+}
+
+/* ==========================================================================
+   8. FASES BIDIRECCIONALES (PROYECTO, MUEBLE Y TAREA)
+   ========================================================================== */
+
+function clampFase(idx) {
+  return Math.max(0, Math.min(PRODUCTION_PHASES.length - 1, idx));
+}
+
+function cambiarFaseProyecto(id, delta) {
+  if (!puedeAvanzar()) { showToast('Tu rol no puede modificar fases de producción.'); return; }
+  const p = state.proyectos.find((x) => x.id === id);
+  if (!p) return;
+  const actual = Math.max(0, PRODUCTION_PHASES.indexOf(p.manufacturingPhase));
+  const nuevo = clampFase(actual + delta);
+  if (nuevo === actual) return;
+  p.manufacturingPhase = PRODUCTION_PHASES[nuevo];
+  p.phase = p.manufacturingPhase;
+  commit();
+  showToast(`${p.name}: fase ${p.manufacturingPhase}.`);
+}
+
+function cambiarFaseMueble(projectId, muebleId, delta) {
+  if (!puedeAsignar()) { showToast('Tu rol no puede modificar fases de producción.'); return; }
+  const p = state.proyectos.find((x) => x.id === projectId);
+  const m = (p?.muebles || []).find((x) => x.id === muebleId);
+  if (!p || !m) return;
+  const actual = Math.max(0, PRODUCTION_PHASES.indexOf(m.manufacturingPhase));
+  const nuevo = clampFase(actual + delta);
+  if (nuevo === actual) return;
+  m.manufacturingPhase = PRODUCTION_PHASES[nuevo];
+  m.status = m.manufacturingPhase;
+  commit();
+  showToast(`${m.name}: fase ${m.manufacturingPhase}.`);
+}
+
+function cambiarFaseTarea(carpenter, tareaId, delta) {
+  if (!puedeAsignar()) { showToast('Tu rol no puede modificar fases de producción.'); return; }
+  const t = (state.tareas[carpenter] || []).find((x) => x.id === tareaId);
+  if (!t) return;
+  const actual = Math.max(0, PRODUCTION_PHASES.indexOf(t.phase || 'Asignación'));
+  const nuevo = clampFase(actual + delta);
+  if (nuevo === actual) return;
+  t.phase = PRODUCTION_PHASES[nuevo];
+  commit();
+  showToast(`${t.text}: fase ${t.phase}.`);
+}
+
+function stepperBarras(fase) {
+  const actual = Math.max(0, PRODUCTION_PHASES.indexOf(fase));
+  return PRODUCTION_PHASES.map((phase, idx) => {
+    const color = idx === actual ? 'bg-red-600' : (idx < actual ? 'bg-emerald-500' : 'bg-slate-200');
+    return `<div class="h-1.5 flex-1 rounded-full ${color}" title="${phase}"></div>`;
+  }).join('');
+}
+
+function controlesFaseProyecto(p) {
+  if (!puedeAvanzar()) return '';
+  const idx = Math.max(0, PRODUCTION_PHASES.indexOf(p.manufacturingPhase));
+  const atras = idx <= 0 ? 'disabled' : '';
+  const adelante = idx >= PRODUCTION_PHASES.length - 1 ? 'disabled' : '';
+  return `
+    <div class="flex items-center gap-1">
+      <button type="button" class="fase-btn" data-fase-proyecto="${esc(p.id)}" data-delta="-1" ${atras} title="Retroceder fase" aria-label="Retroceder fase"><i class="fas fa-arrow-left" aria-hidden="true"></i></button>
+      <span class="text-[10px] font-black text-slate-500 px-1 whitespace-nowrap">${esc(p.manufacturingPhase)}</span>
+      <button type="button" class="fase-btn fase-btn--next" data-fase-proyecto="${esc(p.id)}" data-delta="1" ${adelante} title="Avanzar fase" aria-label="Avanzar fase"><i class="fas fa-arrow-right" aria-hidden="true"></i></button>
+    </div>`;
+}
+
+/* ==========================================================================
+   9. TABLERO DE PRODUCCIÓN Y MÓDULO PROYECTOS
+   ========================================================================== */
 
 function crearTarjetaProduccion(p) {
   const card = document.createElement('div');
-  card.className = `bg-white rounded-2xl border transition-all duration-300 overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 flex flex-col ${p.status === 'Detenido' ? 'border-red-300 ring-2 ring-red-500/20' : 'border-slate-200/80 hover:border-slate-300'}`;
+  const detenido = p.status === EST_PRODUCCION.DETENIDO;
+  card.className = `bg-white rounded-2xl border transition-all duration-300 overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 flex flex-col ${detenido ? 'border-red-300 ring-2 ring-red-500/20' : 'border-slate-200/80 hover:border-slate-300'}`;
 
-  const header = document.createElement('div');
-  header.className = 'relative h-56 w-full bg-slate-100 overflow-hidden border-b border-slate-100';
-  const img = document.createElement('img');
-  img.src = p.image;
-  img.alt = p.name;
-  img.className = 'w-full h-full object-cover hover:scale-105 transition-all duration-500';
-  header.appendChild(img);
-  const overlay = document.createElement('div');
-  overlay.className = 'absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-950/10 to-transparent';
-  header.appendChild(overlay);
-  const badgeId = document.createElement('div');
-  badgeId.className = 'absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-200 text-[11px] font-mono font-bold text-slate-800 shadow-sm';
-  badgeId.textContent = p.id;
-  header.appendChild(badgeId);
-  const badgeStatus = document.createElement('div');
-  badgeStatus.className = 'absolute top-3 right-3';
-  if (p.status === 'Detenido') {
-    badgeStatus.innerHTML = `<span class="bg-red-600 text-white px-2.5 py-1 rounded-lg text-xs font-black shadow-md flex items-center"><i class="fas fa-triangle-exclamation w-3.5 h-3.5 mr-1" aria-hidden="true"></i>DETENIDO</span>`;
-  } else if (p.status === 'En proceso') {
-    badgeStatus.innerHTML = `<span class="bg-slate-900 text-white px-2.5 py-1 rounded-lg text-xs font-black shadow-md flex items-center"><i class="fas fa-clock w-3.5 h-3.5 mr-1" aria-hidden="true"></i>EN PROCESO</span>`;
-  } else {
-    badgeStatus.innerHTML = `<span class="bg-emerald-600 text-white px-2.5 py-1 rounded-lg text-xs font-black shadow-md flex items-center"><i class="fas fa-check-circle w-3.5 h-3.5 mr-1" aria-hidden="true"></i>ENTREGADO</span>`;
-  }
-  header.appendChild(badgeStatus);
-  const overlayBottom = document.createElement('div');
-  overlayBottom.className = 'absolute bottom-3 left-4 right-4 text-white';
-  overlayBottom.innerHTML = `<h3 class="text-xl font-black drop-shadow-md">${p.name}</h3><p class="text-xs text-slate-200 flex items-center mt-0.5 drop-shadow"><i class="fas fa-map-marker-alt w-3.5 h-3.5 text-red-500 mr-1" aria-hidden="true"></i>${p.neighborhood}, ${p.city}</p>`;
-  header.appendChild(overlayBottom);
-  card.appendChild(header);
+  const badgeStatus = detenido
+    ? '<span class="bg-red-600 text-white px-2.5 py-1 rounded-lg text-xs font-black shadow-md flex items-center"><i class="fas fa-triangle-exclamation w-3.5 h-3.5 mr-1" aria-hidden="true"></i>DETENIDO</span>'
+    : (p.status === EST_PRODUCCION.COMPLETADO
+      ? '<span class="bg-emerald-600 text-white px-2.5 py-1 rounded-lg text-xs font-black shadow-md flex items-center"><i class="fas fa-check-circle w-3.5 h-3.5 mr-1" aria-hidden="true"></i>ENTREGADO</span>'
+      : '<span class="bg-slate-900 text-white px-2.5 py-1 rounded-lg text-xs font-black shadow-md flex items-center"><i class="fas fa-clock w-3.5 h-3.5 mr-1" aria-hidden="true"></i>EN PROCESO</span>');
 
-  const body = document.createElement('div');
-  body.className = 'p-5 flex-1 flex flex-col justify-between space-y-4';
-
-  if (p.alert) {
-    const alerta = document.createElement('div');
-    alerta.className = 'bg-red-50 border border-red-200 p-3 rounded-xl flex items-start space-x-2 text-xs';
-    alerta.innerHTML = `<i class="fas fa-triangle-exclamation w-4 h-4 text-red-600 flex-shrink-0 mt-0.5" aria-hidden="true"></i><div><span class="font-bold text-red-800 block">Falta Material / Bloqueo:</span><span class="text-red-700">${p.alert}</span></div>`;
-    body.appendChild(alerta);
-  }
-
-  const stageWrap = document.createElement('div');
-  stageWrap.innerHTML = `<div class="flex justify-between text-xs mb-2 font-bold"><span class="text-slate-500">Etapa de Producción: <strong class="text-slate-900 uppercase">${p.manufacturingPhase}</strong></span></div>`;
-  const barRow = document.createElement('div');
-  barRow.className = 'flex items-center w-full space-x-1';
-  const currentIdx = Math.max(0, PRODUCTION_PHASES.indexOf(p.manufacturingPhase));
-  PRODUCTION_PHASES.forEach((phase, idx) => {
-    const bar = document.createElement('div');
-    bar.className = `group relative flex-1 h-2 rounded-full border border-slate-200/50 transition-all ${stepColor(p, idx, currentIdx)}`;
-    bar.title = phase;
-    barRow.appendChild(bar);
-  });
-  stageWrap.appendChild(barRow);
-  const labels = document.createElement('div');
-  labels.className = 'flex justify-between text-[9px] font-bold text-slate-400 mt-1.5 uppercase';
-  labels.innerHTML = '<span>Recepción</span><span>Despacho</span>';
-  stageWrap.appendChild(labels);
-  body.appendChild(stageWrap);
-
-  const details = document.createElement('div');
-  details.className = 'grid grid-cols-2 gap-2 text-xs border-t border-slate-100 pt-3';
-  details.innerHTML = `
-    <div>
-      <span class="text-slate-400 block">Trazador Responsable</span>
-      <span class="font-bold text-slate-800 mt-0.5 block">${p.leadCarpenter}</span>
+  card.innerHTML = `
+    <div class="relative h-52 w-full bg-slate-100 overflow-hidden border-b border-slate-100">
+      <img src="${esc(p.image || DEFAULT_IMAGE)}" alt="${esc(p.name)}" class="w-full h-full object-cover hover:scale-105 transition-all duration-500" />
+      <div class="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-950/10 to-transparent"></div>
+      <div class="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-200 text-[11px] font-mono font-bold text-slate-800 shadow-sm">${esc(p.id)}</div>
+      <div class="absolute top-3 right-3">${badgeStatus}</div>
+      <div class="absolute bottom-3 left-4 right-4 text-white">
+        <h3 class="text-xl font-black drop-shadow-md">${esc(p.name)}</h3>
+        <p class="text-xs text-slate-200 flex items-center mt-0.5 drop-shadow"><i class="fas fa-map-marker-alt w-3.5 h-3.5 text-red-500 mr-1" aria-hidden="true"></i>${esc(p.neighborhood ? `${p.neighborhood}, ${p.city}` : p.city)}</p>
+      </div>
     </div>
-    <div>
-      <span class="text-slate-400 block">Entrega Estimada</span>
-      <span class="font-bold text-slate-800 mt-0.5 block">${p.dateExpected}</span>
-    </div>
-  `;
-  body.appendChild(details);
+    <div class="p-5 flex-1 flex flex-col justify-between gap-4">
+      ${pendientesHTML(p, { compact: true })}
+      <div>
+        <div class="flex justify-between items-center text-xs mb-2 font-bold gap-2">
+          <span class="text-slate-500">Etapa de Producción: <strong class="text-slate-900 uppercase">${esc(p.manufacturingPhase)}</strong></span>
+          ${controlesFaseProyecto(p)}
+        </div>
+        <div class="flex items-center w-full space-x-1">${stepperBarras(p.manufacturingPhase)}</div>
+        <div class="flex justify-between text-[9px] font-bold text-slate-400 mt-1.5 uppercase"><span>Recepción</span><span>Despacho</span></div>
+      </div>
+      <div class="grid grid-cols-2 gap-2 text-xs border-t border-slate-100 pt-3">
+        <div><span class="text-slate-400 block">Trazador Responsable</span><span class="font-bold text-slate-800 mt-0.5 block">${esc(p.leadCarpenter || 'Por asignar')}</span></div>
+        <div><span class="text-slate-400 block">Entrega Estimada</span><span class="font-bold text-slate-800 mt-0.5 block">${esc(p.dateExpected || 'Por definir')}</span></div>
+      </div>
+      <div class="pt-2 flex flex-wrap gap-2">
+        <button type="button" class="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-3 rounded-xl text-xs transition-all shadow-sm flex items-center justify-center space-x-1" data-open-ficha="${esc(p.id)}">
+          <span>Ficha del Proyecto</span><i class="fas fa-chevron-right w-4 h-4" aria-hidden="true"></i>
+        </button>
+        <button type="button" class="bg-slate-100 hover:bg-slate-200 text-slate-700 p-2.5 rounded-xl border border-slate-200 transition-colors" data-open-ficha="${esc(p.id)}" data-sub="dropbox" title="Archivos del proyecto" aria-label="Archivos del proyecto">
+          <i class="fas fa-folder w-4 h-4 text-blue-600" aria-hidden="true"></i>
+        </button>
+        ${puedeEditarFicha() ? `<button type="button" class="bg-slate-100 hover:bg-slate-200 text-slate-700 p-2.5 rounded-xl border border-slate-200 transition-colors" data-edit-proyecto="${esc(p.id)}" title="Editar ficha" aria-label="Editar ficha"><i class="fas fa-pen w-4 h-4" aria-hidden="true"></i></button>` : ''}
+      </div>
+    </div>`;
 
-  const btns = document.createElement('div');
-  btns.className = 'pt-2 flex space-x-2';
-  const fichaBtn = document.createElement('button');
-  fichaBtn.type = 'button';
-  fichaBtn.className = 'flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-sm flex items-center justify-center space-x-1';
-  fichaBtn.innerHTML = '<span>Ficha del Proyecto</span><i class="fas fa-chevron-right w-4 h-4" aria-hidden="true"></i>';
-  fichaBtn.addEventListener('click', () => openFicha(p.id));
-  const dropBtn = document.createElement('button');
-  dropBtn.type = 'button';
-  dropBtn.className = 'bg-slate-100 hover:bg-slate-200 text-slate-700 p-2.5 rounded-xl border border-slate-200 transition-colors';
-  dropBtn.title = 'Dropbox Seguro';
-  dropBtn.innerHTML = '<i class="fas fa-folder w-4 h-4 text-blue-600" aria-hidden="true"></i>';
-  dropBtn.addEventListener('click', () => { state.fichaSub = 'dropbox'; openFicha(p.id); });
-  btns.appendChild(fichaBtn);
-  btns.appendChild(dropBtn);
-  if (puedeAvanzar()) {
-    const idx = PRODUCTION_PHASES.indexOf(p.manufacturingPhase);
-    if (idx < PRODUCTION_PHASES.length - 1) {
-      const avanzaBtn = document.createElement('button');
-      avanzaBtn.type = 'button';
-      avanzaBtn.className = 'flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-all shadow-sm flex items-center justify-center space-x-1';
-      avanzaBtn.innerHTML = `<i class="fas fa-arrow-right w-3.5 h-3.5 mr-1" aria-hidden="true"></i>Avanzar a ${PRODUCTION_PHASES[idx + 1]}`;
-      avanzaBtn.addEventListener('click', () => avanzarFase(p.id));
-      btns.appendChild(avanzaBtn);
-    }
-  }
-  body.appendChild(btns);
-
-  card.appendChild(body);
+  const img = card.querySelector('img');
+  if (img) img.addEventListener('error', () => { img.src = DEFAULT_IMAGE; }, { once: true });
   return card;
 }
 
-function avanzarFase(id) {
-  const p = state.proyectos.find((x) => x.id === id);
-  if (!p) return;
-  const idx = PRODUCTION_PHASES.indexOf(p.manufacturingPhase);
-  if (idx < 0 || idx >= PRODUCTION_PHASES.length - 1) return;
-  const next = PRODUCTION_PHASES[idx + 1];
-  p.manufacturingPhase = next;
-  (p.muebles || []).forEach((m) => { m.manufacturingPhase = next; });
-  guardarEstado();
-  renderProduccion();
-  if (state.fichaId) openFicha(state.fichaId);
+function filtrarProduccion() {
+  let lista = state.proyectos.slice();
+  if (state.fProduccion !== 'todos') lista = lista.filter((p) => p.status === state.fProduccion);
+  if (state.search) {
+    const q = state.search.toLowerCase();
+    lista = lista.filter((p) => `${p.id} ${p.client} ${p.name} ${p.city} ${p.leadCarpenter || ''}`.toLowerCase().includes(q));
+  }
+  if (state.year !== 'Todos') lista = lista.filter((p) => String(p.trimester || '').includes(state.year));
+  if (state.quarter !== 'Todos los Trimestres') lista = lista.filter((p) => p.trimester === state.quarter);
+  if (state.city !== 'Todos') lista = lista.filter((p) => p.city === state.city);
+  return lista;
 }
 
 function renderProduccion() {
   const grid = document.getElementById('proyectos-grid');
   if (!grid) return;
   grid.innerHTML = '';
-  let lista = state.proyectos.slice();
-  if (state.fProduccion !== 'todos') lista = lista.filter((p) => p.status === state.fProduccion);
-  if (state.rol === 'arquitecto' && state.user) lista = lista.filter((p) => p.arquitecto === state.user.nombre);
-  if (state.search) {
-    const q = state.search.toLowerCase();
-    lista = lista.filter((p) => `${p.id} ${p.client} ${p.name} ${p.city}`.toLowerCase().includes(q));
-  }
-  if (state.year && state.year !== 'Todos') lista = lista.filter((p) => String(p.trimester || '').includes(state.year));
-  if (state.quarter && state.quarter !== 'Todos los Trimestres') lista = lista.filter((p) => p.trimester === state.quarter);
-  if (state.city && state.city !== 'Todos') lista = lista.filter((p) => p.city === state.city);
+  const lista = filtrarProduccion();
   if (lista.length === 0) {
-    grid.innerHTML = '<div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center text-slate-500 text-sm">No hay proyectos para el filtro seleccionado.</div>';
+    grid.innerHTML = '<div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center text-slate-500 text-sm md:col-span-2 lg:col-span-3">No hay proyectos para el filtro seleccionado.</div>';
     return;
   }
   lista.forEach((p) => grid.appendChild(crearTarjetaProduccion(p)));
 }
 
-/* ==========================================================================
-   8. RENDER · KPI DEL TABLERO DE PRODUCCIÓN
-   ========================================================================== */
+function renderProyectos() {
+  const grid = document.getElementById('proyectos-cards');
+  if (!grid) return;
+  grid.innerHTML = '';
+  let lista = state.proyectos.slice();
+  if (state.proyectosEstado === 'activos') lista = lista.filter((p) => p.status !== EST_PRODUCCION.COMPLETADO);
+  if (state.proyectosEstado === 'completados') lista = lista.filter((p) => p.status === EST_PRODUCCION.COMPLETADO);
+  if (state.proyectosYear !== 'Todos') lista = lista.filter((p) => String(p.trimester || '').includes(state.proyectosYear));
+  if (state.proyectosQuarter !== 'Todos los Trimestres') lista = lista.filter((p) => p.trimester === state.proyectosQuarter);
+  if (state.proyectosCity !== 'Todos') lista = lista.filter((p) => p.city === state.proyectosCity);
+  if (state.search) {
+    const q = state.search.toLowerCase();
+    lista = lista.filter((p) => `${p.id} ${p.client} ${p.name} ${p.city}`.toLowerCase().includes(q));
+  }
+  const count = document.getElementById('proyectos-count');
+  if (count) count.textContent = `${lista.length} proyecto${lista.length === 1 ? '' : 's'}`;
+  if (lista.length === 0) {
+    grid.innerHTML = '<div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center text-slate-500 text-sm md:col-span-2 lg:col-span-3">No hay proyectos para los filtros seleccionados.</div>';
+    return;
+  }
+  lista.forEach((p) => grid.appendChild(crearTarjetaProduccion(p)));
+}
 
 function renderKpis() {
   const detenidos = state.proyectos.filter((p) => p.status === EST_PRODUCCION.DETENIDO).length;
-  document.getElementById('kpi-activos').textContent = String(state.proyectos.length);
-  document.getElementById('kpi-detenidos').textContent = String(detenidos);
-  document.getElementById('kpi-bodega').textContent = '2 Bodegas';
-  const conTareas = new Set();
-  state.proyectos.forEach((p) => (p.muebles || []).forEach((m) => { if (m.carpenter) conTareas.add(m.carpenter); }));
-  Object.keys(state.tareas).forEach((k) => { if ((state.tareas[k] || []).length) conTareas.add(k); });
-  document.getElementById('kpi-operarios').textContent = `${conTareas.size} Operarios`;
-  const cardDetenidos = document.getElementById('kpi-detenidos').closest('.kpi-card');
-  cardDetenidos.classList.toggle('kpi-alert', detenidos > 0);
-  const cardOperarios = document.getElementById('kpi-operarios').closest('.kpi-card');
-  cardOperarios.classList.toggle('kpi-success', true);
+  const activos = state.proyectos.filter((p) => p.status !== EST_PRODUCCION.COMPLETADO).length;
+  const set = new Set();
+  state.proyectos.forEach((p) => (p.muebles || []).forEach((m) => { if (m.carpenter) set.add(m.carpenter); }));
+  Object.keys(state.tareas || {}).forEach((k) => { if ((state.tareas[k] || []).length) set.add(k); });
+  const elActivos = document.getElementById('kpi-activos');
+  const elDetenidos = document.getElementById('kpi-detenidos');
+  const elOperarios = document.getElementById('kpi-operarios');
+  if (elActivos) elActivos.textContent = String(activos);
+  if (elDetenidos) elDetenidos.textContent = String(detenidos);
+  if (elOperarios) elOperarios.textContent = `${set.size} Operarios`;
+  document.getElementById('kpi-detenidos')?.closest('.kpi-card')?.classList.toggle('kpi-alert', detenidos > 0);
+  document.getElementById('kpi-operarios')?.closest('.kpi-card')?.classList.toggle('kpi-success', true);
 }
-
 /* ==========================================================================
-   9. RENDER · EQUIPO & ASIGNACIONES
+   10. EQUIPO & ASIGNACIONES · EDITAR / REASIGNAR / ELIMINAR / FASE
    ========================================================================== */
+
+function botonesFaseTarea(task) {
+  if (!puedeAsignar()) return '';
+  const actual = Math.max(0, PRODUCTION_PHASES.indexOf(task.phase));
+  const atras = actual <= 0 ? 'disabled' : '';
+  const adelante = actual >= PRODUCTION_PHASES.length - 1 ? 'disabled' : '';
+  const comun = task.kind === 'mueble'
+    ? `data-task-kind="mueble" data-project="${esc(task.projectId)}" data-mueble="${esc(task.muebleId)}"`
+    : `data-task-kind="tarea" data-carpenter="${esc(task.carpenter)}" data-task="${esc(task.taskId)}"`;
+  return `
+    <div class="flex items-center gap-1">
+      <button type="button" class="fase-btn" data-task-phase="-1" ${comun} ${atras} title="Retroceder fase" aria-label="Retroceder fase"><i class="fas fa-arrow-left" aria-hidden="true"></i></button>
+      <button type="button" class="fase-btn fase-btn--next" data-task-phase="1" ${comun} ${adelante} title="Avanzar fase" aria-label="Avanzar fase"><i class="fas fa-arrow-right" aria-hidden="true"></i></button>
+    </div>`;
+}
 
 function renderEquipo() {
   const contenedor = document.getElementById('equipo-grid');
@@ -713,128 +1177,106 @@ function renderEquipo() {
 
   const assignments = {};
   state.proyectos.forEach((p) => {
-    if (p.status === EST_PRODUCCION.COMPLETADO || p.phase === 'Comercial') return;
+    if (p.status === EST_PRODUCCION.COMPLETADO) return;
     (p.muebles || []).forEach((m) => {
       if (!m.carpenter) return;
       if (!assignments[m.carpenter]) assignments[m.carpenter] = [];
       assignments[m.carpenter].push({
-        id: `t-${p.id}-${m.id}`,
+        kind: 'mueble',
+        muebleId: m.id,
+        taskId: null,
         text: m.name,
         projectId: p.id,
         projectName: p.name,
-        status: m.status,
-        manufacturingPhase: m.manufacturingPhase,
+        phase: m.manufacturingPhase || 'Recepción',
+        status: m.status || m.manufacturingPhase,
+        carpenter: m.carpenter,
         projectStatus: p.status,
+        detenido: p.status === EST_PRODUCCION.DETENIDO,
+      });
+    });
+  });
+
+  Object.entries(state.tareas || {}).forEach(([carpenter, tareas]) => {
+    (tareas || []).forEach((t) => {
+      const p = state.proyectos.find((x) => x.id === t.projectId);
+      if (!assignments[carpenter]) assignments[carpenter] = [];
+      assignments[carpenter].push({
+        kind: 'tarea',
+        muebleId: null,
+        taskId: t.id,
+        text: t.text,
+        projectId: t.projectId,
+        projectName: p?.name || 'Sin proyecto',
+        phase: t.phase || 'Asignación',
+        status: t.phase || 'Asignación',
+        carpenter,
+        projectStatus: p?.status || EST_PRODUCCION.EN_PROCESO,
+        detenido: p?.status === EST_PRODUCCION.DETENIDO,
       });
     });
   });
 
   const entries = Object.entries(assignments);
   if (entries.length === 0) {
-    contenedor.innerHTML = '<div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center text-slate-500 text-sm">No hay tareas activas asignadas a carpinteros en este momento.</div>';
+    contenedor.innerHTML = '<div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center text-slate-500 text-sm md:col-span-2 lg:col-span-3">No hay tareas activas asignadas a carpinteros en este momento.</div>';
     return;
   }
 
-  entries.forEach(([carpenter, tasks]) => {
-    const allTasks = [...tasks];
-    (state.tareas[carpenter] || []).forEach((t) => {
-      allTasks.push({
-        id: t.id,
-        text: t.text,
-        projectId: t.projectId,
-        projectName: state.proyectos.find((p) => p.id === t.projectId)?.name || '',
-        status: 'Pendiente',
-        manufacturingPhase: 'Asignación',
-        projectStatus: 'En proceso',
-      });
-    });
-
+  entries.sort(([a], [b]) => a.localeCompare(b)).forEach(([carpenter, tasks]) => {
     const card = document.createElement('div');
     card.className = 'bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col';
-    const header = document.createElement('div');
-    header.className = 'bg-slate-50 p-4 border-b border-slate-200 flex items-center justify-between';
-    const left = document.createElement('div');
-    left.className = 'flex items-center space-x-3';
-    const avatar = document.createElement('div');
-    avatar.className = 'w-10 h-10 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-600 font-black';
-    avatar.textContent = String(carpenter).charAt(0).toUpperCase();
-    const nameWrap = document.createElement('div');
-    const name = document.createElement('h3');
-    name.className = 'font-bold text-slate-900';
-    name.textContent = carpenter;
-    const sub = document.createElement('p');
-    sub.className = 'text-[10px] uppercase font-bold text-slate-500 tracking-wider';
-    sub.textContent = 'Operario de Planta';
-    nameWrap.appendChild(name);
-    nameWrap.appendChild(sub);
-    left.appendChild(avatar);
-    left.appendChild(nameWrap);
-    const badge = document.createElement('span');
-    badge.className = 'bg-slate-900 text-white text-xs font-black px-3 py-1 rounded-lg shadow-sm';
-    badge.textContent = `${allTasks.length} Tareas`;
-    header.appendChild(left);
-    header.appendChild(badge);
-    card.appendChild(header);
-
-    const body = document.createElement('div');
-    body.className = 'p-4 flex-1 overflow-y-auto space-y-3';
-    allTasks.forEach((task) => {
-      const taskEl = document.createElement('div');
-      taskEl.className = `p-3 rounded-xl border text-xs ${task.projectStatus === 'Detenido' ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200 shadow-sm'}`;
-      const row = document.createElement('div');
-      row.className = 'flex justify-between items-start mb-1.5';
-      const idBadge = document.createElement('span');
-      idBadge.className = 'text-[10px] font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded uppercase';
-      idBadge.textContent = task.projectId;
-      const status = document.createElement('span');
-      status.className = `font-bold ${task.manufacturingPhase === 'Despacho' ? 'text-emerald-600' : 'text-slate-500'}`;
-      status.textContent = task.status;
-      row.appendChild(idBadge);
-      row.appendChild(status);
-      taskEl.appendChild(row);
-      const tName = document.createElement('p');
-      tName.className = 'font-bold text-slate-900 leading-tight mb-1';
-      tName.textContent = task.text;
-      taskEl.appendChild(tName);
-      const tProj = document.createElement('p');
-      tProj.className = 'text-slate-500 mb-3 truncate';
-      tProj.textContent = `Proyecto: ${task.projectName}`;
-      taskEl.appendChild(tProj);
-      const fase = document.createElement('div');
-      fase.className = 'flex items-center justify-between text-[10px] font-bold text-slate-500 mb-1.5';
-      const faseTxt = document.createElement('span');
-      faseTxt.innerHTML = `Fase del Manual: <span class="text-slate-900">${task.manufacturingPhase}</span>`;
-      const faseVal = document.createElement('span');
-      faseVal.className = 'text-slate-900';
-      faseVal.textContent = task.manufacturingPhase;
-      fase.appendChild(faseTxt);
-      taskEl.appendChild(fase);
-      const stepper = document.createElement('div');
-      stepper.className = 'flex space-x-1';
-      const currentIdx = Math.max(0, PRODUCTION_PHASES.indexOf(task.manufacturingPhase));
-      PRODUCTION_PHASES.forEach((phase, idx) => {
-        const bar = document.createElement('div');
-        bar.className = `h-1.5 flex-1 rounded-full ${idx === currentIdx ? 'bg-red-600' : (idx < currentIdx ? 'bg-emerald-500' : 'bg-slate-200')}`;
-        bar.title = phase;
-        stepper.appendChild(bar);
-      });
-      taskEl.appendChild(stepper);
-      body.appendChild(taskEl);
-    });
-    const btnAsignar = document.createElement('button');
-    btnAsignar.type = 'button';
-    btnAsignar.dataset.asignarTarea = carpenter;
-    btnAsignar.className = 'w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-xs transition-colors border border-slate-200';
-    btnAsignar.innerHTML = '<i class="fas fa-plus w-3.5 h-3.5 mr-1" aria-hidden="true"></i>Asignar Tarea';
-    btnAsignar.addEventListener('click', () => abrirModalTarea(carpenter));
-    body.appendChild(btnAsignar);
-    card.appendChild(body);
+    card.innerHTML = `
+      <div class="bg-slate-50 p-4 border-b border-slate-200 flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="w-10 h-10 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-600 font-black">${esc(String(carpenter).charAt(0).toUpperCase())}</div>
+          <div>
+            <h3 class="font-bold text-slate-900">${esc(carpenter)}</h3>
+            <p class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Operario de Planta</p>
+          </div>
+        </div>
+        <span class="bg-slate-900 text-white text-xs font-black px-3 py-1 rounded-lg shadow-sm">${tasks.length} Tareas</span>
+      </div>
+      <div class="p-4 flex-1 overflow-y-auto space-y-3">
+        ${tasks.map((task) => `
+          <div class="p-3 rounded-xl border text-xs ${task.detenido ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200 shadow-sm'}">
+            <div class="flex justify-between items-start gap-2 mb-1.5">
+              <span class="text-[10px] font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded uppercase">${esc(task.projectId || 'SIN-PRY')}</span>
+              <div class="flex items-center gap-1">
+                <span class="font-bold ${task.phase === 'Despacho' ? 'text-emerald-600' : 'text-slate-500'}">${esc(task.phase)}</span>
+                ${puedeAsignar() ? `
+                  <button type="button" class="task-icon-btn" data-task-edit data-task-kind="${task.kind}" data-project="${esc(task.projectId || '')}" data-mueble="${esc(task.muebleId || '')}" data-task="${esc(task.taskId || '')}" data-carpenter="${esc(task.carpenter)}" title="Editar tarea" aria-label="Editar tarea"><i class="fas fa-pen" aria-hidden="true"></i></button>
+                  <button type="button" class="task-icon-btn task-icon-btn--danger" data-task-del data-task-kind="${task.kind}" data-project="${esc(task.projectId || '')}" data-mueble="${esc(task.muebleId || '')}" data-task="${esc(task.taskId || '')}" data-carpenter="${esc(task.carpenter)}" title="Eliminar tarea" aria-label="Eliminar tarea"><i class="fas fa-trash" aria-hidden="true"></i></button>
+                ` : ''}
+              </div>
+            </div>
+            <p class="font-bold text-slate-900 leading-tight mb-1">${esc(task.text)}</p>
+            <p class="text-slate-500 mb-2 truncate">Proyecto: ${esc(task.projectName)}</p>
+            <div class="flex items-center justify-between text-[10px] font-bold text-slate-500 mb-1.5">
+              <span>Fase del Manual: <span class="text-slate-900">${esc(task.phase)}</span></span>
+              ${botonesFaseTarea(task)}
+            </div>
+            <div class="flex space-x-1">${stepperBarras(task.phase)}</div>
+          </div>`).join('')}
+        <button type="button" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-xs transition-colors border border-slate-200" data-tarea-add="${esc(carpenter)}">
+          <i class="fas fa-plus w-3.5 h-3.5 mr-1" aria-hidden="true"></i>Asignar Tarea
+        </button>
+      </div>`;
     contenedor.appendChild(card);
   });
 }
 
-function abrirModalTarea(carpenter) {
-  document.getElementById('tarea-carpintero').textContent = carpenter;
+function abrirModalTarea(carpenter, ctx) {
+  if (!puedeAsignar()) { showToast('Solo Gerencia u Operaciones pueden gestionar asignaciones.'); return; }
+  state.tareaCtx = ctx || null;
+  const editando = Boolean(ctx);
+  document.getElementById('tarea-title').textContent = editando ? 'Editar Tarea' : 'Asignar Tarea';
+  document.getElementById('tarea-carpintero-input').value = carpenter || '';
+  document.getElementById('tarea-texto').value = ctx?.text || '';
+  document.getElementById('tarea-info').textContent = ctx?.kind === 'mueble'
+    ? 'Módulo/mueble del proyecto. Puedes cambiar el carpintero y la descripción; la fase se controla con los botones de la tarjeta.'
+    : 'Tarea independiente. Puedes reasignarla a otro carpintero o eliminarla.';
+
   const sel = document.getElementById('tarea-proyecto');
   sel.innerHTML = '<option value="">Seleccionar proyecto...</option>';
   state.proyectos.forEach((p) => {
@@ -843,174 +1285,658 @@ function abrirModalTarea(carpenter) {
     opt.textContent = `${p.name} - (${p.client})`;
     sel.appendChild(opt);
   });
-  document.getElementById('tarea-texto').value = '';
+  sel.value = ctx?.projectId || '';
+  sel.disabled = ctx?.kind === 'mueble';
+
+  const datalist = document.getElementById('carpinteros-list');
+  if (datalist) {
+    datalist.innerHTML = carpentersList().map((c) => `<option value="${esc(c)}"></option>`).join('');
+  }
+  document.getElementById('tarea-eliminar').classList.toggle('hidden', !carpenter);
   document.getElementById('tarea-modal').classList.remove('is-hidden');
+  setTimeout(() => document.getElementById('tarea-carpintero-input')?.focus(), 40);
 }
 
 function cerrarModalTarea() {
-  document.getElementById('tarea-modal').classList.add('is-hidden');
+  document.getElementById('tarea-modal')?.classList.add('is-hidden');
+  state.tareaCtx = null;
 }
 
 function guardarTarea() {
-  const carpintero = document.getElementById('tarea-carpintero').textContent;
-  const projectId = document.getElementById('tarea-proyecto').value;
+  if (!puedeAsignar()) { showToast('Tu rol no puede modificar asignaciones.'); return; }
+  const carpenter = document.getElementById('tarea-carpintero-input').value.trim();
   const texto = document.getElementById('tarea-texto').value.trim();
-  if (!carpintero || !projectId || !texto) return;
-  if (!state.tareas[carpintero]) state.tareas[carpintero] = [];
-  state.tareas[carpintero].push({ id: generarId('t'), text: texto, projectId });
-  guardarEstado();
+  const projectId = document.getElementById('tarea-proyecto').value;
+  const ctx = state.tareaCtx;
+  if (!carpenter || !texto) { showToast('Completa el carpintero y la descripción.'); return; }
+
+  if (!ctx) {
+    if (!projectId) { showToast('Selecciona un proyecto para la tarea.'); return; }
+    if (!state.tareas[carpenter]) state.tareas[carpenter] = [];
+    state.tareas[carpenter].push({ id: uid('t'), text: texto, projectId, phase: 'Asignación' });
+  } else if (ctx.kind === 'mueble') {
+    const p = state.proyectos.find((x) => x.id === ctx.projectId);
+    const m = (p?.muebles || []).find((x) => x.id === ctx.muebleId);
+    if (!m) return;
+    m.carpenter = carpenter;
+    m.name = texto;
+  } else {
+    const lista = state.tareas[ctx.carpenter] || [];
+    const idx = lista.findIndex((t) => t.id === ctx.taskId);
+    if (idx < 0) return;
+    const [t] = lista.splice(idx, 1);
+    t.text = texto;
+    t.projectId = projectId || t.projectId;
+    if (!state.tareas[carpenter]) state.tareas[carpenter] = [];
+    state.tareas[carpenter].push(t);
+  }
+  commit();
   cerrarModalTarea();
-  renderEquipo();
-  renderKpis();
+  showToast('Tarea actualizada y sincronizada.');
+}
+
+function eliminarTarea(carpenter, ctx) {
+  if (!puedeAsignar()) { showToast('Tu rol no puede eliminar asignaciones.'); return; }
+  if (!window.confirm('¿Eliminar esta tarea asignada?')) return;
+  if (ctx.kind === 'mueble') {
+    const p = state.proyectos.find((x) => x.id === ctx.projectId);
+    if (!p) return;
+    p.muebles = (p.muebles || []).filter((m) => m.id !== ctx.muebleId);
+  } else {
+    const owner = ctx.carpenter || carpenter;
+    state.tareas[owner] = (state.tareas[owner] || []).filter((t) => t.id !== ctx.taskId);
+    if (state.tareas[owner].length === 0) delete state.tareas[owner];
+  }
+  commit();
+  cerrarModalTarea();
+  showToast('Tarea eliminada.');
 }
 
 /* ==========================================================================
-   10. RENDER · SEGUIMIENTO COMERCIAL (KANBAN)
+   11. SEGUIMIENTO COMERCIAL · DRAG & DROP · FICHA COMERCIAL
    ========================================================================== */
 
-function aprobarProspecto(id) {
-  const item = state.comercial.find((i) => i.id === id);
-  if (!item) return;
-  item.etapa = 'Cotizaciones';
-  item.proyectoId = generarId('PRJ');
-  state.proyectos.push({
-    id: item.proyectoId,
-    name: item.cliente,
-    client: item.cliente,
-    city: 'Por definir',
-    neighborhood: '',
-    address: 'Por definir',
-    phone: '',
-    phase: 'Cotizaciones',
-    manufacturingPhase: 'Recepción',
-    status: 'En proceso',
-    commercialStage: 'Cotizaciones',
-    trimester: item.trimester || 'Q4 - 2026',
-    budget: item.budget || 0,
-    alert: item.alert || '',
-    leadCarpenter: '',
-    logisticOperator: 'Wilyer',
-    dateStart: 'Por definir',
-    dateExpected: item.dateExpected || 'Por definir',
-    image: '',
-    arquitecto: state.user?.cargo === 'arquitecto' ? state.user.nombre : 'Felipe Mora',
-    muebles: [],
-    pedidos: [],
-    bloqueos: [],
-    dropboxFiles: { publicFiles: [], privateFiles: [] },
-  });
-  guardarEstado();
-  renderComercial();
+function itemsComercial() {
+  const comerciales = state.comercial
+    .filter((c) => !c.proyectoId)
+    .filter((c) => state.comercialTrimestre === 'Todos los Trimestres' || c.trimester === state.comercialTrimestre)
+    .map((c) => ({
+      kind: 'comercial',
+      id: c.id,
+      cliente: c.cliente,
+      etapa: c.etapa,
+      trimester: c.trimester,
+      detalle: c.detalle,
+      alert: c.alert,
+      motivo: c.motivo,
+      pendientes: 0,
+      proyectoId: c.proyectoId,
+      raw: c,
+    }));
+  const proyectos = state.proyectos
+    .filter((p) => state.comercialTrimestre === 'Todos los Trimestres' || p.trimester === state.comercialTrimestre)
+    .map((p) => ({
+      kind: 'proyecto',
+      id: p.id,
+      cliente: p.client || p.name,
+      etapa: etapaComercialProyecto(p),
+      trimester: p.trimester,
+      detalle: detalleProyecto(p),
+      alert: primerPendiente(p)?.text || '',
+      motivo: '',
+      pendientes: (p.pendientes || []).length,
+      proyectoId: p.id,
+      raw: p,
+    }));
+  return [...comerciales, ...proyectos];
 }
 
-function rechazarProspecto(id, motivo) {
-  const item = state.comercial.find((i) => i.id === id);
-  if (!item) return;
-  item.rechazado = true;
-  item.motivo = motivo || '';
-  item.etapa = 'Prospecto No Continuado';
-  guardarEstado();
-  renderComercial();
+function opcionesEtapa(kind, actual) {
+  const etapas = kind === 'proyecto'
+    ? ETAPAS_COMERCIAL.filter((e) => !['Prospectos', 'Prospecto No Continuado'].includes(e))
+    : ETAPAS_COMERCIAL.slice();
+  return etapas.map((e) => `<option value="${esc(e)}" ${e === actual ? 'selected' : ''}>${esc(e)}</option>`).join('');
+}
+
+function crearTarjetaComercial(item) {
+  const card = document.createElement('div');
+  card.className = 'comercial-card bg-white p-3 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:shadow-md hover:border-red-300 transition-all group';
+  card.draggable = true;
+  card.dataset.ccKind = item.kind;
+  card.dataset.ccId = item.id;
+  const prospecto = item.kind === 'comercial' && item.etapa === 'Prospectos';
+  card.innerHTML = `
+    <div class="flex justify-between items-start mb-2 gap-2">
+      <span class="text-[9px] font-black font-mono text-slate-400 group-hover:text-red-600 transition-colors">${esc(item.id)}</span>
+      <span class="w-2 h-2 rounded-full ${item.motivo ? 'bg-red-500' : 'bg-emerald-500'}"></span>
+    </div>
+    <h4 class="font-bold text-slate-900 text-sm leading-tight mb-1">${esc(item.cliente)}</h4>
+    <p class="text-xs text-slate-500 comercial-detalle mb-2">${esc(item.detalle)}</p>
+    ${item.motivo ? `<p class="text-[10px] text-red-700 bg-red-50 border border-red-100 rounded-lg p-1.5 mb-2"><strong>Motivo:</strong> ${esc(item.motivo)}</p>` : ''}
+    ${item.pendientes ? `<p class="text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-2 py-1 mb-2"><i class="fas fa-triangle-exclamation mr-1" aria-hidden="true"></i>${item.pendientes} pendiente${item.pendientes === 1 ? '' : 's'}</p>` : ''}
+    <div class="flex items-center gap-1 border-t border-slate-100 pt-2">
+      <select class="min-w-0 flex-1 bg-slate-50 border border-slate-200 rounded-lg px-1.5 py-1 text-[10px] font-bold text-slate-700" data-com-stage data-cc-kind="${item.kind}" data-cc-id="${esc(item.id)}" draggable="false" aria-label="Cambiar etapa comercial">
+        ${opcionesEtapa(item.kind, item.etapa)}
+      </select>
+      <span class="text-[9px] text-slate-400" title="Arrastra la tarjeta para moverla"><i class="fas fa-grip-vertical" aria-hidden="true"></i></span>
+    </div>
+    ${prospecto && puedeAprobarProspecto() ? `
+      <div class="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2">
+        <button type="button" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black py-1.5 rounded-lg" data-cc-aprobar="${esc(item.id)}">Aprobar</button>
+        <button type="button" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black py-1.5 rounded-lg" data-cc-rechazar="${esc(item.id)}">Rechazar</button>
+      </div>` : ''}`;
+  return card;
 }
 
 function renderComercial() {
   const board = document.getElementById('comercial-board');
   if (!board) return;
   board.innerHTML = '';
-  const items = state.comercial.filter((i) => state.quarter === 'Todos los Trimestres' || i.trimester === state.quarter);
+  const items = itemsComercial();
 
   ETAPAS_COMERCIAL.forEach((stage) => {
     const stageItems = items.filter((i) => i.etapa === stage);
     const col = document.createElement('div');
-    col.className = 'w-72 flex flex-col bg-slate-100/50 border border-slate-200 rounded-2xl';
-    const colHeader = document.createElement('div');
-    colHeader.className = 'p-3 border-b border-slate-200 flex justify-between items-center bg-white/50 rounded-t-2xl';
-    colHeader.innerHTML = `<h3 class="font-bold text-slate-800 text-sm">${stage}</h3><span class="bg-slate-200 text-slate-700 text-[10px] font-black px-2 py-0.5 rounded-full">${stageItems.length}</span>`;
-    const colBody = document.createElement('div');
-    colBody.className = 'p-3 flex-1 overflow-y-auto space-y-3';
-    stageItems.forEach((i) => {
-      const card = document.createElement('div');
-      card.className = 'bg-white p-3 rounded-xl border border-slate-200 shadow-sm cursor-pointer hover:shadow-md hover:border-red-300 transition-all group';
-      card.innerHTML = `
-        <div class="flex justify-between items-start mb-2">
-          <span class="text-[9px] font-black font-mono text-slate-400 group-hover:text-red-600 transition-colors">${i.id}</span>
-          <span class="w-2 h-2 rounded-full ${i.status === 'Detenido' ? 'bg-red-500' : 'bg-emerald-500'}"></span>
-        </div>
-        <h4 class="font-bold text-slate-900 text-sm leading-tight mb-1">${i.cliente}</h4>
-        <p class="text-xs text-slate-500 mb-3">Etapa: ${i.etapa}</p>
-        <div class="flex justify-between items-center text-xs border-t border-slate-100 pt-2">
-          <div class="flex items-center text-emerald-700 font-bold">
-            <i class="fas fa-dollar-sign w-3 h-3 mr-0.5" aria-hidden="true"></i>
-            ${fmtMoney(i.budget)}
-          </div>
-        </div>
-        ${i.etapa === 'Prospectos' ? `
-          <div class="mt-2 pt-2 border-t border-slate-100 flex items-center gap-2">
-            <button type="button" class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-black py-1.5 rounded-lg" data-prospect="${i.id}">Aprobar</button>
-            <button type="button" class="flex-1 bg-red-600 hover:bg-red-700 text-white text-[10px] font-black py-1.5 rounded-lg" data-prospect-rechazar="${i.id}">Rechazar</button>
-          </div>` : ''}
-        ${i.etapa === 'Prospectos' && i.rechazado ? `
-          <div class="mt-2 pt-2 border-t border-slate-100 space-y-2">
-            <input type="text" id="motivo-${i.id}" placeholder="Motivo del rechazo (obligatorio)" class="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs" />
-            <button type="button" class="w-full bg-slate-900 text-white text-[10px] font-black py-1.5 rounded-lg" data-prospect-confirm="${i.id}">Confirmar rechazo</button>
-          </div>` : ''}
-      `;
-      card.addEventListener('click', (e) => {
-        const btnA = e.target.closest('[data-prospect]');
-        const btnR = e.target.closest('[data-prospect-rechazar]');
-        const btnC = e.target.closest('[data-prospect-confirm]');
-        if (btnA) { e.stopPropagation(); aprobarProspecto(btnA.dataset.prospect); return; }
-        if (btnR) { e.stopPropagation(); const item = state.comercial.find((x) => x.id === btnR.dataset.prospect); if (item) { item.rechazado = true; item.motivo = ''; item.etapa = 'Prospecto No Continuado'; guardarEstado(); renderComercial(); } return; }
-        if (btnC) { e.stopPropagation(); const item = state.comercial.find((x) => x.id === btnC.dataset.prospect); const mot = document.getElementById(`motivo-${btnC.dataset.prospect}`)?.value?.trim(); if (item && mot) { item.motivo = mot; item.etapa = 'Prospecto No Continuado'; item.rechazado = true; guardarEstado(); renderComercial(); } return; }
-        if (i.proyectoId) openFicha(i.proyectoId);
-      });
-      colBody.appendChild(card);
-    });
+    col.className = 'w-72 shrink-0 flex flex-col bg-slate-100/50 border border-slate-200 rounded-2xl';
+    col.dataset.stageCol = stage;
+    col.innerHTML = `
+      <div class="p-3 border-b border-slate-200 flex justify-between items-center bg-white/50 rounded-t-2xl">
+        <h3 class="font-bold text-slate-800 text-sm">${esc(stage)}</h3>
+        <span class="bg-slate-200 text-slate-700 text-[10px] font-black px-2 py-0.5 rounded-full">${stageItems.length}</span>
+      </div>`;
+    const body = document.createElement('div');
+    body.className = 'p-3 flex-1 overflow-y-auto space-y-3 min-h-[10rem]';
+    stageItems.forEach((i) => body.appendChild(crearTarjetaComercial(i)));
     if (stageItems.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'h-20 border-2 border-dashed border-slate-200 rounded-xl flex items-center justify-center';
-      const span = document.createElement('span');
-      span.className = 'text-xs text-slate-400 font-medium';
-      span.textContent = 'Vacío';
-      empty.appendChild(span);
-      colBody.appendChild(empty);
+      empty.innerHTML = '<span class="text-xs text-slate-400 font-medium">Arrastra aquí</span>';
+      body.appendChild(empty);
     }
-    col.appendChild(colHeader);
-    col.appendChild(colBody);
+    col.appendChild(body);
     board.appendChild(col);
   });
 }
 
+function abrirComercialModal(kind, id) {
+  const raw = kind === 'proyecto'
+    ? state.proyectos.find((x) => x.id === id)
+    : state.comercial.find((x) => x.id === id);
+  if (!raw) return;
+  state.comercialCtx = { kind, id };
+
+  const etapa = kind === 'proyecto' ? etapaComercialProyecto(raw) : raw.etapa;
+  const cliente = kind === 'proyecto' ? (raw.client || raw.name) : raw.cliente;
+  const detalle = kind === 'proyecto' ? detalleProyecto(raw) : raw.detalle;
+
+  document.getElementById('comercial-modal-id').textContent = raw.id;
+  document.getElementById('comercial-modal-tipo').textContent = kind === 'proyecto' ? 'Proyecto en producción' : (raw.rechazado ? 'Prospecto No Continuado' : 'Prospecto comercial');
+  document.getElementById('comercial-modal-title').textContent = cliente;
+  document.getElementById('comercial-modal-sub').textContent = `${raw.trimester || 'Sin trimestre'} · Etapa: ${etapa}`;
+  document.getElementById('comercial-modal-etapa').innerHTML = opcionesEtapa(kind, etapa);
+  document.getElementById('comercial-modal-detalle').value = detalle;
+  document.getElementById('comercial-modal-trimestre').value = raw.trimester || 'Q4 - 2026';
+
+  const alerta = document.getElementById('comercial-modal-alerta');
+  if (raw.alert) {
+    alerta.classList.remove('hidden');
+    alerta.textContent = `Requiere atención: ${raw.alert}`;
+  } else {
+    alerta.classList.add('hidden');
+  }
+
+  const motivo = document.getElementById('comercial-modal-motivo');
+  if (kind === 'comercial' && raw.motivo) {
+    motivo.classList.remove('hidden');
+    motivo.textContent = `Motivo del rechazo: ${raw.motivo}`;
+  } else {
+    motivo.classList.add('hidden');
+  }
+
+  const pendientes = kind === 'proyecto' ? (raw.pendientes || []) : [];
+  document.getElementById('comercial-modal-pendientes').innerHTML = kind === 'proyecto'
+    ? (pendientes.length
+      ? `<div class="space-y-1.5">${pendientes.map((x) => `<div class="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg p-2"><span class="text-[9px] font-black uppercase text-amber-700">${esc(labelPendiente(x.tipo))}</span><span class="text-slate-800 font-semibold">${esc(x.text)}</span></div>`).join('')}</div>`
+      : '<p class="text-xs text-slate-400">Sin pendientes registrados.</p>')
+    : '<p class="text-xs text-slate-400">Al aprobar el prospecto se crea la ficha de producción y aquí aparecerán sus pendientes.</p>';
+
+  const esProspecto = kind === 'comercial' && etapa === 'Prospectos';
+  document.getElementById('comercial-modal-aprobar').classList.toggle('hidden', !(esProspecto && puedeAprobarProspecto()));
+  document.getElementById('comercial-modal-rechazar').classList.toggle('hidden', !(esProspecto && puedeAprobarProspecto()));
+  document.getElementById('comercial-modal-ficha').classList.toggle('hidden', !(kind === 'proyecto' || raw.proyectoId));
+  document.getElementById('comercial-modal-guardar').classList.toggle('hidden', !puedeGestionarComercial());
+  document.getElementById('comercial-modal').classList.remove('is-hidden');
+}
+
+function cerrarComercialModal() {
+  document.getElementById('comercial-modal')?.classList.add('is-hidden');
+  state.comercialCtx = null;
+}
+
+function guardarComercialModal() {
+  if (!puedeGestionarComercial()) { showToast('Tu rol no puede modificar la ficha comercial.'); return; }
+  const ctx = state.comercialCtx;
+  if (!ctx) return;
+  const detalle = document.getElementById('comercial-modal-detalle').value.trim();
+  const trimester = document.getElementById('comercial-modal-trimestre').value;
+  if (ctx.kind === 'proyecto') {
+    const p = state.proyectos.find((x) => x.id === ctx.id);
+    if (!p) return;
+    p.commercialDetail = detalle || detalleProyecto(p);
+    p.trimester = trimester;
+  } else {
+    const c = state.comercial.find((x) => x.id === ctx.id);
+    if (!c) return;
+    c.detalle = detalle || c.detalle;
+    c.trimester = trimester;
+  }
+  commit();
+  abrirComercialModal(ctx.kind, ctx.id);
+  showToast('Ficha comercial actualizada.');
+}
+
+function cambiarEtapaComercial(kind, id, stage) {
+  if (!puedeGestionarComercial()) { showToast('Tu rol no puede mover proyectos entre etapas.'); renderComercial(); return; }
+  if (kind === 'comercial') {
+    const item = state.comercial.find((x) => x.id === id);
+    if (!item) return;
+    if (stage === 'Prospecto No Continuado') {
+      if (!puedeAprobarProspecto()) {
+        showToast('Solo Gerencia o Secretaría pueden rechazar prospectos.');
+        renderComercial();
+        return;
+      }
+      abrirRechazo(id);
+      return;
+    }
+    if (stage === 'Aprobados' && !item.proyectoId) {
+      if (!puedeAprobarProspecto()) { showToast('Solo Gerencia o Secretaría pueden aprobar prospectos.'); renderComercial(); return; }
+      aprobarProspecto(id);
+      return;
+    }
+    item.etapa = stage;
+    item.rechazado = false;
+    item.motivo = '';
+    commit();
+    if (state.comercialCtx?.kind === 'comercial' && state.comercialCtx.id === id) abrirComercialModal(kind, id);
+    showToast(`${item.cliente}: etapa ${stage}.`);
+  } else {
+    const p = state.proyectos.find((x) => x.id === id);
+    if (!p) return;
+    const etapasProyecto = ETAPAS_COMERCIAL.filter((e) => !['Prospectos', 'Prospecto No Continuado'].includes(e));
+    if (!etapasProyecto.includes(stage)) {
+      showToast('Un proyecto en producción no puede volver a Prospectos ni marcarse como No Continuado.');
+      renderComercial();
+      return;
+    }
+    p.commercialStage = stage;
+    commit();
+    if (state.comercialCtx?.kind === 'proyecto' && state.comercialCtx.id === id) abrirComercialModal(kind, id);
+    showToast(`${p.name}: etapa ${stage}.`);
+  }
+}
+
+function aprobarProspecto(id) {
+  if (!puedeAprobarProspecto()) { showToast('Solo Gerencia o Secretaría pueden aprobar prospectos.'); return; }
+  const item = state.comercial.find((x) => x.id === id);
+  if (!item || item.proyectoId) return;
+  const nuevoId = generarIdProyecto();
+  const pendientes = item.alert
+    ? [{ id: uid('pd'), text: item.alert, tipo: 'requerimiento', prioridad: 'media', createdAt: hoyISO() }]
+    : [];
+  state.proyectos.push(normalizarProyecto({
+    id: nuevoId,
+    name: item.cliente,
+    client: item.cliente,
+    city: 'Por definir',
+    neighborhood: '',
+    address: 'Por definir',
+    phone: '',
+    phase: 'Recepción',
+    manufacturingPhase: 'Recepción',
+    status: EST_PRODUCCION.EN_PROCESO,
+    commercialStage: 'Aprobados',
+    trimester: item.trimester || 'Q4 - 2026',
+    commercialDetail: item.detalle || `${item.cliente}: Pedido por definir.`,
+    leadCarpenter: '',
+    logisticOperator: 'Por asignar',
+    dateStart: hoyISO(),
+    dateExpected: item.dateExpected || 'Por definir',
+    image: DEFAULT_IMAGE,
+    arquitecto: state.user?.nombre || 'Felipe Mora',
+    pendientes,
+    muebles: [],
+    pedidos: [],
+    bloqueos: [],
+    archivos: [],
+    dropboxFiles: { publicFiles: [], privateFiles: [] },
+  }));
+  item.etapa = 'Aprobados';
+  item.proyectoId = nuevoId;
+  item.rechazado = false;
+  item.motivo = '';
+  commit();
+  cerrarComercialModal();
+  showToast(`Prospecto aprobado. Proyecto ${nuevoId} creado.`);
+}
+
+function abrirRechazo(id) {
+  if (!puedeAprobarProspecto()) { showToast('Solo Gerencia o Secretaría pueden rechazar prospectos.'); return; }
+  const item = state.comercial.find((x) => x.id === id);
+  if (!item) return;
+  state.rechazoId = id;
+  document.getElementById('rechazo-cliente').textContent = item.cliente;
+  document.getElementById('rechazo-motivo').value = '';
+  document.getElementById('rechazo-error').classList.add('hidden');
+  document.getElementById('rechazo-modal').classList.remove('is-hidden');
+  setTimeout(() => document.getElementById('rechazo-motivo')?.focus(), 40);
+}
+
+function cerrarRechazo() {
+  document.getElementById('rechazo-modal')?.classList.add('is-hidden');
+  state.rechazoId = null;
+  renderComercial();
+  const modal = document.getElementById('comercial-modal');
+  if (state.comercialCtx && modal && !modal.classList.contains('is-hidden')) {
+    abrirComercialModal(state.comercialCtx.kind, state.comercialCtx.id);
+  }
+}
+
+function confirmarRechazo() {
+  if (!puedeAprobarProspecto()) { showToast('Tu rol no puede rechazar prospectos.'); return; }
+  const id = state.rechazoId;
+  const item = state.comercial.find((x) => x.id === id);
+  if (!item) return;
+  const motivo = document.getElementById('rechazo-motivo').value.trim();
+  if (!motivo) {
+    document.getElementById('rechazo-error').classList.remove('hidden');
+    return;
+  }
+  item.etapa = 'Prospecto No Continuado';
+  item.rechazado = true;
+  item.motivo = motivo;
+  commit();
+  document.getElementById('rechazo-modal').classList.add('is-hidden');
+  state.rechazoId = null;
+  cerrarComercialModal();
+  showToast(`${item.cliente}: Prospecto No Continuado.`);
+}
+
+function guardarProspecto(e) {
+  e.preventDefault();
+  if (!puedeCrearProspecto()) { showToast('Tu rol no puede crear prospectos.'); return; }
+  const cliente = document.getElementById('prospecto-cliente').value.trim();
+  const detalle = document.getElementById('prospecto-detalle').value.trim();
+  if (!cliente || !detalle) return;
+  state.comercial.push(normalizarComercial({
+    id: generarIdComercial(),
+    cliente,
+    etapa: document.getElementById('prospecto-etapa').value,
+    trimester: document.getElementById('prospecto-trimestre').value,
+    status: EST_PRODUCCION.EN_PROCESO,
+    dateExpected: 'Por definir',
+    proyectoId: null,
+    alert: document.getElementById('prospecto-alerta').value.trim(),
+    detalle,
+    rechazado: false,
+    motivo: '',
+  }));
+  commit();
+  document.getElementById('prospecto-form').reset();
+  document.getElementById('prospecto-modal').classList.add('is-hidden');
+  showToast('Prospecto creado y visible en el pipeline.');
+}
 /* ==========================================================================
-   11. RENDER · ESTADÍSTICAS & RENDIMIENTO
+   12. CENTRO DE CONTROL LOGÍSTICO
+   ========================================================================== */
+
+function tareasAgrupadas() {
+  const mapa = {};
+  state.proyectos.forEach((p) => {
+    if (p.status === EST_PRODUCCION.COMPLETADO) return;
+    (p.muebles || []).forEach((m) => {
+      if (!m.carpenter) return;
+      if (!mapa[m.carpenter]) mapa[m.carpenter] = [];
+      mapa[m.carpenter].push({ text: m.name, projectId: p.id, projectName: p.name, phase: m.manufacturingPhase });
+    });
+  });
+  Object.entries(state.tareas || {}).forEach(([carpenter, tareas]) => {
+    (tareas || []).forEach((t) => {
+      const p = state.proyectos.find((x) => x.id === t.projectId);
+      if (p?.status === EST_PRODUCCION.COMPLETADO) return;
+      if (!mapa[carpenter]) mapa[carpenter] = [];
+      mapa[carpenter].push({ text: t.text, projectId: t.projectId, projectName: p?.name || 'Sin proyecto', phase: t.phase || 'Asignación' });
+    });
+  });
+  return mapa;
+}
+
+function materialesFaltantes() {
+  const lista = [];
+  state.proyectos.forEach((p) => {
+    if (p.status === EST_PRODUCCION.COMPLETADO) return;
+    (p.pendientes || []).forEach((x) => {
+      if (['material', 'requerimiento', 'bloqueo'].includes(x.tipo)) lista.push({ proyecto: p, pendiente: x });
+    });
+  });
+  return lista;
+}
+
+function novedadesUrgentes() {
+  const novedades = [];
+  state.proyectos.forEach((p) => {
+    if (p.status === EST_PRODUCCION.DETENIDO) {
+      novedades.push({
+        severity: 'alta',
+        titulo: `${p.id} · Proyecto detenido`,
+        detalle: primerPendiente(p)?.text || 'Requiere revisión de Gerencia',
+        projectId: p.id,
+      });
+    }
+    if (p.status !== EST_PRODUCCION.COMPLETADO && esHoy(p.dateExpected)) {
+      novedades.push({
+        severity: 'media',
+        titulo: `${p.id} · Entrega programada para hoy`,
+        detalle: `${p.client} · ${p.city} · ${p.manufacturingPhase}`,
+        projectId: p.id,
+      });
+    }
+    (p.pendientes || []).forEach((x) => {
+      if (x.prioridad === 'alta' && p.status !== EST_PRODUCCION.COMPLETADO) {
+        novedades.push({
+          severity: 'alta',
+          titulo: `${p.id} · ${labelPendiente(x.tipo)} crítico`,
+          detalle: x.text,
+          projectId: p.id,
+        });
+      }
+    });
+  });
+  state.comercial.forEach((c) => {
+    if (c.etapa === 'Prospecto No Continuado' && c.motivo) {
+      novedades.push({ severity: 'baja', titulo: `${c.id} · Prospecto no continuado`, detalle: `${c.cliente}: ${c.motivo}`, projectId: null });
+    }
+  });
+  return novedades.slice(0, 10);
+}
+
+function reportarGerencia() {
+  const entregas = state.proyectos.filter((p) => esHoy(p.dateExpected));
+  const retrasos = state.proyectos.filter((p) => p.status === EST_PRODUCCION.DETENIDO || (p.status !== EST_PRODUCCION.COMPLETADO && esFechaVencida(p.dateExpected)));
+  const materiales = materialesFaltantes();
+  const lineas = [
+    `REPORTE LOGÍSTICO MODUGAL · ${formatFechaLarga(new Date())}`,
+    '',
+    `Entregas de hoy (${entregas.length}):`,
+    ...(entregas.length ? entregas.map((p) => `- ${p.id} · ${p.client} · ${p.city} · ${p.manufacturingPhase}`) : ['- Sin entregas programadas']),
+    '',
+    `Proyectos retrasados/detenidos (${retrasos.length}):`,
+    ...(retrasos.length ? retrasos.map((p) => `- ${p.id} · ${p.client} · ${p.status} · ${primerPendiente(p)?.text || 'Sin detalle'}`) : ['- Ninguno']),
+    '',
+    `Materiales/requerimientos faltantes (${materiales.length}):`,
+    ...(materiales.length ? materiales.slice(0, 12).map(({ proyecto, pendiente }) => `- ${proyecto.id} · ${pendiente.text}`) : ['- Ninguno']),
+  ];
+  const texto = lineas.join('\n');
+  if (navigator.clipboard?.writeText) {
+    navigator.clipboard.writeText(texto).then(() => showToast('Reporte copiado. Listo para enviar a Gerencia.'))
+      .catch(() => window.alert(texto));
+  } else {
+    window.alert(texto);
+  }
+}
+
+function centroCard(icon, title, count, tone, body) {
+  const tonos = {
+    red: 'bg-red-50 text-red-600 border-red-100',
+    amber: 'bg-amber-50 text-amber-600 border-amber-100',
+    blue: 'bg-blue-50 text-blue-600 border-blue-100',
+    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
+    slate: 'bg-slate-100 text-slate-600 border-slate-200',
+  };
+  return `
+    <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col">
+      <div class="p-4 border-b border-slate-200 flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="p-2.5 rounded-xl border ${tonos[tone] || tonos.slate}"><i class="fas ${icon} w-5 h-5" aria-hidden="true"></i></div>
+          <h3 class="font-black text-slate-900 text-sm">${title}</h3>
+        </div>
+        <span class="bg-slate-900 text-white text-xs font-black px-2.5 py-1 rounded-lg">${count}</span>
+      </div>
+      <div class="p-4 flex-1 space-y-2 max-h-72 overflow-y-auto">${body}</div>
+    </div>`;
+}
+
+function renderCentro() {
+  const grid = document.getElementById('centro-grid');
+  if (!grid) return;
+  const fecha = document.getElementById('centro-fecha');
+  if (fecha) fecha.textContent = formatFechaLarga(new Date());
+
+  const entregas = state.proyectos.filter((p) => esHoy(p.dateExpected));
+  const retrasos = state.proyectos.filter((p) => p.status === EST_PRODUCCION.DETENIDO || (p.status !== EST_PRODUCCION.COMPLETADO && esFechaVencida(p.dateExpected)));
+  const tareas = tareasAgrupadas();
+  const totalTareas = Object.values(tareas).reduce((acc, arr) => acc + arr.length, 0);
+  const materiales = materialesFaltantes();
+  const urgentes = novedadesUrgentes();
+
+  const entregasBody = entregas.length ? entregas.map((p) => `
+    <div class="flex items-start justify-between gap-2 border border-slate-200 rounded-xl p-2.5">
+      <div class="min-w-0">
+        <p class="font-bold text-slate-900 truncate">${esc(p.client)}</p>
+        <p class="text-[10px] text-slate-500">${esc(p.city)} · ${esc(p.manufacturingPhase)} · ${esc(p.dateExpected)}</p>
+      </div>
+      <button type="button" class="shrink-0 text-[10px] font-black text-red-600 bg-red-50 border border-red-100 rounded-lg px-2 py-1" data-open-ficha="${esc(p.id)}">Ver</button>
+    </div>`).join('') : '<p class="text-xs text-slate-400">Sin entregas programadas para hoy.</p>';
+
+  const retrasosBody = retrasos.length ? retrasos.map((p) => `
+    <div class="border border-red-200 bg-red-50 rounded-xl p-2.5">
+      <div class="flex items-center justify-between gap-2">
+        <p class="font-bold text-red-900 text-xs">${esc(p.id)} · ${esc(p.client)}</p>
+        <span class="text-[9px] font-black uppercase text-red-700">${esc(p.status)}</span>
+      </div>
+      <p class="text-[10px] text-red-700 mt-1">${esc(primerPendiente(p)?.text || `Fecha prometida: ${p.dateExpected}`)}</p>
+      <button type="button" class="mt-1.5 text-[10px] font-black text-red-700 underline" data-open-ficha="${esc(p.id)}">Abrir ficha</button>
+    </div>`).join('') : '<p class="text-xs text-slate-400">Sin proyectos retrasados o detenidos.</p>';
+
+  const tareasBody = Object.keys(tareas).length ? Object.entries(tareas).map(([carpenter, arr]) => `
+    <div class="flex items-center justify-between gap-2 border border-slate-200 rounded-xl p-2.5">
+      <div class="min-w-0">
+        <p class="font-bold text-slate-900 text-xs">${esc(carpenter)}</p>
+        <p class="text-[10px] text-slate-500 truncate">${esc(arr.slice(0, 2).map((t) => t.text).join(' · '))}</p>
+      </div>
+      <span class="shrink-0 bg-slate-100 border border-slate-200 text-slate-700 text-[10px] font-black px-2 py-1 rounded-lg">${arr.length}</span>
+    </div>`).join('') : '<p class="text-xs text-slate-400">Sin tareas activas asignadas.</p>';
+
+  const materialesBody = materiales.length ? materiales.slice(0, 12).map(({ proyecto, pendiente }) => `
+    <div class="flex items-start justify-between gap-2 border border-amber-200 bg-amber-50 rounded-xl p-2.5">
+      <div class="min-w-0">
+        <p class="text-[9px] font-black uppercase text-amber-700">${esc(proyecto.id)} · ${esc(labelPendiente(pendiente.tipo))}</p>
+        <p class="text-[11px] font-semibold text-amber-900">${esc(pendiente.text)}</p>
+      </div>
+      <button type="button" class="shrink-0 text-[10px] font-black text-amber-800 bg-white border border-amber-200 rounded-lg px-2 py-1" data-open-ficha="${esc(proyecto.id)}" data-sub="pendientes">Ver</button>
+    </div>`).join('') : '<p class="text-xs text-slate-400">Sin materiales ni requerimientos faltantes.</p>';
+
+  const urgentesBody = urgentes.length ? urgentes.map((n) => `
+    <div class="border rounded-xl p-2.5 ${n.severity === 'alta' ? 'border-red-200 bg-red-50' : (n.severity === 'media' ? 'border-amber-200 bg-amber-50' : 'border-slate-200 bg-slate-50')}">
+      <p class="font-bold text-xs ${n.severity === 'alta' ? 'text-red-900' : (n.severity === 'media' ? 'text-amber-900' : 'text-slate-800')}">${esc(n.titulo)}</p>
+      <p class="text-[10px] mt-0.5 ${n.severity === 'alta' ? 'text-red-700' : (n.severity === 'media' ? 'text-amber-700' : 'text-slate-500')}">${esc(n.detalle)}</p>
+      ${n.projectId ? `<button type="button" class="mt-1 text-[10px] font-black underline text-red-700" data-open-ficha="${esc(n.projectId)}">Revisar</button>` : ''}
+    </div>`).join('') : '<p class="text-xs text-slate-400">Sin novedades urgentes. Todo bajo control.</p>';
+
+  grid.innerHTML = [
+    centroCard('fa-truck-fast', 'Entregas programadas para HOY', entregas.length, 'blue', entregasBody),
+    centroCard('fa-triangle-exclamation', 'Proyectos retrasados o detenidos', retrasos.length, 'red', retrasosBody),
+    centroCard('fa-helmet-safety', `Tareas pendientes por carpintero`, totalTareas, 'emerald', `${tareasBody}<button type="button" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-xl text-[11px]" data-centro-tab="equipo">Gestionar en Equipo &amp; Asignaciones</button>`),
+    centroCard('fa-boxes-stacked', 'Materiales / requerimientos faltantes', materiales.length, 'amber', materialesBody),
+    centroCard('fa-bullhorn', 'Novedades urgentes para Gerencia', urgentes.length, 'red', `${urgentesBody}<button type="button" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded-xl text-[11px]" data-reporte-gerencia>Copiar reporte para Gerencia</button>`),
+    centroCard('fa-chart-simple', 'Resumen operativo del día', state.proyectos.filter((p) => p.status !== EST_PRODUCCION.COMPLETADO).length, 'slate', `
+      <div class="grid grid-cols-2 gap-2">
+        <div class="border border-slate-200 rounded-xl p-2.5"><p class="text-[9px] uppercase font-black text-slate-500">Activos</p><p class="text-xl font-black text-slate-900">${state.proyectos.filter((p) => p.status !== EST_PRODUCCION.COMPLETADO).length}</p></div>
+        <div class="border border-slate-200 rounded-xl p-2.5"><p class="text-[9px] uppercase font-black text-slate-500">Detenidos</p><p class="text-xl font-black text-red-600">${state.proyectos.filter((p) => p.status === EST_PRODUCCION.DETENIDO).length}</p></div>
+        <div class="border border-slate-200 rounded-xl p-2.5"><p class="text-[9px] uppercase font-black text-slate-500">Pendientes</p><p class="text-xl font-black text-amber-600">${materiales.length}</p></div>
+        <div class="border border-slate-200 rounded-xl p-2.5"><p class="text-[9px] uppercase font-black text-slate-500">Carpinteros</p><p class="text-xl font-black text-emerald-600">${Object.keys(tareas).length}</p></div>
+      </div>`),
+  ].join('');
+}
+
+/* ==========================================================================
+   13. TABLA GENERAL DE PROYECTOS
+   ========================================================================== */
+
+function renderTabla() {
+  const tbody = document.getElementById('tabla-tbody');
+  if (!tbody) return;
+  tbody.innerHTML = '';
+  const lista = state.proyectos.slice().sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const count = document.getElementById('tabla-count');
+  if (count) count.textContent = `${lista.length} proyecto${lista.length === 1 ? '' : 's'}`;
+  if (lista.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-500">No hay proyectos registrados.</td></tr>';
+    return;
+  }
+  lista.forEach((p) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="p-3 align-top"><button type="button" class="font-mono font-bold text-red-600 hover:underline" data-open-ficha="${esc(p.id)}">${esc(p.id)}</button></td>
+      <td class="p-3 align-top"><span class="font-bold text-slate-900">${esc(p.client)}</span><span class="block text-[10px] text-slate-400">${esc(p.name)}</span></td>
+      <td class="p-3 align-top text-slate-600">${esc(p.city)}</td>
+      <td class="p-3 align-top">
+        <span class="font-bold text-slate-800 uppercase text-[10px] block mb-1">${esc(p.manufacturingPhase)}</span>
+        ${puedeAvanzar() ? `<div class="flex items-center gap-1">
+          <button type="button" class="fase-btn" data-fase-proyecto="${esc(p.id)}" data-delta="-1" title="Retroceder fase" aria-label="Retroceder fase"><i class="fas fa-arrow-left" aria-hidden="true"></i></button>
+          <button type="button" class="fase-btn fase-btn--next" data-fase-proyecto="${esc(p.id)}" data-delta="1" title="Avanzar fase" aria-label="Avanzar fase"><i class="fas fa-arrow-right" aria-hidden="true"></i></button>
+        </div>` : ''}
+      </td>
+      <td class="p-3 align-top text-slate-600">${esc(p.leadCarpenter || '—')}</td>
+      <td class="p-3 align-top min-w-[22rem]">${pendientesHTML(p)}</td>
+      <td class="p-3 align-top text-slate-600">${esc(p.dateExpected || 'Por definir')}</td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+/* ==========================================================================
+   14. ESTADÍSTICAS & RENDIMIENTO
    ========================================================================== */
 
 function renderStats() {
   const contenedor = document.getElementById('stats-view');
   if (!contenedor) return;
-  contenedor.innerHTML = `
-    <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
-      <h2 class="text-xl font-black text-slate-900 mb-1">Medición de Tiempos por Fase</h2>
-      <p class="text-xs text-slate-500 mb-6">Promedio de duración en días por etapa de carpintería</p>
-      <div class="grid gap-4" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));">
-        ${STAGES_STATS.map((s) => `
-          <div class="p-4 rounded-xl border ${s.color}">
-            <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-white border border-slate-200 shadow-sm">${s.label}</span>
-            <h4 class="font-bold text-slate-900 mt-2 text-sm">${s.phase}</h4>
-            <p class="text-3xl font-black mt-1">${s.days}</p>
-          </div>`).join('')}
-      </div>
-    </div>
-  `;
+  contenedor.innerHTML = STAGES_STATS.map((s) => `
+    <div class="p-4 rounded-xl border ${s.color}">
+      <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-white border border-slate-200 shadow-sm">${s.label}</span>
+      <h4 class="font-bold text-slate-900 mt-2 text-sm">${s.phase}</h4>
+      <p class="text-3xl font-black mt-1">${s.days}</p>
+    </div>`).join('');
 }
 
 /* ==========================================================================
-   12. RENDER · REGISTRO DE PEDIDOS / COMPRAS
+   15. REGISTRO DE PEDIDOS / COMPRAS
    ========================================================================== */
 
 function renderNewOrder() {
   const select = document.getElementById('pedido-proyecto');
   if (!select) return;
+  const actual = select.value || state.newOrderProjectId || '';
   select.innerHTML = '<option value="">Seleccionar proyecto...</option>';
   state.proyectos.forEach((p) => {
     const opt = document.createElement('option');
@@ -1018,181 +1944,179 @@ function renderNewOrder() {
     opt.textContent = `${p.name} - (${p.client})`;
     select.appendChild(opt);
   });
+  if (actual) select.value = actual;
 }
 
 function onPedidoGuardar(e) {
   e.preventDefault();
-  if (!puedeGestionarCompras()) { alert('Solo el rol Administrativo puede registrar compras y pedidos.'); return; }
+  if (!puedeGestionarCompras()) { showToast('Solo Gerencia puede registrar compras y pedidos.'); return; }
   const projectId = document.getElementById('pedido-proyecto').value;
-  const category = document.getElementById('pedido-categoria').value;
+  const category = document.getElementById('pedido-categoria').value || 'Material';
   const item = document.getElementById('pedido-item').value.trim();
   const supplier = document.getElementById('pedido-proveedor').value.trim();
-  const guide = document.getElementById('pedido-guia')?.value?.trim() || 'Sin Guía';
-  const expectedDate = document.getElementById('pedido-fecha')?.value || 'Por definir';
-  if (!projectId || !item || !supplier) return;
+  const guide = document.getElementById('pedido-guia').value.trim() || 'Sin Guía';
+  const expectedDate = document.getElementById('pedido-fecha').value.trim() || 'Por definir';
+  if (!projectId || !item || !supplier) { showToast('Completa proyecto, material y proveedor.'); return; }
   const p = state.proyectos.find((x) => x.id === projectId);
-  p.pedidos.push({ id: generarId('p'), category, item, supplier, guide, expected: expectedDate, status: 'Solicitado', qc: 'Pendiente' });
-  guardarEstado();
+  if (!p) return;
+  p.pedidos.push({ id: uid('p'), category, item, supplier, guide, expected: expectedDate, status: 'Solicitado', qc: 'Pendiente' });
+  p.pendientes.push({ id: uid('pd'), text: `${item} (${supplier})`, tipo: 'material', prioridad: 'media', createdAt: hoyISO() });
+  p.alert = p.pendientes[0]?.text || '';
+  state.newOrderProjectId = null;
+  commit();
   document.getElementById('pedido-form').reset();
   renderNewOrder();
+  showToast('Pedido guardado y agregado a los pendientes del proyecto.');
 }
-
 /* ==========================================================================
-   13. RENDER · TABLA GENERAL DE PROYECTOS
+   16. MODAL · FICHA DE PROYECTO
    ========================================================================== */
 
-function renderTabla() {
-  const tbody = document.getElementById('tabla-tbody');
-  if (!tbody) return;
-  tbody.innerHTML = '';
-  let lista = state.proyectos.slice();
-  if (state.year && state.year !== 'Todos') lista = lista.filter((p) => String(p.trimester || '').includes(state.year));
-  if (state.quarter && state.quarter !== 'Todos los Trimestres') lista = lista.filter((p) => p.trimester === state.quarter);
-  if (state.city && state.city !== 'Todos') lista = lista.filter((p) => p.city === state.city);
-  lista.forEach((p) => {
-    const tr = document.createElement('tr');
-    const td = (html) => { const d = document.createElement('td'); d.className = 'p-3 text-slate-600'; d.innerHTML = html; tr.appendChild(d); return d; };
-    td(`<span class="font-mono font-bold text-red-600">${p.id}</span>`);
-    td(`<span class="font-bold text-slate-900">${p.client}</span>`);
-    td(p.city);
-    td(`<span class="font-bold text-slate-800 uppercase text-[10px]">${p.manufacturingPhase}</span>`);
-    td(p.leadCarpenter || '—');
-    td(`<span class="font-bold ${estadoMateriales(p).includes('Pendientes') ? 'text-amber-600' : 'text-emerald-600'}">${estadoMateriales(p)}</span>`);
-    td(p.dateExpected || 'Por definir');
-    const tdAcc = document.createElement('td');
-    tdAcc.className = 'p-3';
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'bg-red-600 hover:bg-red-700 text-white text-[10px] font-black px-3 py-1.5 rounded-lg';
-    btn.dataset.fId = p.id;
-    btn.innerHTML = 'Abrir';
-    tdAcc.appendChild(btn);
-    tr.appendChild(tdAcc);
-    tbody.appendChild(tr);
+function mostrarSubFicha(sub) {
+  state.fichaSub = sub;
+  document.querySelectorAll('#ficha-subtabs [data-sub]').forEach((b) => {
+    b.classList.toggle('active', b.dataset.sub === sub);
+  });
+  const panes = ['resumen', 'muebles', 'pendientes', 'pedidos', 'bloqueos', 'dropbox'];
+  panes.forEach((nombre) => {
+    const el = document.getElementById(`ficha-${nombre}`);
+    if (el) el.classList.toggle('is-hidden', nombre !== sub);
   });
 }
 
-/* ==========================================================================
-   14. RENDER · PROYECTOS TRIMESTRALES
-   ========================================================================== */
-
-function renderTrimestral() {
-  renderProduccion();
-}
-
-/* ==========================================================================
-   15. MODAL · FICHA DE PROYECTO (5 SUBPESTAÑAS + DOCS)
-   ========================================================================== */
-
 function openFicha(id) {
-  state.fichaId = id;
   const p = state.proyectos.find((x) => x.id === id);
   if (!p) return;
+  state.fichaId = id;
 
   document.getElementById('ficha-nombre').textContent = p.name;
   document.getElementById('ficha-id-badge').textContent = p.id;
-  document.getElementById('ficha-phase').textContent = p.phase;
+  document.getElementById('ficha-phase').textContent = p.manufacturingPhase;
   document.getElementById('ficha-direccion').textContent = p.address;
   document.getElementById('ficha-direccion-2').textContent = p.address;
-  document.getElementById('ficha-telefono').textContent = p.phone;
-  document.getElementById('ficha-operador').textContent = p.logisticOperator;
-  document.getElementById('ficha-responsable').textContent = p.leadCarpenter;
+  document.getElementById('ficha-telefono').textContent = p.phone || 'Sin registrar';
+  document.getElementById('ficha-operador').textContent = p.logisticOperator || 'Sin asignar';
+  document.getElementById('ficha-responsable').textContent = p.leadCarpenter || 'Sin asignar';
+  document.getElementById('ficha-arquitecto').textContent = p.arquitecto || 'Sin asignar';
   document.getElementById('ficha-fase').textContent = p.manufacturingPhase;
   document.getElementById('ficha-estado').textContent = p.status;
-  document.getElementById('ficha-estado-select').value = p.status;
-  document.getElementById('ficha-fecha-prom').textContent = p.dateExpected;
-  document.getElementById('ficha-presupuesto').textContent = fmtMoney(p.budget);
-  document.getElementById('ficha-alerta').textContent = p.alert || 'Sin alertas activas';
+  const estadoSelect = document.getElementById('ficha-estado-select');
+  estadoSelect.value = p.status;
+  estadoSelect.disabled = !puedeAsignar();
+  estadoSelect.classList.toggle('opacity-60', !puedeAsignar());
+  document.getElementById('ficha-fecha-prom').textContent = p.dateExpected || 'Por definir';
+  document.getElementById('ficha-pend-count').textContent = String((p.pendientes || []).length);
+  document.getElementById('ficha-alerta').textContent = primerPendiente(p)?.text || 'Sin requerimientos pendientes';
+  document.getElementById('ficha-maps').href = `https://maps.google.com/?q=${encodeURIComponent(p.address || p.city || '')}`;
+
+  const btnEditar = document.getElementById('ficha-editar');
+  btnEditar.classList.toggle('hidden', !puedeEditarFicha());
+  document.getElementById('ficha-cambiar-imagen').classList.toggle('hidden', !puedeEditarFicha());
+  document.getElementById('ficha-pedido-add').classList.toggle('hidden', !puedeGestionarCompras());
+  document.getElementById('ficha-adjuntar-box').classList.toggle('hidden', !puedeEditarFicha());
+
+  const idx = Math.max(0, PRODUCTION_PHASES.indexOf(p.manufacturingPhase));
+  const back = document.getElementById('ficha-fase-back');
+  const next = document.getElementById('ficha-fase-next');
+  back.disabled = !puedeAvanzar() || idx <= 0;
+  next.disabled = !puedeAvanzar() || idx >= PRODUCTION_PHASES.length - 1;
+  back.classList.toggle('opacity-50', back.disabled);
+  next.classList.toggle('opacity-50', next.disabled);
+
+  const nota = document.getElementById('ficha-permiso-nota');
+  if (state.rol === 'secretaria') {
+    nota.classList.remove('hidden');
+    nota.textContent = 'Secretaría: las asignaciones y fases de producción están bloqueadas. Solicita autorización a Gerencia u Operaciones.';
+  } else if (state.rol === 'arquitecto') {
+    nota.classList.remove('hidden');
+    nota.textContent = 'Modo consulta: no puedes modificar fases, asignaciones ni datos financieros.';
+  } else {
+    nota.classList.add('hidden');
+    nota.textContent = '';
+  }
 
   const img = document.getElementById('ficha-imagen');
-  img.src = p.image;
+  img.src = p.image || DEFAULT_IMAGE;
   img.alt = p.name;
-  const maps = document.getElementById('ficha-maps');
-  maps.href = `https://maps.google.com/?q=${encodeURIComponent(p.address)}`;
+  img.onerror = () => { img.onerror = null; img.src = DEFAULT_IMAGE; };
 
   const pct = completitudFicha(p);
   document.getElementById('ficha-completitud-pct').textContent = `${pct}%`;
   document.getElementById('ficha-completitud-bar').style.width = `${pct}%`;
-  const incompleta = pct < 100;
-  document.getElementById('ficha-completitud-alerta').classList.toggle('hidden', !incompleta);
-  document.getElementById('ficha-completitud-alerta').textContent = incompleta
-    ? `La ficha aún no está 100% completa (${pct}%). No puede considerarse aprobada sin completitud total.`
-    : 'Ficha 100% completa.';
+  const alerta = document.getElementById('ficha-completitud-alerta');
+  alerta.classList.toggle('hidden', pct >= 100);
+  alerta.textContent = pct >= 100
+    ? 'Ficha 100% completa.'
+    : `La ficha aún no está 100% completa (${pct}%). Faltan datos, muebles o pedidos por registrar.`;
 
   const mueblesDiv = document.getElementById('ficha-muebles-list');
-  mueblesDiv.innerHTML = (p.muebles || []).map((m) => {
-    const currentIdx = Math.max(0, PRODUCTION_PHASES.indexOf(m.manufacturingPhase));
-    const bars = PRODUCTION_PHASES.map((phase, idx) => {
-      const color = idx === currentIdx ? 'bg-red-600' : (idx < currentIdx ? 'bg-emerald-500' : 'bg-slate-200');
-      return `<div class="h-1 flex-1 rounded-full ${color}" title="${phase}"></div>`;
-    }).join('');
-    return `
-      <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center text-xs">
+  const muebles = p.muebles || [];
+  mueblesDiv.innerHTML = muebles.length === 0
+    ? '<p class="text-xs text-slate-400 text-center py-6">Sin muebles registrados. Puedes editar la ficha para agregar la información base.</p>'
+    : muebles.map((m) => `
+      <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row justify-between sm:items-center gap-3 text-xs">
         <div>
-          <h5 class="font-bold text-slate-900">${m.name}</h5>
-          <p class="text-slate-500 mt-0.5">Carpintero: ${m.carpenter}</p>
+          <h5 class="font-bold text-slate-900">${esc(m.name)}</h5>
+          <p class="text-slate-500 mt-0.5">Carpintero: ${esc(m.carpenter || 'Por asignar')}</p>
         </div>
-        <div class="flex flex-col items-end">
-          <span class="bg-white text-slate-800 font-bold px-3 py-1 rounded-lg border border-slate-200 shadow-sm mb-2">Fase: ${m.manufacturingPhase}</span>
-          <div class="flex space-x-1 w-24">${bars}</div>
+        <div class="flex flex-col items-start sm:items-end gap-2">
+          <span class="bg-white text-slate-800 font-bold px-3 py-1 rounded-lg border border-slate-200 shadow-sm">Fase: ${esc(m.manufacturingPhase)}</span>
+          <div class="flex space-x-1 w-28">${stepperBarras(m.manufacturingPhase)}</div>
+          ${puedeAsignar() ? `
+            <div class="flex items-center gap-1">
+              <button type="button" class="fase-btn" data-task-phase="-1" data-task-kind="mueble" data-project="${esc(p.id)}" data-mueble="${esc(m.id)}" title="Retroceder fase"><i class="fas fa-arrow-left" aria-hidden="true"></i></button>
+              <button type="button" class="fase-btn fase-btn--next" data-task-phase="1" data-task-kind="mueble" data-project="${esc(p.id)}" data-mueble="${esc(m.id)}" title="Avanzar fase"><i class="fas fa-arrow-right" aria-hidden="true"></i></button>
+              <button type="button" class="task-icon-btn" data-task-edit data-task-kind="mueble" data-project="${esc(p.id)}" data-mueble="${esc(m.id)}" data-carpenter="${esc(m.carpenter || '')}" title="Editar mueble"><i class="fas fa-pen" aria-hidden="true"></i></button>
+            </div>` : ''}
         </div>
-      </div>`;
-  }).join('');
+      </div>`).join('');
 
-  const tbody = document.getElementById('ficha-pedidos-tbody');
-  tbody.innerHTML = (p.pedidos || []).map((od) => `
+  document.getElementById('ficha-pedidos-tbody').innerHTML = (p.pedidos || []).map((od) => `
     <tr>
-      <td class="p-3 font-bold text-slate-900">${od.category}</td>
-      <td class="p-3 text-slate-700">${od.item}</td>
-      <td class="p-3 text-slate-500">${od.supplier}</td>
-      <td class="p-3 font-mono text-slate-500">${od.guide}</td>
-      <td class="p-3 font-bold text-emerald-600">${od.status}</td>
-    </tr>`).join('');
+      <td class="p-3 font-bold text-slate-900">${esc(od.category)}</td>
+      <td class="p-3 text-slate-700">${esc(od.item)}</td>
+      <td class="p-3 text-slate-500">${esc(od.supplier)}</td>
+      <td class="p-3 font-mono text-slate-500">${esc(od.guide)}</td>
+      <td class="p-3 font-bold text-emerald-600">${esc(od.status)}</td>
+    </tr>`).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin pedidos registrados.</td></tr>';
 
-  const bloqueosDiv = document.getElementById('ficha-bloqueos-list');
-  bloqueosDiv.innerHTML = (p.bloqueos || []).length === 0
+  document.getElementById('ficha-pendientes-list').innerHTML = pendientesHTML(p);
+
+  document.getElementById('ficha-bloqueos-list').innerHTML = (p.bloqueos || []).length === 0
     ? '<p class="text-xs text-slate-400 text-center py-6">Sin bloqueos registrados.</p>'
     : (p.bloqueos || []).map((b) => `
-      <div class="p-4 bg-red-50 border border-red-200 rounded-xl flex justify-between items-center text-xs">
+      <div class="p-4 bg-red-50 border border-red-200 rounded-xl flex justify-between items-center text-xs gap-3">
         <div>
-          <p class="font-bold text-red-900">${b.reason}</p>
-          <p class="text-red-700 mt-1">${b.action}</p>
+          <p class="font-bold text-red-900">${esc(b.reason)}</p>
+          <p class="text-red-700 mt-1">${esc(b.action)}</p>
         </div>
-        ${b.solved ? '' : `<button type="button" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm" data-resolver="${b.id}">Resolver</button>`}
+        ${b.solved ? '<span class="text-emerald-700 font-black text-[10px] uppercase">Resuelto</span>' : `<button type="button" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm" data-resolver="${esc(b.id)}">Resolver</button>`}
       </div>`).join('');
 
-  const publicList = document.getElementById('dropbox-publico-list');
-  publicList.innerHTML = (p.dropboxFiles?.publicFiles || []).map((f) => `
-    <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center">
-      <span class="text-slate-800 font-bold">${f.name}</span>
-      <span class="text-blue-600 font-bold cursor-pointer hover:underline">Descargar</span>
-    </div>`).join('');
+  document.getElementById('dropbox-publico-list').innerHTML = (p.dropboxFiles?.publicFiles || []).map((f) => `
+    <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center gap-2">
+      <span class="text-slate-800 font-bold break-all">${esc(f.name)}</span>
+      <span class="text-blue-600 font-bold cursor-pointer hover:underline shrink-0">Descargar</span>
+    </div>`).join('') || '<p class="text-xs text-slate-400">Sin archivos públicos.</p>';
 
   const privList = document.getElementById('dropbox-privado-list');
-  const esFinanciero = state.rol === 'administrativo';
-  if (esFinanciero) {
+  if (puedeVerFinanzas()) {
     privList.innerHTML = (p.dropboxFiles?.privateFiles || []).map((f) => `
-      <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex justify-between items-center">
-        <span class="text-emerald-900 font-bold">${f.name}</span>
-        <span class="text-emerald-700 font-bold">Ver Archivo</span>
-      </div>`).join('');
+      <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex justify-between items-center gap-2">
+        <span class="text-emerald-900 font-bold break-all">${esc(f.name)}</span>
+        <span class="text-emerald-700 font-bold shrink-0">Ver Archivo</span>
+      </div>`).join('') || '<p class="text-xs text-slate-400">Sin archivos privados.</p>';
     document.getElementById('dropbox-privado-restringido').classList.add('hidden');
   } else {
     privList.innerHTML = '';
     document.getElementById('dropbox-privado-restringido').classList.remove('hidden');
-    document.getElementById('dropbox-privado-rol').textContent = state.rol;
+    document.getElementById('dropbox-privado-rol').textContent = labelCargo(state.rol);
   }
-  document.getElementById('ficha-proxy-rol').textContent = state.rol;
+  document.getElementById('ficha-proxy-rol').textContent = labelCargo(state.rol);
 
   renderArchivos(p);
-
   document.getElementById('modal-ficha').classList.remove('is-hidden');
-  document.getElementById('ficha-subtabs').querySelectorAll('[data-sub]').forEach((b) => {
-    b.classList.toggle('active', b.dataset.sub === state.fichaSub);
-  });
-  document.querySelectorAll('#ficha-resumen, #ficha-muebles, #ficha-pedidos, #ficha-bloqueos, #ficha-dropbox').forEach((el) => {
-    el.classList.toggle('is-hidden', el.id !== `ficha-${state.fichaSub}`);
-  });
+  mostrarSubFicha(state.fichaSub);
 }
 
 function renderArchivos(p) {
@@ -1205,10 +2129,10 @@ function renderArchivos(p) {
       <div class="dropbox-archivo-item">
         <span class="flex items-center space-x-2 min-w-0">
           <i class="fas ${f.tipo === '3d' ? 'fa-cube' : (f.tipo === '2d' || f.tipo === 'image' ? 'fa-ruler-combined' : 'fa-file-pdf')} text-red-600 w-4 h-4 flex-shrink-0" aria-hidden="true"></i>
-          <span class="font-bold text-slate-900 truncate">${f.name}</span>
-          <span class="text-slate-400 text-[10px]">${f.size || ''} · ${f.date || ''}</span>
+          <span class="font-bold text-slate-900 truncate">${esc(f.name)}</span>
+          <span class="text-slate-400 text-[10px]">${esc(f.size || '')} · ${esc(f.date || '')}</span>
         </span>
-        <button type="button" class="bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black px-3 py-1.5 rounded-lg flex-shrink-0" data-ver-doc="${f.id}">
+        <button type="button" class="bg-slate-900 hover:bg-slate-800 text-white text-[10px] font-black px-3 py-1.5 rounded-lg flex-shrink-0" data-ver-doc="${esc(f.id)}">
           ${f.tipo === '3d' ? 'Ver 3D' : (f.tipo === '2d' || f.tipo === 'image' ? 'Ver Plano' : 'Ver PDF')}
         </button>
       </div>`).join('');
@@ -1221,69 +2145,202 @@ function verDocumento(id) {
   if (!f || !visual) return;
   if (f.tipo === '3d') {
     visual.classList.remove('hidden');
-    visual.innerHTML = `<div class="visor-3d"><i class="fas fa-cube w-10 h-10 text-slate-400" aria-hidden="true"></i><p>Visor 3D · ${f.name}</p><p class="text-[10px]">Render 3D asociado al plano (demo)</p></div>`;
+    visual.innerHTML = `<div class="visor-3d"><i class="fas fa-cube w-10 h-10 text-slate-400" aria-hidden="true"></i><p>Visor 3D · ${esc(f.name)}</p><p class="text-[10px]">Render 3D asociado al plano (demo)</p></div>`;
   } else if (f.tipo === '2d' || f.tipo === 'image') {
     visual.classList.remove('hidden');
-    visual.innerHTML = `<img src="${f.url || ''}" alt="${f.name}" />`;
+    visual.innerHTML = `<img src="${esc(f.url || '')}" alt="${esc(f.name)}" />`;
   } else if (f.tipo === 'pdf') {
     visual.classList.remove('hidden');
-    visual.innerHTML = `<iframe src="${f.url || ''}" title="${f.name}"></iframe>`;
+    visual.innerHTML = `<iframe src="${esc(f.url || '')}" title="${esc(f.name)}"></iframe>`;
   }
 }
 
 function closeFicha() {
-  document.getElementById('modal-ficha').classList.add('is-hidden');
+  document.getElementById('modal-ficha')?.classList.add('is-hidden');
   state.fichaId = null;
+  state.fichaSub = 'resumen';
+}
+/* ==========================================================================
+   17. MODAL · CREAR / EDITAR PROYECTO
+   ========================================================================== */
+
+function abrirProyectoModal(id, focus) {
+  if (!puedeCrearProyecto() && !puedeEditarFicha()) { showToast('Tu rol no puede crear o editar proyectos.'); return; }
+  const p = id ? state.proyectos.find((x) => x.id === id) : null;
+  state.proyectoModalMode = p ? 'editar' : 'crear';
+  state.proyectoModalId = p?.id || null;
+  state.proyectoModalFocus = focus || null;
+
+  document.getElementById('proyecto-modal-title').textContent = p ? 'Editar Ficha del Proyecto' : 'Nuevo Proyecto';
+  document.getElementById('proyecto-modal-sub').textContent = p
+    ? `${p.id} · los cambios se sincronizan en Producción, Comercial, Tabla General y Proyectos.`
+    : 'Crea la ficha base; aparecerá de inmediato en Producción, Comercial, Tabla General y Proyectos.';
+
+  const set = (idEl, valor) => { const el = document.getElementById(idEl); if (el) el.value = valor ?? ''; };
+  set('proyecto-nombre', p?.name || '');
+  set('proyecto-cliente', p?.client || '');
+  set('proyecto-barrio', p?.neighborhood || '');
+  set('proyecto-direccion', p?.address || '');
+  set('proyecto-telefono', p?.phone || '');
+  set('proyecto-arquitecto', p?.arquitecto || state.user?.nombre || 'Felipe Mora');
+  set('proyecto-carpintero', p?.leadCarpenter || '');
+  set('proyecto-operador', p?.logisticOperator || 'Wilyer');
+  set('proyecto-fecha-inicio', p?.dateStart || formatFechaLarga(new Date()));
+  set('proyecto-fecha-entrega', p?.dateExpected || '');
+  set('proyecto-imagen', p?.image || '');
+  set('proyecto-detalle', p?.commercialDetail || '');
+
+  const citySel = document.getElementById('proyecto-ciudad');
+  citySel.value = p?.city || 'Floridablanca';
+  if (p?.city && !Array.from(citySel.options).some((o) => o.value === p.city)) {
+    const opt = document.createElement('option');
+    opt.value = p.city;
+    opt.textContent = p.city;
+    citySel.appendChild(opt);
+    citySel.value = p.city;
+  }
+  document.getElementById('proyecto-trimestre').value = p?.trimester || 'Q4 - 2026';
+  document.getElementById('proyecto-fase').value = p?.manufacturingPhase || 'Recepción';
+  document.getElementById('proyecto-estado').value = p?.status || EST_PRODUCCION.EN_PROCESO;
+  document.getElementById('proyecto-etapa-comercial').value = p?.commercialStage || 'Cotizaciones';
+
+  const puedeProduccion = puedeAsignar();
+  ['proyecto-carpintero', 'proyecto-operador', 'proyecto-fase', 'proyecto-estado'].forEach((idEl) => {
+    const el = document.getElementById(idEl);
+    if (el) {
+      el.disabled = !puedeProduccion;
+      el.classList.toggle('opacity-60', !puedeProduccion);
+    }
+  });
+  const nota = document.getElementById('proyecto-permiso-nota');
+  nota.classList.toggle('hidden', puedeProduccion);
+  nota.textContent = 'Secretaría: puedes registrar clientes, documentación, imagen y prospectos, pero las asignaciones y fases de producción requieren autorización de Gerencia u Operaciones.';
+
+  const datalist = document.getElementById('carpinteros-list');
+  if (datalist) datalist.innerHTML = carpentersList().map((c) => `<option value="${esc(c)}"></option>`).join('');
+
+  document.getElementById('proyecto-modal').classList.remove('is-hidden');
+  const foco = focus === 'imagen' ? 'proyecto-imagen' : 'proyecto-nombre';
+  setTimeout(() => document.getElementById(foco)?.focus(), 50);
 }
 
-function bindFichaEvents() {
-  document.getElementById('ficha-close').addEventListener('click', closeFicha);
-  document.getElementById('ficha-close-footer').addEventListener('click', closeFicha);
-  document.getElementById('ficha-estado-select').addEventListener('change', (e) => {
-    const p = state.proyectos.find((x) => x.id === state.fichaId);
+function cerrarProyectoModal() {
+  document.getElementById('proyecto-modal')?.classList.add('is-hidden');
+  state.proyectoModalMode = 'crear';
+  state.proyectoModalId = null;
+  state.proyectoModalFocus = null;
+}
+
+function guardarProyecto(e) {
+  e.preventDefault();
+  if (!puedeCrearProyecto() && !puedeEditarFicha()) { showToast('Tu rol no puede guardar proyectos.'); return; }
+  const nombre = document.getElementById('proyecto-nombre').value.trim();
+  const cliente = document.getElementById('proyecto-cliente').value.trim();
+  if (!nombre || !cliente) { showToast('Nombre y cliente son obligatorios.'); return; }
+
+  const fase = document.getElementById('proyecto-fase').value;
+  const datos = {
+    name: nombre,
+    client: cliente,
+    city: document.getElementById('proyecto-ciudad').value,
+    neighborhood: document.getElementById('proyecto-barrio').value.trim(),
+    address: document.getElementById('proyecto-direccion').value.trim() || 'Por definir',
+    phone: document.getElementById('proyecto-telefono').value.trim(),
+    arquitecto: document.getElementById('proyecto-arquitecto').value.trim() || 'Felipe Mora',
+    leadCarpenter: document.getElementById('proyecto-carpintero').value.trim(),
+    logisticOperator: document.getElementById('proyecto-operador').value.trim() || 'Por asignar',
+    trimester: document.getElementById('proyecto-trimestre').value,
+    manufacturingPhase: PRODUCTION_PHASES.includes(fase) ? fase : 'Recepción',
+    phase: PRODUCTION_PHASES.includes(fase) ? fase : 'Recepción',
+    status: document.getElementById('proyecto-estado').value,
+    commercialStage: document.getElementById('proyecto-etapa-comercial').value,
+    dateStart: document.getElementById('proyecto-fecha-inicio').value.trim() || 'Por definir',
+    dateExpected: document.getElementById('proyecto-fecha-entrega').value.trim() || 'Por definir',
+    image: document.getElementById('proyecto-imagen').value.trim() || DEFAULT_IMAGE,
+    commercialDetail: document.getElementById('proyecto-detalle').value.trim(),
+  };
+
+  if (state.proyectoModalMode === 'editar' && state.proyectoModalId) {
+    const p = state.proyectos.find((x) => x.id === state.proyectoModalId);
     if (!p) return;
-    p.status = e.target.value;
-    guardarEstado();
-    renderKpis();
-    renderProduccion();
-    if (state.fichaId) openFicha(state.fichaId);
+    const originalProduccion = {
+      leadCarpenter: p.leadCarpenter,
+      logisticOperator: p.logisticOperator,
+      status: p.status,
+      manufacturingPhase: p.manufacturingPhase,
+      phase: p.phase,
+    };
+    Object.assign(p, datos);
+    if (!puedeAsignar()) Object.assign(p, originalProduccion);
+    p.commercialDetail = p.commercialDetail || detalleProyecto(p);
+    p.alert = primerPendiente(p)?.text || '';
+    commit();
+    cerrarProyectoModal();
+    showToast('Ficha actualizada y sincronizada.');
+    return;
+  }
+
+  const nuevo = normalizarProyecto({
+    ...datos,
+    id: generarIdProyecto(),
+    pendientes: [],
+    muebles: [],
+    pedidos: [],
+    bloqueos: [],
+    archivos: [],
+    dropboxFiles: { publicFiles: [], privateFiles: [] },
   });
-  document.getElementById('ficha-subtabs').addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-sub]');
-    if (!btn) return;
-    state.fichaSub = btn.dataset.sub;
-    document.getElementById('ficha-subtabs').querySelectorAll('[data-sub]').forEach((b) => b.classList.toggle('active', b.dataset.sub === state.fichaSub));
-    document.querySelectorAll('#ficha-resumen, #ficha-muebles, #ficha-pedidos, #ficha-bloqueos, #ficha-dropbox').forEach((el) => {
-      el.classList.toggle('is-hidden', el.id !== `ficha-${state.fichaSub}`);
-    });
-  });
-  document.addEventListener('click', (e) => {
-    const resolver = e.target.closest('[data-resolver]');
-    if (resolver) {
-      const id = resolver.dataset.resolver;
-      const p = state.proyectos.find((x) => x.id === state.fichaId);
-      const b = p?.bloqueos?.find((x) => x.id === id);
-      if (b) b.solved = true;
-      guardarEstado();
-      if (state.fichaId) openFicha(state.fichaId);
-      return;
-    }
-    const fId = e.target.closest('[data-f-id]');
-    if (fId) { openFicha(fId.dataset.fId); return; }
-    const verDoc = e.target.closest('[data-ver-doc]');
-    if (verDoc) { verDocumento(verDoc.dataset.verDoc); return; }
-    const asignar = e.target.closest('[data-asignar-tarea]');
-    if (asignar) { abrirModalTarea(asignar.dataset.asignarTarea); return; }
-  });
+  state.proyectos.push(nuevo);
+  state.fProduccion = 'todos';
+  state.year = 'Todos';
+  state.quarter = 'Todos los Trimestres';
+  state.city = 'Todos';
+  state.proyectosEstado = 'activos';
+  state.proyectosYear = 'Todos';
+  state.proyectosQuarter = 'Todos los Trimestres';
+  state.proyectosCity = 'Todos';
+  commit();
+  cerrarProyectoModal();
+  showToast(`${nuevo.id} creado y visible en todos los módulos.`);
 }
 
 /* ==========================================================================
-   16. NAVEGACIÓN ENTRE MÓDULOS
+   18. MODAL · NUEVO PROSPECTO
    ========================================================================== */
+
+function abrirProspectoModal() {
+  if (!puedeCrearProspecto()) { showToast('Solo Gerencia o Secretaría pueden crear prospectos.'); return; }
+  document.getElementById('prospecto-form').reset();
+  document.getElementById('prospecto-modal').classList.remove('is-hidden');
+  setTimeout(() => document.getElementById('prospecto-cliente')?.focus(), 50);
+}
+
+function cerrarProspectoModal() {
+  document.getElementById('prospecto-modal')?.classList.add('is-hidden');
+}
+
+/* ==========================================================================
+   19. RENDER GLOBAL Y NAVEGACIÓN
+   ========================================================================== */
+
+function renderAll() {
+  renderKpis();
+  renderProduccion();
+  renderEquipo();
+  renderComercial();
+  renderTabla();
+  renderProyectos();
+  renderCentro();
+  renderNewOrder();
+  if (state.fichaId) {
+    const modal = document.getElementById('modal-ficha');
+    if (modal && !modal.classList.contains('is-hidden')) openFicha(state.fichaId);
+  }
+}
 
 function switchTab(tab) {
   const permitidos = tabsPermitidos();
-  let destino = permitidos.includes(tab) ? tab : permitidos[0];
+  const destino = permitidos.includes(tab) ? tab : permitidos[0];
   state.tab = destino;
   document.querySelectorAll('#mg-tabs [data-tab]').forEach((b) => b.classList.toggle('active', b.dataset.tab === destino));
   document.querySelectorAll('.tab-panel').forEach((el) => {
@@ -1293,14 +2350,14 @@ function switchTab(tab) {
   if (destino === 'produccion') { renderKpis(); renderProduccion(); }
   if (destino === 'equipo') renderEquipo();
   if (destino === 'comercial') renderComercial();
-  if (destino === 'stats') renderStats();
   if (destino === 'tabla') renderTabla();
-  if (destino === 'trimestral') renderTrimestral();
+  if (destino === 'proyectos') renderProyectos();
+  if (destino === 'centro') renderCentro();
+  if (destino === 'stats') renderStats();
   if (destino === 'new-order') renderNewOrder();
 }
-
 /* ==========================================================================
-   17. EVENTOS · INICIALIZACIÓN
+   20. EVENTOS · LOGIN, HEADER, FILTROS Y MÓDULOS
    ========================================================================== */
 
 function bindLoginEvents() {
@@ -1308,13 +2365,14 @@ function bindLoginEvents() {
   const modoLogin = { value: 'login' };
   const btnToggle = document.getElementById('login-toggle');
   const btnSubmit = document.getElementById('login-submit');
+  if (!form || !btnToggle || !btnSubmit) return;
 
   btnToggle.addEventListener('click', () => {
     modoLogin.value = modoLogin.value === 'login' ? 'registro' : 'login';
     btnSubmit.innerHTML = modoLogin.value === 'login'
       ? '<i class="fas fa-lock mr-2" aria-hidden="true"></i> Iniciar Sesión'
       : '<i class="fas fa-user-plus mr-2" aria-hidden="true"></i> Crear Cuenta';
-    btnToggle.innerHTML = modoLogin.value === 'login' ? 'Crear cuenta' : 'Ya tengo cuenta · Iniciar Sesión';
+    btnToggle.textContent = modoLogin.value === 'login' ? 'Crear cuenta' : 'Ya tengo cuenta · Iniciar Sesión';
   });
 
   form.addEventListener('submit', (e) => {
@@ -1336,14 +2394,16 @@ function bindLoginEvents() {
     }
     ocultarLogin();
     updateUserChip();
+    aplicarPermisosUI();
     switchTab('produccion');
+    showToast(`Bienvenido · ${labelCargo(state.rol)}`);
   });
 
-  document.getElementById('forgot-close').addEventListener('click', () => {
+  document.getElementById('forgot-close')?.addEventListener('click', () => {
     document.getElementById('login-forgot-modal').classList.add('is-hidden');
   });
 
-  document.getElementById('forgot-reset').addEventListener('click', () => {
+  document.getElementById('forgot-reset')?.addEventListener('click', () => {
     const email = document.getElementById('forgot-email').value.trim().toLowerCase();
     const pass = document.getElementById('forgot-pass').value;
     if (!email || !pass) return;
@@ -1354,63 +2414,41 @@ function bindLoginEvents() {
       guardarUsuarios(usuarios);
     }
     document.getElementById('login-forgot-modal').classList.add('is-hidden');
-    document.getElementById('login-error').textContent = 'Contraseña actualizada. Inicia sesión con tu nueva contraseña.';
-    document.getElementById('login-error').classList.remove('hidden');
+    const errorEl = document.getElementById('login-error');
+    errorEl.textContent = 'Contraseña actualizada. Inicia sesión con tu nueva contraseña.';
+    errorEl.classList.remove('hidden');
   });
-}
-
-function init() {
-  const cargado = cargarEstado();
-  state.proyectos = cargado.proyectos;
-  state.comercial = cargado.comercial;
-  state.rol = localStorage.getItem(ROL_KEY) || 'administrativo';
-
-  state.user = getSesion();
-  if (!state.user) state.user = null;
-
-  state.tema = localStorage.getItem(TEMA_KEY) || 'claro';
-  aplicarTema();
-
-  bindLoginEvents();
-  bindHeaderEvents();
-  bindTabsEvents();
-  bindProduccionEvents();
-  bindFichaEvents();
-  bindChatEvents();
-  bindPedidoEvents();
-  bindTareaEvents();
-  bindArchivoEvents();
-
-  updateUserChip();
-  if (state.user) {
-    ocultarLogin();
-    switchTab('produccion');
-  } else {
-    mostrarLogin();
-  }
 }
 
 function bindHeaderEvents() {
-  const btnTema = document.getElementById('btn-tema');
-  btnTema.addEventListener('click', toggleTema);
-
-  document.getElementById('btn-logout').addEventListener('click', cerrarSesion);
+  document.getElementById('btn-tema')?.addEventListener('click', toggleTema);
+  document.getElementById('btn-logout')?.addEventListener('click', cerrarSesion);
 
   const rolSelect = document.getElementById('mg-rol-select');
-  rolSelect.addEventListener('change', (e) => {
+  rolSelect?.addEventListener('change', (e) => {
     state.rol = e.target.value;
-    state.user = state.user ? { ...state.user, cargo: state.rol } : state.user;
     localStorage.setItem(ROL_KEY, state.rol);
-    if (state.user) localStorage.setItem(SESION_KEY, JSON.stringify(state.user));
+    if (state.user) {
+      state.user = { ...state.user, cargo: state.rol };
+      localStorage.setItem(SESION_KEY, JSON.stringify(state.user));
+    }
+    aplicarPermisosUI();
     updateUserChip();
-    switchTab('produccion');
+    switchTab(state.tab);
+    if (state.fichaId) openFicha(state.fichaId);
+    showToast(`Perfil activo: ${labelCargo(state.rol)}`);
   });
 
-  document.getElementById('btn-nuevo-pedido').addEventListener('click', () => switchTab('new-order'));
+  document.getElementById('mg-search-input')?.addEventListener('input', (e) => {
+    state.search = e.target.value.trim();
+    if (state.tab === 'produccion') renderProduccion();
+    if (state.tab === 'tabla') renderTabla();
+    if (state.tab === 'proyectos') renderProyectos();
+  });
 }
 
 function bindTabsEvents() {
-  document.getElementById('mg-tabs').addEventListener('click', (e) => {
+  document.getElementById('mg-tabs')?.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-tab]');
     if (!btn) return;
     switchTab(btn.dataset.tab);
@@ -1418,7 +2456,7 @@ function bindTabsEvents() {
 }
 
 function bindProduccionEvents() {
-  document.getElementById('filtros-produccion').addEventListener('click', (e) => {
+  document.getElementById('filtros-produccion')?.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-filtro]');
     if (!btn) return;
     state.fProduccion = btn.dataset.filtro;
@@ -1426,51 +2464,370 @@ function bindProduccionEvents() {
     renderProduccion();
   });
 
-  document.getElementById('filtro-year').addEventListener('change', (e) => { state.year = e.target.value; renderProduccion(); });
-  document.getElementById('filtro-quarter').addEventListener('change', (e) => { state.quarter = e.target.value; renderProduccion(); });
-  document.getElementById('filtro-city').addEventListener('change', (e) => { state.city = e.target.value; renderProduccion(); });
+  document.getElementById('filtro-year')?.addEventListener('change', (e) => { state.year = e.target.value; renderProduccion(); });
+  document.getElementById('filtro-quarter')?.addEventListener('change', (e) => { state.quarter = e.target.value; renderProduccion(); });
+  document.getElementById('filtro-city')?.addEventListener('change', (e) => { state.city = e.target.value; renderProduccion(); });
 }
 
-function bindChatEvents() {
-  document.getElementById('chat-fab').addEventListener('click', abrirChat);
-  document.getElementById('chat-close').addEventListener('click', cerrarChat);
-  document.getElementById('chat-form').addEventListener('submit', (e) => {
-    e.preventDefault();
-    enviarMensaje(document.getElementById('chat-input').value);
+function bindProyectosEvents() {
+  document.getElementById('proyectos-estado')?.addEventListener('change', (e) => { state.proyectosEstado = e.target.value; renderProyectos(); });
+  document.getElementById('proyectos-year')?.addEventListener('change', (e) => { state.proyectosYear = e.target.value; renderProyectos(); });
+  document.getElementById('proyectos-quarter')?.addEventListener('change', (e) => { state.proyectosQuarter = e.target.value; renderProyectos(); });
+  document.getElementById('proyectos-city')?.addEventListener('change', (e) => { state.proyectosCity = e.target.value; renderProyectos(); });
+}
+
+function bindComercialEvents() {
+  document.getElementById('comercial-trimestre')?.addEventListener('change', (e) => {
+    state.comercialTrimestre = e.target.value;
+    renderComercial();
   });
-  document.getElementById('chat-quick').addEventListener('click', (e) => {
-    const chip = e.target.closest('.chat-chip');
-    if (chip) enviarMensaje(chip.dataset.q);
+
+  const board = document.getElementById('comercial-board');
+  board?.addEventListener('click', (e) => {
+    const card = e.target.closest('[data-cc-id]');
+    if (!card) return;
+    if (e.target.closest('button, select, option, input, textarea, a')) return;
+    abrirComercialModal(card.dataset.ccKind, card.dataset.ccId);
   });
 }
 
-function bindPedidoEvents() {
-  document.getElementById('pedido-form').addEventListener('submit', onPedidoGuardar);
+function bindCentroEvents() {
+  document.getElementById('centro-refresh')?.addEventListener('click', () => {
+    renderCentro();
+    showToast('Centro de control actualizado.');
+  });
 }
 
-function bindTareaEvents() {
-  document.getElementById('tarea-close').addEventListener('click', cerrarModalTarea);
-  document.getElementById('tarea-guardar').addEventListener('click', guardarTarea);
-}
+function bindFichaEvents() {
+  document.getElementById('ficha-close')?.addEventListener('click', closeFicha);
+  document.getElementById('ficha-close-footer')?.addEventListener('click', closeFicha);
 
-function bindArchivoEvents() {
-  document.getElementById('archivo-add').addEventListener('click', () => document.getElementById('archivo-input').click());
-  document.getElementById('archivo-input').addEventListener('change', (e) => {
+  document.getElementById('ficha-editar')?.addEventListener('click', () => {
+    if (state.fichaId) abrirProyectoModal(state.fichaId);
+  });
+  document.getElementById('ficha-cambiar-imagen')?.addEventListener('click', () => {
+    if (state.fichaId) abrirProyectoModal(state.fichaId, 'imagen');
+  });
+
+  document.getElementById('ficha-estado-select')?.addEventListener('change', (e) => {
+    const p = state.proyectos.find((x) => x.id === state.fichaId);
+    if (!p) return;
+    if (!puedeAsignar()) {
+      e.target.value = p.status;
+      showToast('Tu rol no puede modificar el estado de producción.');
+      return;
+    }
+    p.status = e.target.value;
+    commit();
+    showToast(`${p.name}: estado ${p.status}.`);
+  });
+
+  document.getElementById('ficha-subtabs')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-sub]');
+    if (!btn) return;
+    mostrarSubFicha(btn.dataset.sub);
+  });
+
+  document.getElementById('ficha-fase-back')?.addEventListener('click', () => {
+    if (state.fichaId) cambiarFaseProyecto(state.fichaId, -1);
+  });
+  document.getElementById('ficha-fase-next')?.addEventListener('click', () => {
+    if (state.fichaId) cambiarFaseProyecto(state.fichaId, 1);
+  });
+
+  document.getElementById('ficha-pedido-add')?.addEventListener('click', () => {
+    const id = state.fichaId;
+    if (!id) return;
+    if (!puedeGestionarCompras()) { showToast('Solo Gerencia puede registrar compras.'); return; }
+    closeFicha();
+    state.newOrderProjectId = id;
+    switchTab('new-order');
+    renderNewOrder();
+    const select = document.getElementById('pedido-proyecto');
+    if (select) select.value = id;
+  });
+
+  document.getElementById('archivo-add')?.addEventListener('click', () => document.getElementById('archivo-input')?.click());
+  document.getElementById('archivo-input')?.addEventListener('change', (e) => {
     const input = e.target;
+    if (!puedeEditarFicha()) { input.value = ''; return; }
     const files = Array.from(input.files || []);
     const p = state.proyectos.find((x) => x.id === state.fichaId);
     if (!p) { input.value = ''; return; }
     if (!p.archivos) p.archivos = [];
     files.forEach((f) => {
-      const tipo = f.name.toLowerCase().endsWith('.pdf') ? 'pdf'
-        : (/\.(png|jpe?g|gif|webp|svg)$/.test(f.name.toLowerCase()) ? '2d' : '3d');
+      const lower = f.name.toLowerCase();
+      const tipo = lower.endsWith('.pdf') ? 'pdf'
+        : (/\.(png|jpe?g|gif|webp|svg)$/.test(lower) ? '2d' : '3d');
       const url = (tipo === 'pdf' || tipo === '2d') ? URL.createObjectURL(f) : null;
-      p.archivos.push({ id: `f-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`, name: f.name, tipo, size: f.size, date: hoyStr(), url });
+      p.archivos.push({ id: uid('f'), name: f.name, tipo, size: `${(f.size / 1024 / 1024).toFixed(1)} MB`, date: hoyISO(), url });
     });
     input.value = '';
     guardarEstado();
     renderArchivos(p);
+    showToast('Documentación adjuntada a la ficha.');
   });
+}
+
+function bindModalsEvents() {
+  document.getElementById('proyecto-modal-close')?.addEventListener('click', cerrarProyectoModal);
+  document.getElementById('proyecto-cancelar')?.addEventListener('click', cerrarProyectoModal);
+  document.getElementById('proyecto-form')?.addEventListener('submit', guardarProyecto);
+
+  document.getElementById('prospecto-cancelar')?.addEventListener('click', cerrarProspectoModal);
+  document.getElementById('prospecto-form')?.addEventListener('submit', guardarProspecto);
+
+  document.getElementById('pendiente-cancelar')?.addEventListener('click', cerrarPendienteModal);
+  document.getElementById('pendiente-form')?.addEventListener('submit', guardarPendiente);
+
+  document.getElementById('comercial-modal-close')?.addEventListener('click', cerrarComercialModal);
+  document.getElementById('comercial-modal-cancelar')?.addEventListener('click', cerrarComercialModal);
+  document.getElementById('comercial-modal-guardar')?.addEventListener('click', guardarComercialModal);
+  document.getElementById('comercial-modal-aprobar')?.addEventListener('click', () => {
+    if (state.comercialCtx?.kind === 'comercial') aprobarProspecto(state.comercialCtx.id);
+  });
+  document.getElementById('comercial-modal-rechazar')?.addEventListener('click', () => {
+    if (state.comercialCtx?.kind === 'comercial') abrirRechazo(state.comercialCtx.id);
+  });
+  document.getElementById('comercial-modal-ficha')?.addEventListener('click', () => {
+    const ctx = state.comercialCtx;
+    if (!ctx) return;
+    const id = ctx.kind === 'proyecto' ? ctx.id : state.comercial.find((x) => x.id === ctx.id)?.proyectoId;
+    if (!id) return;
+    cerrarComercialModal();
+    openFicha(id);
+  });
+  document.getElementById('comercial-modal-etapa')?.addEventListener('change', (e) => {
+    const ctx = state.comercialCtx;
+    if (!ctx) return;
+    cambiarEtapaComercial(ctx.kind, ctx.id, e.target.value);
+  });
+
+  document.getElementById('rechazo-cancelar')?.addEventListener('click', cerrarRechazo);
+  document.getElementById('rechazo-confirmar')?.addEventListener('click', confirmarRechazo);
+
+  document.getElementById('tarea-close')?.addEventListener('click', cerrarModalTarea);
+  document.getElementById('tarea-guardar')?.addEventListener('click', guardarTarea);
+  document.getElementById('tarea-eliminar')?.addEventListener('click', () => {
+    const ctx = state.tareaCtx;
+    const carpenter = document.getElementById('tarea-carpintero-input').value.trim();
+    if (ctx && carpenter) eliminarTarea(carpenter, ctx);
+  });
+
+  document.getElementById('pedido-form')?.addEventListener('submit', onPedidoGuardar);
+}
+
+/* ==========================================================================
+   21. DELEGACIÓN GLOBAL Y DRAG & DROP
+   ========================================================================== */
+
+function contextoDesdeDataset(el) {
+  const kind = el.dataset.taskKind;
+  const projectId = el.dataset.project || '';
+  const muebleId = el.dataset.mueble || '';
+  const taskId = el.dataset.task || '';
+  const carpenter = el.dataset.carpenter || '';
+  if (kind === 'mueble') {
+    const p = state.proyectos.find((x) => x.id === projectId);
+    const m = (p?.muebles || []).find((x) => x.id === muebleId);
+    if (!m) return null;
+    return { kind, projectId, muebleId, taskId: null, carpenter: m.carpenter || carpenter, text: m.name };
+  }
+  const t = (state.tareas[carpenter] || []).find((x) => x.id === taskId);
+  if (!t) return null;
+  return { kind: 'tarea', projectId: t.projectId, muebleId: null, taskId: t.id, carpenter, text: t.text };
+}
+
+function bindGlobalDelegation() {
+  document.addEventListener('click', (e) => {
+    const pendAdd = e.target.closest('[data-pend-add]');
+    if (pendAdd) { abrirPendienteModal(pendAdd.dataset.pendAdd, null); return; }
+
+    const pendEdit = e.target.closest('[data-pend-edit]');
+    if (pendEdit) { abrirPendienteModal(pendEdit.dataset.pendProject, pendEdit.dataset.pendEdit); return; }
+
+    const pendDel = e.target.closest('[data-pend-del]');
+    if (pendDel) { eliminarPendiente(pendDel.dataset.pendProject, pendDel.dataset.pendDel); return; }
+
+    const ficha = e.target.closest('[data-open-ficha]');
+    if (ficha) {
+      if (ficha.dataset.sub) state.fichaSub = ficha.dataset.sub;
+      else state.fichaSub = 'resumen';
+      openFicha(ficha.dataset.openFicha);
+      return;
+    }
+
+    const editProyecto = e.target.closest('[data-edit-proyecto]');
+    if (editProyecto) { abrirProyectoModal(editProyecto.dataset.editProyecto); return; }
+
+    const faseProyecto = e.target.closest('[data-fase-proyecto]');
+    if (faseProyecto) { cambiarFaseProyecto(faseProyecto.dataset.faseProyecto, Number(faseProyecto.dataset.delta)); return; }
+
+    const taskPhase = e.target.closest('[data-task-phase]');
+    if (taskPhase) {
+      const delta = Number(taskPhase.dataset.taskPhase);
+      if (taskPhase.dataset.taskKind === 'mueble') cambiarFaseMueble(taskPhase.dataset.project, taskPhase.dataset.mueble, delta);
+      else cambiarFaseTarea(taskPhase.dataset.carpenter, taskPhase.dataset.task, delta);
+      return;
+    }
+
+    const taskEdit = e.target.closest('[data-task-edit]');
+    if (taskEdit) {
+      const ctx = contextoDesdeDataset(taskEdit);
+      if (ctx) abrirModalTarea(ctx.carpenter, ctx);
+      return;
+    }
+
+    const taskDel = e.target.closest('[data-task-del]');
+    if (taskDel) {
+      const ctx = contextoDesdeDataset(taskDel);
+      if (ctx) eliminarTarea(ctx.carpenter, ctx);
+      return;
+    }
+
+    const tareaAdd = e.target.closest('[data-tarea-add]');
+    if (tareaAdd) { abrirModalTarea(tareaAdd.dataset.tareaAdd, null); return; }
+
+    const accion = e.target.closest('[data-accion]');
+    if (accion) {
+      if (accion.dataset.accion === 'nuevo-proyecto') abrirProyectoModal();
+      if (accion.dataset.accion === 'nuevo-prospecto') abrirProspectoModal();
+      if (accion.dataset.accion === 'nueva-tarea') abrirModalTarea('', null);
+      return;
+    }
+
+    const aprobar = e.target.closest('[data-cc-aprobar]');
+    if (aprobar) { aprobarProspecto(aprobar.dataset.ccAprobar); return; }
+
+    const rechazar = e.target.closest('[data-cc-rechazar]');
+    if (rechazar) { abrirRechazo(rechazar.dataset.ccRechazar); return; }
+
+    const reporte = e.target.closest('[data-reporte-gerencia]');
+    if (reporte) { reportarGerencia(); return; }
+
+    const centroTab = e.target.closest('[data-centro-tab]');
+    if (centroTab) { switchTab(centroTab.dataset.centroTab); return; }
+
+    const resolver = e.target.closest('[data-resolver]');
+    if (resolver) {
+      const p = state.proyectos.find((x) => x.id === state.fichaId);
+      const b = p?.bloqueos?.find((x) => x.id === resolver.dataset.resolver);
+      if (b) b.solved = true;
+      commit();
+      showToast('Bloqueo resuelto.');
+      return;
+    }
+
+    const verDoc = e.target.closest('[data-ver-doc]');
+    if (verDoc) { verDocumento(verDoc.dataset.verDoc); return; }
+
+    const tabBtn = e.target.closest('[data-tab]');
+    if (tabBtn && !tabBtn.closest('#mg-tabs')) { switchTab(tabBtn.dataset.tab); return; }
+  });
+
+  document.addEventListener('change', (e) => {
+    const select = e.target.closest('[data-com-stage]');
+    if (!select) return;
+    cambiarEtapaComercial(select.dataset.ccKind, select.dataset.ccId, select.value);
+  });
+}
+
+function bindDragAndDrop() {
+  document.addEventListener('dragstart', (e) => {
+    const card = e.target.closest('[data-cc-id]');
+    if (!card) return;
+    card.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', JSON.stringify({ kind: card.dataset.ccKind, id: card.dataset.ccId }));
+  });
+
+  document.addEventListener('dragend', () => {
+    document.querySelectorAll('.comercial-card.dragging').forEach((el) => el.classList.remove('dragging'));
+    document.querySelectorAll('[data-stage-col].drag-over').forEach((el) => el.classList.remove('drag-over'));
+  });
+
+  document.addEventListener('dragover', (e) => {
+    const col = e.target.closest('[data-stage-col]');
+    if (!col) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    document.querySelectorAll('[data-stage-col].drag-over').forEach((el) => { if (el !== col) el.classList.remove('drag-over'); });
+    col.classList.add('drag-over');
+  });
+
+  document.addEventListener('dragleave', (e) => {
+    const col = e.target.closest('[data-stage-col]');
+    if (col && !col.contains(e.relatedTarget)) col.classList.remove('drag-over');
+  });
+
+  document.addEventListener('drop', (e) => {
+    const col = e.target.closest('[data-stage-col]');
+    if (!col) return;
+    e.preventDefault();
+    col.classList.remove('drag-over');
+    try {
+      const data = JSON.parse(e.dataTransfer.getData('text/plain') || '{}');
+      if (data.kind && data.id) cambiarEtapaComercial(data.kind, data.id, col.dataset.stageCol);
+    } catch (err) {
+      console.warn('[MODUGAL] No se pudo interpretar el arrastre.', err);
+    }
+  });
+}
+
+function bindChatEvents() {
+  document.getElementById('chat-fab')?.addEventListener('click', abrirChat);
+  document.getElementById('chat-close')?.addEventListener('click', cerrarChat);
+  document.getElementById('chat-form')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    enviarMensaje(document.getElementById('chat-input').value);
+  });
+  document.getElementById('chat-quick')?.addEventListener('click', (e) => {
+    const chip = e.target.closest('.chat-chip');
+    if (chip) enviarMensaje(chip.dataset.q);
+  });
+}
+
+/* ==========================================================================
+   22. INICIALIZACIÓN
+   ========================================================================== */
+
+function init() {
+  const cargado = cargarEstado();
+  state.proyectos = cargado.proyectos;
+  state.comercial = cargado.comercial;
+  state.tareas = cargado.tareas || {};
+
+  state.rol = localStorage.getItem(ROL_KEY) || 'administrativo';
+  if (!ROLE_LABELS[state.rol]) state.rol = 'administrativo';
+  state.user = getSesion();
+  state.tema = localStorage.getItem(TEMA_KEY) || 'claro';
+
+  getUsuarios();
+  aplicarTema();
+
+  bindLoginEvents();
+  bindHeaderEvents();
+  bindTabsEvents();
+  bindProduccionEvents();
+  bindProyectosEvents();
+  bindComercialEvents();
+  bindCentroEvents();
+  bindFichaEvents();
+  bindModalsEvents();
+  bindGlobalDelegation();
+  bindDragAndDrop();
+  bindChatEvents();
+
+  aplicarPermisosUI();
+  updateUserChip();
+  renderAll();
+  switchTab('produccion');
+
+  if (state.user) {
+    ocultarLogin();
+  } else {
+    mostrarLogin();
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

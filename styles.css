@@ -292,3 +292,166 @@ html.tema-oscuro .field label { color: #94a3b8; }
 html.tema-oscuro .field input, html.tema-oscuro .field select, html.tema-oscuro .field textarea { background: #0f172a; color: #e2e8f0; border-color: #334155; }
 html.tema-oscuro .btn-ghost { background: #1e293b; color: #e2e8f0; border-color: #334155; }
 html.tema-oscuro .btn-ghost:hover { background: #334155; }
+
+/* ============================================================
+   PENDIENTES UNIFICADOS · SINCRONIZACIÓN GLOBAL
+   ============================================================ */
+.pendientes-box {
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.pendientes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.pendientes-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.pendientes-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #fff;
+  font-size: 0.65rem;
+  padding: 0 0.3rem;
+}
+.pendientes-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: var(--brand);
+  color: #fff;
+  border: 0;
+  border-radius: 8px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.64rem;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pendientes-add:hover { background: var(--brand-dark); }
+.pendientes-list { display: flex; flex-direction: column; gap: 0.35rem; padding: 0.5rem; }
+.pendientes-box--compact .pendientes-list { max-height: 9.5rem; overflow-y: auto; }
+.pendiente-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 0.4rem 0.45rem;
+  font-size: 0.72rem;
+}
+.pendiente-text { flex: 1; min-width: 0; color: var(--text); font-weight: 600; line-height: 1.25; }
+.pendiente-tipo {
+  flex: 0 0 auto;
+  font-size: 0.55rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 999px;
+  padding: 0.18rem 0.4rem;
+  border: 1px solid transparent;
+}
+.pendiente-tipo--material { background: #fffbeb; color: #92400e; border-color: #fde68a; }
+.pendiente-tipo--requerimiento { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+.pendiente-tipo--bloqueo { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+.pendiente-tipo--otro { background: var(--bg); color: var(--muted); border-color: var(--border); }
+.pendiente-prio { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+.pendiente-prio--alta { background: var(--danger); box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.15); }
+.pendiente-prio--media { background: var(--warning); }
+.pendiente-prio--baja { background: var(--success); }
+.pendiente-actions { display: inline-flex; align-items: center; gap: 0.15rem; flex: 0 0 auto; }
+.pendiente-actions button {
+  width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--muted); cursor: pointer; font-size: 0.6rem;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.pendiente-actions button:hover { color: var(--brand); border-color: var(--brand); }
+.pendiente-empty {
+  margin: 0; padding: 0.45rem; text-align: center; color: var(--muted);
+  font-size: 0.68rem; font-weight: 600;
+}
+.pendiente-empty i { color: var(--success); margin-right: 0.25rem; }
+
+html.tema-oscuro .pendiente-tipo--material { background: #451a03; color: #fcd34d; border-color: #78350f; }
+html.tema-oscuro .pendiente-tipo--requerimiento { background: #172554; color: #93c5fd; border-color: #1e3a8a; }
+html.tema-oscuro .pendiente-tipo--bloqueo { background: #450a0a; color: #fca5a5; border-color: #7f1d1d; }
+
+/* ============================================================
+   CONTROLES DE FASE · TAREAS
+   ============================================================ */
+.fase-btn {
+  width: 24px; height: 24px; border-radius: 7px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); cursor: pointer; font-size: 0.62rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: all .15s ease;
+}
+.fase-btn:hover:not(:disabled) { border-color: var(--brand); color: var(--brand); }
+.fase-btn--next { background: var(--success); border-color: var(--success); color: #fff; }
+.fase-btn--next:hover:not(:disabled) { background: #047857; border-color: #047857; color: #fff; }
+.fase-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.task-icon-btn {
+  width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--surface); color: var(--muted); cursor: pointer; font-size: 0.6rem;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.task-icon-btn:hover { color: var(--brand); border-color: var(--brand); }
+.task-icon-btn--danger:hover { color: #fff; background: var(--danger); border-color: var(--danger); }
+
+/* ============================================================
+   KANBAN COMERCIAL · DRAG & DROP
+   ============================================================ */
+.comercial-card { will-change: transform; }
+.comercial-detalle {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.comercial-card.dragging { opacity: 0.45; transform: rotate(1.5deg); }
+[data-stage-col] { transition: border-color .15s ease, background .15s ease; }
+[data-stage-col].drag-over { border-color: var(--brand); background: rgba(220, 38, 38, 0.07); }
+[data-stage-col].drag-over .comercial-card { pointer-events: none; }
+
+/* ============================================================
+   TOAST
+   ============================================================ */
+.toast {
+  position: fixed;
+  left: 1rem;
+  bottom: 1.25rem;
+  z-index: 130;
+  max-width: min(92vw, 420px);
+  background: #0f172a;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  box-shadow: 0 14px 34px rgba(15, 23, 42, 0.35);
+  opacity: 0;
+  transform: translateY(12px);
+  transition: opacity .2s ease, transform .2s ease;
+  pointer-events: none;
+}
+.toast.show { opacity: 1; transform: translateY(0); }
+html.tema-oscuro .toast { background: var(--brand); }
