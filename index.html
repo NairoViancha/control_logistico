@@ -15,57 +15,72 @@
 <body class="bg-slate-50 text-slate-900 font-sans min-h-screen">
 
   <!-- ============================================================
-       HEADER FIJO · Isotipo MG · Logotipo · Buscador · Rol · Nuevo Pedido
+       HEADER FIJO · Isotipo MG · Marca · Buscador · Rol · Nuevo Pedido
        ============================================================ -->
-  <header id="mg-header" class="fixed top-0 inset-x-0 z-50 bg-white border-b border-slate-200 shadow-sm">
-    <div class="max-w-7xl mx-auto px-3 sm:px-5 h-16 flex items-center gap-2 sm:gap-3">
-      <!-- Isotipo -->
-      <div class="mg-isotipo w-10 h-10 rounded-full bg-red-600 text-white font-extrabold flex items-center justify-center text-lg shadow-sm shrink-0" aria-label="MG">MG</div>
-      <div class="leading-tight shrink-0">
-        <p class="text-sm font-extrabold tracking-wide text-slate-900">MODUGAL ESPACIOS RENOVADOS</p>
+  <header id="mg-header" class="fixed top-0 inset-x-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      <!-- Isotipo + marca -->
+      <div class="flex items-center space-x-3">
+        <div class="w-12 h-12 rounded-full border-2 border-red-600 bg-white flex items-center justify-center shadow-md shrink-0" aria-label="MG">
+          <span class="text-red-600 font-black text-xl tracking-tighter">MG</span>
+        </div>
+        <div>
+          <div class="flex items-center">
+            <span class="text-2xl font-black text-slate-800 tracking-widest">MODU</span>
+            <span class="text-2xl font-black text-red-600 tracking-widest">GAL</span>
+            <span class="text-[10px] text-slate-400 align-top">®</span>
+          </div>
+          <p class="text-[10px] text-slate-500 tracking-[0.25em] font-semibold uppercase -mt-1">espacios renovados</p>
+        </div>
       </div>
 
       <!-- Buscador global -->
-      <div class="mg-search flex-1 min-w-0 relative ml-2">
-        <i class="fas fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-        <input id="mg-search-input" type="search" placeholder="Buscar proyecto, cliente o mueble..." autocomplete="off"
-          class="w-full bg-slate-100 border border-slate-200 rounded-full pl-9 pr-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-600 focus:border-red-600" />
+      <div class="hidden md:flex flex-1 max-w-md mx-8 relative">
+        <i class="fas fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" aria-hidden="true"></i>
+        <input id="mg-search-input" type="text" placeholder="Buscar por cliente, carpintero o ciudad..." autocomplete="off"
+          class="w-full bg-slate-100 border border-slate-200 text-slate-800 rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600 focus:bg-white transition-all placeholder:text-slate-400" />
       </div>
 
-      <!-- Selector de rol dinámico -->
-      <div id="mg-role-selector" class="flex bg-slate-100 rounded-lg p-1 border border-slate-200 shrink-0" role="tablist" aria-label="Rol del usuario">
-        <button type="button" class="mg-role-btn active px-2.5 py-1.5 rounded-md text-xs font-bold transition-colors" data-rol="gerencia">Gerencia (Full)</button>
-        <button type="button" class="mg-role-btn px-2.5 py-1.5 rounded-md text-xs font-bold transition-colors text-slate-500" data-rol="arquitecto">Arquitecto</button>
-        <button type="button" class="mg-role-btn px-2.5 py-1.5 rounded-md text-xs font-bold transition-colors text-slate-500" data-rol="carpintero">Carpintero</button>
-      </div>
+      <!-- Selector de rol + Acción -->
+      <div class="flex items-center space-x-4">
+        <div id="mg-role-selector" class="flex items-center bg-slate-100 px-3.5 py-1.5 rounded-xl border border-slate-200 shadow-inner" role="tablist" aria-label="Rol del usuario">
+          <i class="fas fa-shield-alt text-red-600 mr-2 w-4 h-4" aria-hidden="true"></i>
+          <span class="text-xs text-slate-500 font-medium mr-2 hidden sm:inline">Perfil:</span>
+          <select id="mg-rol-select" class="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer" data-rol-select>
+            <option value="gerencia">Gerencia (Full)</option>
+            <option value="arquitecto">Arquitecto</option>
+            <option value="carpintero">Carpintero</option>
+          </select>
+        </div>
 
-      <!-- Botón Nuevo Pedido -->
-      <button type="button" id="btn-nuevo-pedido" class="shrink-0 bg-red-600 hover:bg-red-700 text-white text-sm font-bold px-4 py-2 rounded-lg shadow-sm flex items-center gap-2 transition-colors">
-        <i class="fas fa-plus" aria-hidden="true"></i> <span class="hidden sm:inline">Nuevo Pedido</span><span class="sm:hidden">+</span>
-      </button>
+        <button type="button" id="btn-nuevo-pedido" class="hidden sm:flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-md hover:shadow-lg">
+          <i class="fas fa-plus w-4 h-4" aria-hidden="true"></i>
+          <span>Nuevo Pedido</span>
+        </button>
+      </div>
     </div>
   </header>
 
   <!-- ============================================================
-       NAVEGACIÓN POR PESTAÑAS
+       NAVEGACIÓN SECUNDARIA
        ============================================================ -->
-  <nav id="mg-tabs" class="bg-white border-b border-slate-200 sticky top-16 z-40" aria-label="Módulos MODUGAL">
-    <div class="max-w-7xl mx-auto px-3 sm:px-5">
-      <div class="flex overflow-x-auto scrollbar-hide -mx-3 sm:mx-0">
-        <button type="button" class="mg-tab active px-4 py-3 text-sm font-bold whitespace-nowrap" data-tab="produccion">
-          <i class="fas fa-th mr-2" aria-hidden="true"></i>Producción
+  <nav id="mg-tabs" class="bg-white border-t border-slate-100 sticky top-20 z-40" aria-label="Módulos MODUGAL">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex overflow-x-auto scrollbar-hide">
+        <button type="button" class="mg-tab active" data-tab="produccion">
+          <i class="fas fa-layout-dashboard mr-2" aria-hidden="true"></i>Tablero de Producción
         </button>
-        <button type="button" class="mg-tab px-4 py-3 text-sm font-bold whitespace-nowrap" data-tab="equipo">
-          <i class="fas fa-users mr-2" aria-hidden="true"></i>Equipo
+        <button type="button" class="mg-tab" data-tab="equipo">
+          <i class="fas fa-users mr-2" aria-hidden="true"></i>Equipo & Asignaciones
         </button>
-        <button type="button" class="mg-tab px-4 py-3 text-sm font-bold whitespace-nowrap" data-tab="comercial">
-          <i class="fas fa-briefcase mr-2" aria-hidden="true"></i>Comercial
+        <button type="button" class="mg-tab" data-tab="comercial">
+          <i class="fas fa-briefcase mr-2" aria-hidden="true"></i>Seguimiento Comercial
         </button>
-        <button type="button" class="mg-tab px-4 py-3 text-sm font-bold whitespace-nowrap" data-tab="stats">
-          <i class="fas fa-chart-line mr-2" aria-hidden="true"></i>Estadísticas
+        <button type="button" class="mg-tab" data-tab="stats">
+          <i class="fas fa-chart-bar mr-2" aria-hidden="true"></i>Estadísticas & Rendimiento
         </button>
-        <button type="button" class="mg-tab px-4 py-3 text-sm font-bold whitespace-nowrap" data-tab="pedidos">
-          <i class="fas fa-shopping-cart mr-2" aria-hidden="true"></i>Pedidos
+        <button type="button" class="mg-tab sm:hidden" data-tab="new-order">
+          <i class="fas fa-plus mr-2" aria-hidden="true"></i>Nuevo Pedido
         </button>
       </div>
     </div>
@@ -74,118 +89,137 @@
   <!-- ============================================================
        CONTENIDO PRINCIPAL
        ============================================================ -->
-  <main id="mg-main" class="pt-16">
+  <main id="mg-main" class="pt-20">
 
     <!-- ============================================================ MÓDULO A · TABLERO DE PRODUCCIÓN (FÁBRICA EN VIVO) -->
     <section id="tab-produccion" class="tab-panel p-4">
-      <div class="flex items-center justify-between mb-3">
-        <h2 class="text-lg font-extrabold text-slate-900">Fábrica en Vivo</h2>
-        <span class="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1">Producción Online</span>
+      {/* KPIs */}
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div class="kpi-card bg-white border border-slate-200/80 p-5 rounded-2xl shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Proyectos Activos</p>
+            <h3 class="text-3xl font-black text-slate-900 mt-1" id="kpi-activos">6</h3>
+          </div>
+          <div class="p-3 bg-slate-100 rounded-xl text-slate-600"><i class="fas fa-building w-6 h-6" aria-hidden="true"></i></div>
+        </div>
+        <div class="kpi-card bg-white border border-red-200 p-5 rounded-2xl shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold text-red-600 uppercase tracking-wider">Detenidos por Material</p>
+            <h3 class="text-3xl font-black text-red-600 mt-1" id="kpi-detenidos">1</h3>
+          </div>
+          <div class="p-3 bg-red-50 rounded-xl text-red-600 border border-red-100"><i class="fas fa-triangle-exclamation w-6 h-6" aria-hidden="true"></i></div>
+        </div>
+        <div class="kpi-card bg-white border border-slate-200/80 p-5 rounded-2xl shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Bodegas de Stock</p>
+            <h3 class="text-3xl font-black text-slate-900 mt-1" id="kpi-bodega">2 Bodegas</h3>
+          </div>
+          <div class="p-3 bg-slate-100 rounded-xl text-slate-600"><i class="fas fa-box w-6 h-6" aria-hidden="true"></i></div>
+        </div>
+        <div class="kpi-card bg-white border border-slate-200/80 p-5 rounded-2xl shadow-sm flex items-center justify-between">
+          <div>
+            <p class="text-xs font-semibold text-slate-500 uppercase tracking-wider">Carpinteros en Campo</p>
+            <h3 class="text-3xl font-black text-emerald-600 mt-1" id="kpi-operarios">10 Operarios</h3>
+          </div>
+          <div class="p-3 bg-emerald-50 rounded-xl text-emerald-600 border border-emerald-100"><i class="fas fa-tools w-6 h-6" aria-hidden="true"></i></div>
+        </div>
       </div>
 
-      <!-- KPIs superiores -->
-      <div id="kpi-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        <div class="kpi-card bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-          <p class="kpi-label">Proyectos Activos</p>
-          <p class="kpi-value" id="kpi-activos">0</p>
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-200 pb-4">
+        <div>
+          <h2 class="text-xl font-black text-slate-900 tracking-wide">Fábrica & Producción en Vivo</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Control visual por proyecto de cocinas integrales y modulares</p>
         </div>
-        <div class="kpi-card bg-white border border-slate-200 rounded-xl shadow-sm p-4 kpi-alert">
-          <p class="kpi-label">Detenidos por Material</p>
-          <p class="kpi-value" id="kpi-detenidos">0</p>
-          <i class="fas fa-triangle-exclamation text-red-600 mt-2" aria-hidden="true"></i>
+        <div id="filtros-produccion" class="flex items-center space-x-1 bg-slate-200/60 p-1 rounded-xl border border-slate-200">
+          <button type="button" class="f-chip active bg-red-600 text-white border-red-600" data-filtro="todos">Todos</button>
+          <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="Detenido">Detenido</button>
+          <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="En proceso">En proceso</button>
+          <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="Completado">Completado</button>
         </div>
-        <div class="kpi-card bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-          <p class="kpi-label">Bodegas de Stock</p>
-          <p class="kpi-value" id="kpi-bodega">0</p>
-        </div>
-        <div class="kpi-card bg-white border border-slate-200 rounded-xl shadow-sm p-4 kpi-success">
-          <p class="kpi-label">Carpinteros en Campo</p>
-          <p class="kpi-value" id="kpi-operarios">0</p>
-        </div>
-      </div>
-
-      <!-- Filtros de estado -->
-      <div id="filtros-produccion" class="flex gap-2 justify-end overflow-x-auto pb-1 mb-4 scrollbar-hide">
-        <button type="button" class="f-chip active bg-red-600 text-white border-red-600" data-filtro="todos">Todos</button>
-        <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="detenido">Detenido</button>
-        <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="en_proceso">En proceso</button>
-        <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="completado">Completado</button>
       </div>
 
       <!-- Grid de tarjetas de proyectos -->
-      <div id="proyectos-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+      <div id="proyectos-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
     </section>
 
     <!-- ============================================================ MÓDULO B · EQUIPO & ASIGNACIONES -->
     <section id="tab-equipo" class="tab-panel p-4">
-      <h2 class="text-lg font-extrabold text-slate-900 mb-3">Equipo & Asignaciones</h2>
-      <div id="equipo-grid" class="grid grid-cols-1 lg:grid-cols-2 gap-4"></div>
+      <div class="mb-6 border-b border-slate-200 pb-4">
+        <h2 class="text-xl font-black text-slate-900 tracking-wide">Carga Laboral y Asignaciones</h2>
+        <p class="text-xs text-slate-500 mt-0.5">Muebles y módulos en proceso agrupados por operario</p>
+      </div>
+      <div id="equipo-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
     </section>
 
     <!-- ============================================================ MÓDULO C · SEGUIMIENTO COMERCIAL (KANBAN) -->
     <section id="tab-comercial" class="tab-panel p-4">
-      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-        <h2 class="text-lg font-extrabold text-slate-900">Seguimiento Comercial</h2>
-        <div id="comercial-quarter" class="flex gap-2">
-          <button type="button" class="f-chip active bg-red-600 text-white border-red-600" data-quarter="Q4-2026">Q4 - 2026 (Oct - Dic)</button>
-          <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-quarter="Q1-2027">Q1 - 2027</button>
+      <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 border-b border-slate-200 pb-4">
+        <div>
+          <h2 class="text-xl font-black text-slate-900 tracking-wide">Pipeline Comercial</h2>
+          <p class="text-xs text-slate-500 mt-0.5">Seguimiento de ventas, cotizaciones y garantías</p>
+        </div>
+        <div class="flex items-center space-x-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+          <i class="fas fa-calendar w-4 h-4 text-slate-400" aria-hidden="true"></i>
+          <span class="text-xs font-bold text-slate-700">Trimestre:</span>
+          <select id="comercial-trimestre" class="bg-slate-50 text-xs font-bold text-slate-900 rounded-lg p-1.5 border border-slate-200 focus:outline-none focus:ring-1 focus:ring-red-600">
+            <option value="Q3 - 2026">Q3 - 2026 (Jul - Sep)</option>
+            <option value="Q4 - 2026" selected>Q4 - 2026 (Oct - Dic)</option>
+            <option value="Q1 - 2027">Q1 - 2027 (Ene - Mar)</option>
+            <option value="Todos los Trimestres">Todos los Trimestres</option>
+          </select>
         </div>
       </div>
-      <div id="comercial-board" class="flex gap-3 overflow-x-auto pb-4 scrollbar-hide"></div>
+      <div id="comercial-board" class="flex gap-4 overflow-x-auto pb-4"></div>
     </section>
 
     <!-- ============================================================ MÓDULO D · ESTADÍSTICAS & RENDIMIENTO -->
     <section id="tab-stats" class="tab-panel p-4">
-      <h2 class="text-lg font-extrabold text-slate-900 mb-3">Estadísticas & Rendimiento</h2>
-      <div id="stats-view" class="bg-white border border-slate-200 rounded-xl shadow-sm p-4"></div>
+      <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
+        <h2 class="text-xl font-black text-slate-900 mb-1">Medición de Tiempos por Fase</h2>
+        <p class="text-xs text-slate-500 mb-6">Promedio de duración en días por etapa de carpintería</p>
+        <div id="stats-view" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+      </div>
     </section>
 
     <!-- ============================================================ MÓDULO E · REGISTRO DE PEDIDOS / COMPRAS -->
-    <section id="tab-pedidos" class="tab-panel p-4">
-      <h2 class="text-lg font-extrabold text-slate-900 mb-3">Registro de Pedidos / Compras</h2>
-      <div class="bg-white border border-slate-200 rounded-xl shadow-sm p-4">
-        <form id="pedido-form" class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    <section id="tab-new-order" class="tab-panel p-4">
+      <div class="max-w-xl mx-auto bg-white border border-slate-200 p-8 rounded-2xl shadow-md">
+        <h2 class="text-2xl font-black text-slate-900 mb-1">Registrar Compra de Material</h2>
+        <p class="text-xs text-slate-500 mb-6">Vincula repuestos, herrajes o Madecor a la ficha del proyecto</p>
+
+        <form id="pedido-form" class="space-y-4 text-xs">
           <div>
-            <label for="pedido-proyecto" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Proyecto</label>
-            <select id="pedido-proyecto" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600">
+            <label for="pedido-proyecto" class="block font-bold text-slate-700 uppercase mb-1">Proyecto</label>
+            <select id="pedido-proyecto" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-bold focus:ring-2 focus:ring-red-600 focus:bg-white">
               <option value="">Seleccionar proyecto...</option>
             </select>
           </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <label for="pedido-categoria" class="block font-bold text-slate-700 uppercase mb-1">Categoría</label>
+              <select id="pedido-categoria" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white">
+                <option value="">Seleccionar categoría...</option>
+                <option value="Madecor / Tableros">Madecor / Tableros</option>
+                <option value="Herrajes Blum">Herrajes Blum</option>
+                <option value="Mesón Cuarzo/Granito">Mesón Cuarzo/Granito</option>
+                <option value="Vidrios & Aluminio">Vidrios & Aluminio</option>
+              </select>
+            </div>
+            <div>
+              <label for="pedido-proveedor" class="block font-bold text-slate-700 uppercase mb-1">Proveedor</label>
+              <input id="pedido-proveedor" type="text" placeholder="Ej. Serviherrajes, Pelíkano" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" required />
+            </div>
+          </div>
+
           <div>
-            <label for="pedido-categoria" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Categoría</label>
-            <select id="pedido-categoria" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600">
-              <option value="">Seleccionar categoría...</option>
-              <option>Herrajes</option>
-              <option>Madecor</option>
-              <option>Vidrios</option>
-              <option>Ferretería</option>
-            </select>
+            <label for="pedido-item" class="block font-bold text-slate-700 uppercase mb-1">Descripción Material</label>
+            <input id="pedido-item" type="text" placeholder="Ej. Tira LED cálida 3000K con transformador" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" required />
           </div>
-          <div>
-            <label for="pedido-producto" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Producto</label>
-            <input id="pedido-producto" type="text" placeholder="Ej. Cierre Lento" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600" />
-          </div>
-          <div>
-            <label for="pedido-proveedor" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Proveedor</label>
-            <input id="pedido-proveedor" type="text" placeholder="Ej. Herrajes SRL" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600" />
-          </div>
-          <div>
-            <label for="pedido-guia" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Guía / Pedido</label>
-            <input id="pedido-guia" type="text" placeholder="Ej. PUR-8842" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600" />
-          </div>
-          <div>
-            <label for="pedido-estado" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Estado</label>
-            <select id="pedido-estado" class="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-600">
-              <option value="pendiente">Pendiente</option>
-              <option value="en_transit">En tránsito</option>
-              <option value="recibido">Recibido</option>
-            </select>
-          </div>
-          <div class="sm:col-span-2">
-            <button type="submit" id="pedido-guardar" class="bg-red-600 hover:bg-red-700 text-white font-bold text-sm px-6 py-2.5 rounded-lg shadow-sm">
-              <i class="fas fa-check mr-2" aria-hidden="true"></i> Registrar Pedido
-            </button>
-          </div>
+
+          <button type="submit" id="pedido-guardar" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 rounded-xl shadow-md text-sm mt-4 transition-all">
+            <i class="fas fa-check mr-2" aria-hidden="true"></i> Guardar Pedido
+          </button>
         </form>
       </div>
     </section>
@@ -194,83 +228,116 @@
   <!-- ============================================================
        MODAL · FICHA DE PROYECTO (5 SUBPESTAÑAS)
        ============================================================ -->
-  <div id="modal-ficha" class="is-hidden fixed inset-0 z-[60] bg-slate-900/50 backdrop-blur-sm flex items-end sm:items-center justify-center">
-    <div class="ficha-modal bg-white w-full sm:w-[92vw] sm:max-w-3xl max-h-[92vh] rounded-t-2xl sm:rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+  <div id="modal-ficha" class="is-hidden fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white border border-slate-200 w-full max-w-4xl rounded-2xl shadow-2xl overflow-hidden my-8">
       <!-- Header del modal + subpestañas -->
-      <div class="p-4 border-b border-slate-200 flex items-center justify-between gap-3 bg-white">
-        <h3 id="ficha-titulo" class="font-extrabold text-slate-900">Ficha del Proyecto</h3>
-        <button type="button" id="ficha-close" class="p-2 rounded-lg text-slate-500 hover:bg-slate-100" aria-label="Cerrar">
-          <i class="fas fa-xmark text-lg" aria-hidden="true"></i>
+      <div class="bg-slate-50 p-6 border-b border-slate-200 flex justify-between items-start">
+        <div>
+          <div class="flex items-center space-x-2 mb-2">
+            <span class="bg-red-600 text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded" id="ficha-id-badge">PRJ-001</span>
+            <span class="text-xs text-slate-500 font-bold" id="ficha-phase">Fabricación</span>
+          </div>
+          <h2 class="text-2xl font-black text-slate-900" id="ficha-nombre">Martha Pinos</h2>
+          <p class="text-xs text-slate-500 flex items-center mt-1">
+            <i class="fas fa-map-marker-alt mr-1 text-red-600" aria-hidden="true"></i>
+            <span id="ficha-direccion">Calle de los Caracoles, Casa 14</span>
+          </p>
+        </div>
+        <button type="button" id="ficha-close" class="bg-slate-200 hover:bg-slate-300 text-slate-700 p-2 rounded-full transition-colors" aria-label="Cerrar">
+          <i class="fas fa-xmark w-5 h-5" aria-hidden="true"></i>
         </button>
       </div>
-      <div id="ficha-subtabs" class="flex border-b border-slate-200 bg-slate-50 overflow-x-auto scrollbar-hide">
-        <button type="button" class="f-subtab active px-4 py-2.5 text-sm font-bold text-red-600 border-b-2 border-red-600 bg-white" data-sub="resumen">Resumen</button>
-        <button type="button" class="f-subtab px-4 py-2.5 text-sm font-bold text-slate-500 border-b-2 border-transparent" data-sub="muebles">Muebles</button>
-        <button type="button" class="f-subtab px-4 py-2.5 text-sm font-bold text-slate-500 border-b-2 border-transparent" data-sub="pedidos">Pedidos</button>
-        <button type="button" class="f-subtab px-4 py-2.5 text-sm font-bold text-slate-500 border-b-2 border-transparent" data-sub="bloqueos">Bloqueos</button>
-        <button type="button" class="f-subtab px-4 py-2.5 text-sm font-bold text-slate-500 border-b-2 border-transparent" data-sub="archivos">Archivos</button>
+
+      <!-- Subpestañas -->
+      <div id="ficha-subtabs" class="bg-white border-b border-slate-200 px-6 flex space-x-6">
+        <button type="button" class="f-subtab active py-3 text-xs font-bold border-b-2 border-red-600 text-red-600 transition-all" data-sub="resumen">Resumen</button>
+        <button type="button" class="f-subtab py-3 text-xs font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-900 transition-all" data-sub="muebles">Muebles</button>
+        <button type="button" class="f-subtab py-3 text-xs font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-900 transition-all" data-sub="pedidos">Pedidos/Compras</button>
+        <button type="button" class="f-subtab py-3 text-xs font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-900 transition-all" data-sub="bloqueos">Bloqueos</button>
+        <button type="button" class="f-subtab py-3 text-xs font-bold border-b-2 border-transparent text-slate-500 hover:text-slate-900 transition-all" data-sub="dropbox">Archivos Dropbox (Proxy)</button>
       </div>
 
-      <div class="overflow-y-auto">
+      <div class="p-6 space-y-6">
         <!-- Subpestaña: Resumen -->
-        <div id="ficha-resumen" class="p-4">
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div class="rounded-xl bg-gradient-to-br from-slate-700 to-slate-900 h-44 flex items-center justify-center text-white text-5xl">
-              <i class="fas fa-home" aria-hidden="true"></i>
+        <div id="ficha-resumen" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <img id="ficha-imagen" src="" alt="" class="w-full h-64 object-cover rounded-xl border border-slate-200 shadow-sm" />
+          <div class="space-y-4 text-xs">
+            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+              <p class="text-slate-500">Cliente: <strong class="text-slate-900" id="ficha-cliente"></strong></p>
+              <p class="text-slate-500">Teléfono: <strong class="text-slate-900" id="ficha-telefono"></strong></p>
+              <p class="text-slate-500">Operador Logístico: <strong class="text-slate-900" id="ficha-operador"></strong></p>
+              <p class="text-slate-500">Trazador Responsable: <strong class="text-slate-900" id="ficha-responsable"></strong></p>
             </div>
-            <div>
-              <h4 id="ficha-cliente" class="font-extrabold text-slate-900"></h4>
-              <p id="ficha-direccion" class="text-sm text-slate-500 mt-1"></p>
-              <p class="text-sm text-slate-500 mt-1"><i class="fas fa-map-marker-alt mr-1 text-red-600" aria-hidden="true"></i><span id="ficha-gps"></span></p>
-              <p class="text-sm text-slate-500 mt-1"><i class="fas fa-calendar mr-1 text-red-600" aria-hidden="true"></i>Fecha prometida: <span id="ficha-fecha-prom"></span></p>
-              <p class="text-sm text-slate-500 mt-1"><i class="fas fa-dollar-sign mr-1 text-red-600" aria-hidden="true"></i>Presupuesto: $<span id="ficha-presupuesto"></span></p>
+            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+              <p class="text-slate-500 font-bold uppercase">Dirección Validada para Obra</p>
+              <p class="text-slate-900 font-bold" id="ficha-direccion-2"></p>
+              <a id="ficha-maps" href="#" target="_blank" rel="noreferrer" class="text-red-600 hover:underline flex items-center font-bold mt-2">
+                <i class="fas fa-external-link-alt w-3.5 h-3.5 mr-1" aria-hidden="true"></i> Ver Mapa GPS
+              </a>
+            </div>
+            <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+              <p class="text-slate-500">Fase: <strong class="text-slate-900" id="ficha-fase"></strong></p>
+              <p class="text-slate-500">Estado: <strong class="text-slate-900" id="ficha-estado"></strong></p>
+              <p class="text-slate-500">Fecha prometida: <strong class="text-slate-900" id="ficha-fecha-prom"></strong></p>
+              <p class="text-slate-500">Presupuesto: <strong class="text-slate-900" id="ficha-presupuesto"></strong></p>
+              <p class="text-slate-500">Alerta: <strong class="text-slate-900" id="ficha-alerta"></strong></p>
             </div>
           </div>
         </div>
 
         <!-- Subpestaña: Muebles -->
-        <div id="ficha-muebles" class="p-4 is-hidden">
+        <div id="ficha-muebles" class="space-y-3">
           <div id="ficha-muebles-list" class="space-y-3"></div>
         </div>
 
-        <!-- Subpestaña: Pedidos -->
-        <div id="ficha-pedidos" class="p-4 is-hidden">
-          <div class="overflow-x-auto">
-            <table class="w-full text-sm border-collapse">
-              <thead>
-                <tr class="bg-slate-100 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <th class="p-2 border-b border-slate-200">Categoría</th>
-                  <th class="p-2 border-b border-slate-200">Producto</th>
-                  <th class="p-2 border-b border-slate-200">Proveedor</th>
-                  <th class="p-2 border-b border-slate-200">Guía</th>
-                  <th class="p-2 border-b border-slate-200">Estado</th>
-                </tr>
-              </thead>
-              <tbody id="ficha-pedidos-tbody"></tbody>
-            </table>
-          </div>
+        <!-- Subpestaña: Pedidos / Compras -->
+        <div id="ficha-pedidos" class="overflow-x-auto border border-slate-200 rounded-xl">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
+              <tr>
+                <th class="p-3">Categoría</th>
+                <th class="p-3">Producto</th>
+                <th class="p-3">Proveedor</th>
+                <th class="p-3">N° Guía</th>
+                <th class="p-3">Estado</th>
+              </tr>
+            </thead>
+            <tbody id="ficha-pedidos-tbody" class="divide-y divide-slate-200"></tbody>
+          </table>
         </div>
 
         <!-- Subpestaña: Bloqueos -->
-        <div id="ficha-bloqueos" class="p-4 is-hidden">
-          <ul id="ficha-bloqueos-list" class="space-y-2"></ul>
+        <div id="ficha-bloqueos" class="space-y-3">
+          <div id="ficha-bloqueos-list" class="space-y-3"></div>
         </div>
 
-        <!-- Subpestaña: Archivos -->
-        <div id="ficha-archivos" class="p-4 is-hidden">
-          <p class="text-xs font-bold text-slate-500 uppercase tracking-wide mb-2">Dropbox · Proxy de Seguridad</p>
-          <div id="dropbox-publico" class="border border-slate-200 rounded-xl p-3 mb-3 bg-slate-50">
-            <p class="text-sm font-bold text-slate-900"><i class="fas fa-unlock text-emerald-600 mr-2" aria-hidden="true"></i> Carpeta Pública</p>
-            <p class="text-xs text-slate-500">Planos y renders autorizados.</p>
+        <!-- Subpestaña: Archivos Dropbox (Proxy) -->
+        <div id="ficha-dropbox" class="space-y-4 text-xs">
+          <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-start space-x-3">
+            <i class="fas fa-shield-alt w-5 h-5 text-blue-600 flex-shrink-0" aria-hidden="true"></i>
+            <p class="text-blue-900">Sistema Proxy: Los accesos están filtrados según el rol activo (<strong class="text-blue-950" id="ficha-proxy-rol">Gerencia</strong>).</p>
           </div>
-          <div id="dropbox-privado" class="border border-slate-200 rounded-xl p-3 bg-white">
-            <p class="text-sm font-bold text-slate-900"><i class="fas fa-lock text-slate-500 mr-2" aria-hidden="true"></i> Carpeta Privada Financiera</p>
-            <p class="text-xs text-slate-500">Presupuestos, facturas y decisiones críticas.</p>
-            <button type="button" id="dropbox-privado-lock" class="mt-2 w-full py-2 rounded-lg bg-slate-100 text-slate-400 text-sm font-bold cursor-not-allowed">
-              <i class="fas fa-lock mr-2" aria-hidden="true"></i> BLOQUEADA · Requiere rol Gerencia
-            </button>
+
+          <div>
+            <h5 class="font-bold text-slate-900 mb-2">Carpeta Pública (Renders & Planos)</h5>
+            <div id="dropbox-publico-list" class="space-y-2"></div>
+          </div>
+
+          <div class="border-t border-slate-200 pt-4">
+            <h5 class="font-bold text-slate-900 mb-2 flex items-center">
+              <i class="fas fa-lock w-4 h-4 mr-2 text-red-600" aria-hidden="true"></i>
+              Carpeta Privada Financiera
+            </h5>
+            <div id="dropbox-privado-list" class="space-y-2"></div>
+            <div id="dropbox-privado-restringido" class="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center text-slate-400 hidden">
+              Acceso Restringido para <span id="dropbox-privado-rol">Gerencia</span>.
+            </div>
           </div>
         </div>
+      </div>
+
+      <div class="bg-slate-50 p-4 border-t border-slate-200 flex justify-end">
+        <button type="button" id="ficha-close-footer" class="bg-slate-800 text-white font-bold px-4 py-2 rounded-xl text-xs hover:bg-slate-900 transition-colors">Cerrar Ficha</button>
       </div>
     </div>
   </div>

@@ -163,7 +163,7 @@
 @keyframes pop-in { from { transform: scale(0.92); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes sync-pulse { 0% { transform: scale(0.6); opacity: 0.9; } 70% { transform: scale(1.3); opacity: 0; } 100% { transform: scale(1.3); opacity: 0; } }
 
-.mg-tab { display: inline-block; border-bottom: 2px solid transparent; color: var(--muted); font-weight: 700; padding-bottom: 0.7rem; margin-bottom: -1px; white-space: nowrap; background: transparent; border-top: 0; border-left: 0; border-right: 0; }
+.mg-tab { display: inline-block; border-bottom: 2px solid transparent; color: var(--muted); font-weight: 700; font-size: 0.75rem; padding: 0.5rem 0.25rem; margin-bottom: -1px; white-space: nowrap; background: transparent; border-top: 0; border-left: 0; border-right: 0; cursor: pointer; }
 .mg-tab.active { border-bottom-color: var(--brand); color: var(--brand); }
 
 /* ============================================================
@@ -175,5 +175,5 @@
 .btn-dark:hover { background: #1e293b; }
 
 .f-chip { border-radius: 999px; display: inline-flex; align-items: center; }
-.f-subtab { padding: 0.65rem 1rem; font-size: 0.8rem; font-weight: 700; color: var(--muted); border-bottom: 2px solid transparent; background: transparent; border-top: 0; border-left: 0; border-right: 0; cursor: pointer; white-space: nowrap; }
+.f-subtab { padding: 0.75rem 1rem; font-size: 0.75rem; font-weight: 700; color: var(--muted); border-bottom: 2px solid transparent; background: transparent; border-top: 0; border-left: 0; border-right: 0; cursor: pointer; white-space: nowrap; }
 .f-subtab.active { color: var(--brand); border-bottom-color: var(--brand); background: var(--surface); }
