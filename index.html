@@ -619,6 +619,10 @@
 
         <!-- Muebles -->
         <div id="ficha-muebles" class="space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-xs text-slate-500">Cada mueble tiene su responsable, su fase y lo que se está haciendo.</p>
+            <button type="button" id="mueble-agregar" class="hidden bg-slate-900 hover:bg-slate-800 text-white font-bold px-3 py-2 rounded-xl text-xs shrink-0"><i class="fas fa-plus mr-1" aria-hidden="true"></i>Agregar mueble</button>
+          </div>
           <div id="ficha-muebles-list" class="space-y-3"></div>
         </div>
 
@@ -1103,6 +1107,43 @@
         <button type="button" id="tarea-guardar" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">Guardar</button>
         <button type="button" id="tarea-eliminar" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 py-2.5 rounded-xl text-sm hidden">Eliminar</button>
         <button type="button" id="tarea-close" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Mueble del proyecto (Gerencia y Logística) -->
+  <div id="mueble-modal" class="is-hidden fixed inset-0 z-[96] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl p-6 max-h-[92vh] overflow-y-auto">
+      <h3 class="text-xl font-black text-slate-900 mb-1" id="mueble-title">Agregar mueble</h3>
+      <p class="text-xs text-slate-500 mb-4" id="mueble-sub"></p>
+      <div class="space-y-3 text-xs">
+        <div>
+          <label for="mueble-nombre" class="block font-bold text-slate-500 uppercase mb-1">Nombre del mueble</label>
+          <input id="mueble-nombre" type="text" maxlength="120" placeholder="Ej. Isla central, Closet principal" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-bold" />
+        </div>
+        <div>
+          <label for="mueble-responsable" class="block font-bold text-slate-500 uppercase mb-1">Responsable</label>
+          <select id="mueble-responsable" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900"></select>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="mueble-fase" class="block font-bold text-slate-500 uppercase mb-1">Fase</label>
+            <select id="mueble-fase" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900"></select>
+          </div>
+          <div>
+            <label for="mueble-actividad" class="block font-bold text-slate-500 uppercase mb-1">Actividad</label>
+            <select id="mueble-actividad" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900"></select>
+          </div>
+        </div>
+        <div>
+          <label for="mueble-detalle" class="block font-bold text-slate-500 uppercase mb-1">Detalle</label>
+          <input id="mueble-detalle" type="text" maxlength="200" placeholder="Ej. Material Ámbar, herrajes cierre lento" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2 mt-5">
+        <button type="button" id="mueble-guardar" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">Guardar</button>
+        <button type="button" id="mueble-eliminar" class="hidden bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 py-2.5 rounded-xl text-sm">Eliminar</button>
+        <button type="button" id="mueble-cancelar" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm">Cancelar</button>
       </div>
     </div>
   </div>

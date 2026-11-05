@@ -255,12 +255,17 @@ function normalizarPendiente(x, index) {
 
 function normalizarMueble(m, index) {
   const item = m || {};
+  const fase = PRODUCTION_PHASES.includes(item.manufacturingPhase) ? item.manufacturingPhase : 'Recepción';
   return {
     id: item.id || `m-mig-${index}`,
     name: item.name || `Mueble ${index + 1}`,
     carpenter: item.carpenter || '',
-    status: item.status || item.manufacturingPhase || 'Recepción',
-    manufacturingPhase: PRODUCTION_PHASES.includes(item.manufacturingPhase) ? item.manufacturingPhase : 'Recepción',
+    status: fase,
+    manufacturingPhase: fase,
+    /* Antes se descartaban al recargar: ahora se conservan */
+    actividad: ACTIVIDAD_POR_NOMBRE[item.actividad] ? item.actividad : 'Armando',
+    detalle: item.detalle || '',
+    dbVersion: Number.isInteger(item.dbVersion) ? item.dbVersion : null,
   };
 }
 
@@ -424,7 +429,8 @@ function filaDesdeProyecto(p) {
     logisticOperator: p.logisticOperator,
     dateStart: p.dateStart,
     dateExpected: p.dateExpected,
-    muebles: p.muebles,
+    /* Con la tabla proyecto_muebles activa, los muebles ya no viajan en el JSON */
+    muebles: mueblesEnTabla ? undefined : p.muebles,
     pedidos: p.pedidos,
     bloqueos: p.bloqueos,
     archivos: p.archivos,
@@ -566,15 +572,34 @@ function hashFila(obj) {
 
 let sbListo = false;
 let syncQueue = Promise.resolve();
+/* Fase 2: los muebles viven en public.proyecto_muebles. Si la tabla aún no
+   existe (script v5 sin ejecutar) se sigue usando el JSON del proyecto. */
+let mueblesEnTabla = false;
+
 let syncSnapshot = {
   proyectos: new Map(),
   pendientes: new Map(),
   tareas: new Map(),
   carpinteros: new Map(),
   finanzas: new Map(),
+  muebles: new Map(),
 };
 
-function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRows = []) {
+function filaDesdeMueble(m, p, orden) {
+  return {
+    id: m.id,
+    proyecto_id: p.dbId || null,
+    nombre: String(m.name || '').trim() || 'Mueble sin nombre',
+    fase: PRODUCTION_PHASES.includes(m.manufacturingPhase) ? m.manufacturingPhase : 'Recepción',
+    responsable_id: m.carpenter ? idCarpinteroPorNombre(m.carpenter) : null,
+    responsable_nombre: m.carpenter || null,
+    actividad: ACTIVIDAD_POR_NOMBRE[m.actividad] ? m.actividad : 'Armando',
+    detalle: m.detalle || null,
+    orden,
+  };
+}
+
+function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRows = [], mueblesRows = null) {
   const proyectosApp = [];
   const comercial = [];
   const codigoPorDbId = new Map();
@@ -607,6 +632,28 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRow
     activo: c.activo !== false,
   }));
   const nombrePorId = new Map(carpinterosApp.map((c) => [c.id, c.nombre]));
+
+  /* Muebles desde la tabla (fuente de verdad cuando existe) */
+  if (Array.isArray(mueblesRows)) {
+    const porProyecto = new Map();
+    mueblesRows.forEach((row) => {
+      if (!porProyecto.has(row.proyecto_id)) porProyecto.set(row.proyecto_id, []);
+      porProyecto.get(row.proyecto_id).push(row);
+    });
+    proyectosApp.forEach((p) => {
+      p.muebles = (porProyecto.get(p.dbId) || [])
+        .sort((a, b) => (a.orden - b.orden) || String(a.created_at).localeCompare(String(b.created_at)))
+        .map((row, i) => normalizarMueble({
+          id: row.id,
+          name: row.nombre,
+          carpenter: nombrePorId.get(row.responsable_id) || row.responsable_nombre || '',
+          manufacturingPhase: row.fase,
+          actividad: row.actividad,
+          detalle: row.detalle,
+          dbVersion: row.version,
+        }, i));
+    });
+  }
 
   const tareasApp = {};
   (tareas || []).forEach((t) => {
@@ -696,6 +743,18 @@ async function leerSupabase() {
   const error = [prj, pen, car, tar].find((r) => r.error);
   if (error) throw error.error;
 
+  /* Muebles en tabla propia (v5). Si la tabla no existe todavía, se usa el JSON. */
+  const mue = await supabaseClient.from('proyecto_muebles').select('*').order('orden', { ascending: true });
+  let mueblesRows = null;
+  if (mue.error) {
+    const noExiste = ['42P01', 'PGRST205', 'PGRST200'].includes(mue.error.code) || /does not exist|could not find/i.test(mue.error.message || '');
+    if (!noExiste) throw mue.error;
+    mueblesEnTabla = false;
+  } else {
+    mueblesEnTabla = true;
+    mueblesRows = mue.data || [];
+  }
+
   /* Las finanzas solo se piden si el rol es Gerencia (la RLS igual las
      bloquea para los demás). */
   let finanzasRows = [];
@@ -704,7 +763,7 @@ async function leerSupabase() {
     if (fin.error) console.warn('[MODUGAL] No se pudieron leer las finanzas.', fin.error);
     else finanzasRows = fin.data || [];
   }
-  return construirEstado(prj.data || [], pen.data || [], car.data || [], tar.data || [], finanzasRows);
+  return construirEstado(prj.data || [], pen.data || [], car.data || [], tar.data || [], finanzasRows, mueblesRows);
 }
 
 function reconstruirSnapshot() {
@@ -714,7 +773,13 @@ function reconstruirSnapshot() {
     tareas: new Map(),
     carpinteros: new Map(),
     finanzas: new Map(),
+    muebles: new Map(),
   };
+  if (mueblesEnTabla) {
+    state.proyectos.forEach((p) => (p.muebles || []).forEach((m, i) => {
+      syncSnapshot.muebles.set(m.id, { hash: hashFila(filaDesdeMueble(m, p, i)) });
+    }));
+  }
   Object.entries(state.finanzas || {}).forEach(([codigo, f]) => {
     syncSnapshot.finanzas.set(codigo, { hash: hashFila(filaDesdeFinanzas(f, null)) });
   });
@@ -896,6 +961,47 @@ async function sincronizarEstado() {
     if (!error) syncSnapshot.tareas.delete(id);
   }
 
+  /* 5b. Muebles (tabla proyecto_muebles, con control de versión) */
+  if (mueblesEnTabla) {
+    const vistos = new Set();
+    const conflictosMuebles = [];
+    for (const p of state.proyectos) {
+      if (!p.dbId) continue;
+      for (const [i, m] of (p.muebles || []).entries()) {
+        if (!esUUID(m.id)) m.id = nuevoUUID();
+        vistos.add(m.id);
+        const fila = filaDesdeMueble(m, p, i);
+        const hash = hashFila(fila);
+        const prev = syncSnapshot.muebles.get(m.id);
+        if (prev && prev.hash === hash) continue;
+        let res;
+        if (prev) {
+          const { id, ...cambios } = fila;
+          let q = supabaseClient.from('proyecto_muebles').update(cambios).eq('id', id);
+          if (Number.isInteger(m.dbVersion)) q = q.eq('version', m.dbVersion);
+          res = await q.select('id,version');
+          if (!res.error && !(res.data || []).length) { conflictosMuebles.push(`${p.id} · ${m.name}`); continue; }
+        } else {
+          res = await supabaseClient.from('proyecto_muebles').insert(fila).select('id,version');
+        }
+        if (res.error) { registrarFallo(`el mueble ${m.name}`, res.error); continue; }
+        const row = (res.data || [])[0];
+        if (Number.isInteger(row?.version)) m.dbVersion = row.version;
+        syncSnapshot.muebles.set(m.id, { hash });
+      }
+    }
+    for (const id of [...syncSnapshot.muebles.keys()]) {
+      if (vistos.has(id)) continue;
+      const { error } = await supabaseClient.from('proyecto_muebles').delete().eq('id', id);
+      if (error) { registrarFallo('el borrado de un mueble', error); continue; }
+      syncSnapshot.muebles.delete(id);
+    }
+    if (conflictosMuebles.length) {
+      showToast(`${conflictosMuebles.join(', ')}: otra persona lo modificó. Se cargó la versión más reciente.`);
+      setTimeout(() => recargarTrasConflicto(), 0);
+    }
+  }
+
   /* 6. Finanzas (solo Gerencia; la RLS rechaza a cualquier otro rol) */
   if (esGerencia()) {
     for (const [codigo, f] of Object.entries(state.finanzas || {})) {
@@ -1071,7 +1177,7 @@ function recargarTrasConflicto() {
    Requiere que las tablas estén en la publicación `supabase_realtime`.
    -------------------------------------------------------------------------- */
 
-const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero', 'proyectos_finanzas'];
+const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero', 'proyectos_finanzas', 'proyecto_muebles'];
 let rtCanal = null;
 let rtTimer = null;
 let rtVisibilidadLista = false;
@@ -3211,15 +3317,17 @@ function openFicha(id) {
     ? 'Ficha 100% completa.'
     : `La ficha aún no está 100% completa (${pct}%). Faltan datos, muebles o pedidos por registrar.`;
 
+  document.getElementById('mueble-agregar')?.classList.toggle('hidden', !puedeAsignar());
   const mueblesDiv = document.getElementById('ficha-muebles-list');
   const muebles = p.muebles || [];
   mueblesDiv.innerHTML = muebles.length === 0
-    ? '<p class="text-xs text-slate-400 text-center py-6">Sin muebles registrados. Puedes editar la ficha para agregar la información base.</p>'
+    ? `<p class="text-xs text-slate-400 text-center py-6">Sin muebles registrados.${puedeAsignar() ? ' Usa «Agregar mueble» para crear el primero.' : ''}</p>`
     : muebles.map((m) => `
       <div class="p-4 bg-slate-50 border border-slate-200 rounded-xl flex flex-col sm:flex-row justify-between sm:items-center gap-3 text-xs">
         <div>
           <h5 class="font-bold text-slate-900">${esc(m.name)}</h5>
-          <p class="text-slate-500 mt-0.5">Carpintero: ${esc(m.carpenter || 'Por asignar')}</p>
+          <p class="text-slate-500 mt-0.5">Responsable: ${esc(m.carpenter || 'Por asignar')}${m.carpenter && cargoDe(m.carpenter) ? ` · ${esc(cargoDe(m.carpenter))}` : ''}</p>
+          <div class="flex flex-wrap items-center gap-1.5 mt-1.5">${badgeActividad(m.actividad)}${m.detalle ? `<span class="text-slate-600">${esc(m.detalle)}</span>` : ''}</div>
         </div>
         <div class="flex flex-col items-start sm:items-end gap-2">
           <span class="bg-white text-slate-800 font-bold px-3 py-1 rounded-lg border border-slate-200 shadow-sm">Fase: ${esc(m.manufacturingPhase)}</span>
@@ -3228,7 +3336,7 @@ function openFicha(id) {
             <div class="flex items-center gap-1">
               <button type="button" class="fase-btn" data-task-phase="-1" data-task-kind="mueble" data-project="${esc(p.id)}" data-mueble="${esc(m.id)}" title="Retroceder fase"><i class="fas fa-arrow-left" aria-hidden="true"></i></button>
               <button type="button" class="fase-btn fase-btn--next" data-task-phase="1" data-task-kind="mueble" data-project="${esc(p.id)}" data-mueble="${esc(m.id)}" title="Avanzar fase"><i class="fas fa-arrow-right" aria-hidden="true"></i></button>
-              <button type="button" class="task-icon-btn" data-task-edit data-task-kind="mueble" data-project="${esc(p.id)}" data-mueble="${esc(m.id)}" data-carpenter="${esc(m.carpenter || '')}" title="Editar mueble"><i class="fas fa-pen" aria-hidden="true"></i></button>
+              <button type="button" class="task-icon-btn" data-mueble-edit="${esc(m.id)}" title="Editar mueble" aria-label="Editar ${esc(m.name)}"><i class="fas fa-pen" aria-hidden="true"></i></button>
             </div>` : ''}
         </div>
       </div>`).join('');
@@ -4406,7 +4514,7 @@ const ETIQUETAS_CAMPO = {
   fecha_entrega: 'Fecha de entrega (BD)', imagen_url: 'Imagen', trazador_responsable: 'Responsable',
   motivo_rechazo: 'Motivo de rechazo', codigo_prj: 'Código', descripcion: 'Descripción', estado: 'Estado',
   actividad: 'Actividad', detalle: 'Detalle', nombre_mueble: 'Mueble / trabajo', carpintero_id: 'Personal',
-  es_lider: 'Líder de instalación', nombre: 'Nombre', cargo: 'Cargo', activo: 'Activo',
+  es_lider: 'Líder de instalación', nombre: 'Nombre', fase: 'Fase', responsable_id: 'Responsable', cargo: 'Cargo', activo: 'Activo',
   valor_venta: 'Valor de venta', costo_materiales: 'Costo materiales', costo_mano_obra: 'Costo mano de obra',
   otros_costos: 'Otros costos', anticipo: 'Anticipo', notas: 'Notas', utilidad: 'Utilidad', margen_pct: 'Margen %',
   'ficha.name': 'Nombre del proyecto', 'ficha.muebles': 'Muebles', 'ficha.pedidos': 'Pedidos de material',
@@ -4419,19 +4527,20 @@ const ETIQUETAS_CAMPO = {
 /* Campos técnicos o duplicados que no aportan al lector */
 const CAMPOS_OCULTOS = new Set(['id', 'proyecto_id', 'grupo_id', 'fase_manual', 'estado_tarea', 'ficha.alert',
   'ficha.manufacturingPhase', 'ficha.commercialStage', 'ficha.client', 'ficha.image', 'ficha.city', 'archivos_privados',
-  'activo_desde', 'descripcion_venta']);
+  'activo_desde', 'descripcion_venta', 'orden', 'legacy_id', 'responsable_nombre']);
 const TABLAS_HIST = {
   proyectos: { label: 'Proyecto', icon: 'fa-folder-open', color: 'bg-slate-900' },
   pendientes: { label: 'Pendiente', icon: 'fa-clipboard-list', color: 'bg-amber-600' },
   tareas_carpintero: { label: 'Tarea', icon: 'fa-hammer', color: 'bg-sky-700' },
   carpinteros: { label: 'Personal', icon: 'fa-id-badge', color: 'bg-violet-700' },
   proyectos_finanzas: { label: 'Finanzas', icon: 'fa-lock', color: 'bg-red-600' },
+  proyecto_muebles: { label: 'Mueble', icon: 'fa-couch', color: 'bg-orange-600' },
   usuarios: { label: 'Usuario', icon: 'fa-user-shield', color: 'bg-emerald-700' },
 };
 
 function valorHist(clave, v) {
   if (v === null || v === undefined || v === '') return '—';
-  if (clave === 'carpintero_id') return (state.carpinteros || []).find((c) => c.id === v)?.nombre || 'Personal eliminado';
+  if (clave === 'carpintero_id' || clave === 'responsable_id') return (state.carpinteros || []).find((c) => c.id === v)?.nombre || 'Personal eliminado';
   if (clave === 'descripcion') return String(v).replace(/\s*\[[^\]]*\]\s*$/, '');
   if (typeof v === 'boolean') return v ? 'Sí' : 'No';
   if (typeof v === 'number' && ['valor_venta', 'costo_materiales', 'costo_mano_obra', 'otros_costos', 'anticipo', 'utilidad'].includes(clave)) return cop(v);
@@ -4471,7 +4580,7 @@ function lineasCambio(ev) {
     const lado = ev.accion === 'crear' ? 'despues' : 'antes';
     const principal = ['descripcion', 'nombre_mueble', 'ficha.name', 'nombre', 'cliente']
       .find((k) => cambios[k]?.[lado]);
-    const extra = ['actividad', 'detalle', 'carpintero_id', 'estado', 'cargo']
+    const extra = ['fase', 'actividad', 'detalle', 'carpintero_id', 'responsable_id', 'estado', 'cargo']
       .filter((k) => cambios[k]?.[lado] !== undefined && cambios[k]?.[lado] !== null && cambios[k]?.[lado] !== '')
       .map((k) => `${ETIQUETAS_CAMPO[k] || k}: ${valorHist(k, cambios[k][lado])}`);
     return [principal ? valorHist(principal, cambios[principal][lado]) : '', ...extra].filter(Boolean);
@@ -4547,6 +4656,95 @@ function bindHistorialEvents() {
 }
 
 /* ==========================================================================
+   21e. MUEBLES DEL PROYECTO (ficha → Muebles) · Gerencia y Logística
+   ========================================================================== */
+
+function abrirMuebleModal(projectId, muebleId) {
+  if (!puedeAsignar()) { showToast('Solo Gerencia y Logística gestionan los muebles.'); return; }
+  const p = state.proyectos.find((x) => x.id === projectId);
+  if (!p) return;
+  const m = muebleId ? (p.muebles || []).find((x) => x.id === muebleId) : null;
+  state.muebleCtx = { projectId, muebleId: m?.id || null };
+  document.getElementById('mueble-title').textContent = m ? 'Editar mueble' : 'Agregar mueble';
+  document.getElementById('mueble-sub').textContent = `${p.id} · ${p.name}`;
+  document.getElementById('mueble-nombre').value = m?.name || '';
+  document.getElementById('mueble-responsable').innerHTML = opcionesPersonal(m?.carpenter || '', 'Sin asignar');
+  document.getElementById('mueble-fase').innerHTML = PRODUCTION_PHASES
+    .map((f) => `<option value="${esc(f)}" ${f === (m?.manufacturingPhase || 'Recepción') ? 'selected' : ''}>${esc(f)}</option>`).join('');
+  document.getElementById('mueble-actividad').innerHTML = ACTIVIDADES
+    .map((a) => `<option value="${esc(a.v)}" ${a.v === (m?.actividad || 'Armando') ? 'selected' : ''}>${esc(a.v)}</option>`).join('');
+  document.getElementById('mueble-detalle').value = m?.detalle || '';
+  document.getElementById('mueble-eliminar').classList.toggle('hidden', !m);
+  document.getElementById('mueble-modal').classList.remove('is-hidden');
+  setTimeout(() => document.getElementById('mueble-nombre')?.focus(), 40);
+}
+
+function cerrarMuebleModal() {
+  document.getElementById('mueble-modal')?.classList.add('is-hidden');
+  state.muebleCtx = null;
+}
+
+function guardarMueble() {
+  if (!puedeAsignar()) return;
+  const ctx = state.muebleCtx;
+  const p = state.proyectos.find((x) => x.id === ctx?.projectId);
+  if (!p) return;
+  const nombre = document.getElementById('mueble-nombre').value.trim().replace(/\s+/g, ' ');
+  if (!nombre) { showToast('Escribe el nombre del mueble.'); document.getElementById('mueble-nombre').focus(); return; }
+  const datos = {
+    name: nombre,
+    carpenter: document.getElementById('mueble-responsable').value,
+    manufacturingPhase: document.getElementById('mueble-fase').value,
+    actividad: document.getElementById('mueble-actividad').value,
+    detalle: document.getElementById('mueble-detalle').value.trim(),
+  };
+  datos.status = datos.manufacturingPhase;
+  p.muebles = p.muebles || [];
+  if (ctx.muebleId) {
+    const m = p.muebles.find((x) => x.id === ctx.muebleId);
+    if (!m) return;
+    Object.assign(m, datos);
+  } else {
+    p.muebles.push(normalizarMueble({ id: nuevoUUID(), ...datos }, p.muebles.length));
+  }
+  p.commercialDetail = detalleProyecto(p);
+  commit();
+  cerrarMuebleModal();
+  openFicha(p.id);
+  mostrarSubFicha('muebles');
+  showToast(ctx.muebleId ? `${nombre} actualizado.` : `${nombre} agregado a ${p.id}.`);
+}
+
+function eliminarMueble() {
+  if (!puedeAsignar()) return;
+  const ctx = state.muebleCtx;
+  const p = state.proyectos.find((x) => x.id === ctx?.projectId);
+  const m = (p?.muebles || []).find((x) => x.id === ctx?.muebleId);
+  if (!p || !m) return;
+  if (!window.confirm(`¿Eliminar el mueble "${m.name}" de ${p.id}? Quedará registrado en el historial.`)) return;
+  p.muebles = p.muebles.filter((x) => x.id !== m.id);
+  commit();
+  cerrarMuebleModal();
+  openFicha(p.id);
+  mostrarSubFicha('muebles');
+  showToast(`${m.name} eliminado.`);
+}
+
+function bindMueblesEvents() {
+  document.getElementById('mueble-agregar')?.addEventListener('click', () => {
+    if (state.fichaId) abrirMuebleModal(state.fichaId, null);
+  });
+  document.getElementById('mueble-guardar')?.addEventListener('click', guardarMueble);
+  document.getElementById('mueble-eliminar')?.addEventListener('click', eliminarMueble);
+  document.getElementById('mueble-cancelar')?.addEventListener('click', cerrarMuebleModal);
+  document.getElementById('mueble-nombre')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); guardarMueble(); } });
+  document.getElementById('ficha-muebles-list')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-mueble-edit]');
+    if (btn && state.fichaId) abrirMuebleModal(state.fichaId, btn.dataset.muebleEdit);
+  });
+}
+
+/* ==========================================================================
    22. INICIALIZACIÓN
    ========================================================================== */
 
@@ -4571,6 +4769,7 @@ async function init() {
   bindEquipoEvents();
   bindEstadoSync();
   bindHistorialEvents();
+  bindMueblesEvents();
   bindFinanzasEvents();
 
   /* Sin sesión no se muestra ni se consulta ningún dato */
