@@ -60,6 +60,18 @@ const TEMA_KEY = 'modugal_tema';
 
 const DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1556910103-1c02745a872e?auto=format&fit=crop&w=1200&q=80';
 
+/* --- Supabase · cliente oficial (CDN cargado en index.html) --------------- */
+const SUPABASE_URL = 'https://ekhifrcnoqsqlkibajff.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_xoprTlOTu9q3uPATkGRQlw_85ul4zbb';
+/* El SDK UMD ya expone `window.supabase`; usamos un alias local para no
+   redeclarar el identificador global. */
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* Marcador para conservar los campos extendidos de la ficha dentro de la
+   columna de texto `descripcion_venta` (el esquema relacional sólo guarda
+   los campos núcleo: cliente, ciudad, fase, etapa, imagen y fecha). */
+const MG_PREFIX = 'MGJSON:';
+
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const MESES_TITULO = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
@@ -78,6 +90,7 @@ const state = {
   proyectos: [],
   comercial: [],
   tareas: {},
+  carpinteros: [],
   rol: 'administrativo',
   tab: 'produccion',
   fProduccion: 'todos',
@@ -376,8 +389,12 @@ function parseFecha(str) {
   }
   const m = value.match(/(\d{1,2})\s+([A-Za-zÁÉÍÓÚáéíóú]+)\s+(\d{4})/);
   if (!m) return null;
-  const mes = MESES_CORTOS.indexOf(m[2].toLowerCase().slice(0, 3));
-  if (mes < 0) return null;
+  const MESES_MAP = {
+    ene: 0, jan: 0, feb: 1, mar: 2, abr: 3, apr: 3, may: 4, jun: 5,
+    jul: 6, ago: 7, aug: 7, sep: 8, oct: 9, nov: 10, dic: 11, dec: 11,
+  };
+  const mes = MESES_MAP[m[2].toLowerCase().slice(0, 3)];
+  if (mes === undefined) return null;
   const d = new Date(parseInt(m[3], 10), mes, parseInt(m[1], 10));
   return isNaN(d.getTime()) ? null : d;
 }
@@ -402,8 +419,21 @@ function esc(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => map[c]);
 }
 
-function uid(prefix) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+function nuevoUUID() {
+  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : ((r & 0x3) | 0x8);
+    return v.toString(16);
+  });
+}
+
+function esUUID(valor) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(valor || ''));
+}
+
+function uid() {
+  return nuevoUUID();
 }
 
 function labelCargo(rol) {
@@ -416,14 +446,15 @@ function labelPendiente(tipo) {
 
 function normalizarPendiente(x, index) {
   if (typeof x === 'string') {
-    return { id: `pd-mig-${index}`, text: x, tipo: 'material', prioridad: 'media', createdAt: hoyISO() };
+    return { id: nuevoUUID(), text: x, tipo: 'material', prioridad: 'media', estado: 'Pendiente', createdAt: hoyISO() };
   }
   const item = x && typeof x === 'object' ? x : {};
   return {
-    id: item.id || `pd-mig-${index}`,
+    id: esUUID(item.id) ? item.id : nuevoUUID(),
     text: String(item.text || item.descripcion || 'Pendiente sin descripción'),
     tipo: TIPO_PENDIENTE_LABEL[item.tipo] ? item.tipo : 'material',
     prioridad: ['alta', 'media', 'baja'].includes(item.prioridad) ? item.prioridad : 'media',
+    estado: item.estado === 'Resuelto' ? 'Resuelto' : 'Pendiente',
     createdAt: item.createdAt || hoyISO(),
   };
 }
@@ -506,7 +537,568 @@ function normalizarComercial(c) {
   return c;
 }
 
-function cargarEstado() {
+/* --------------------------------------------------------------------------
+   MAPEO APP <-> SUPABASE
+   Tablas núcleo: proyectos, pendientes, carpinteros, tareas_carpintero.
+   El esquema sólo expone los campos cabecera; el resto de la ficha viaja
+   serializado en `descripcion_venta` con el prefijo MGJSON para no perder
+   muebles, pedidos, bloqueos, documentos ni datos comerciales.
+   -------------------------------------------------------------------------- */
+
+const ETAPA_APP_A_DB = {
+  'Prospectos': 'Prospecto',
+  'Cotizaciones': 'Cotización',
+  'Aprobados': 'Aprobado',
+  'En Fabricación': 'En Fabricación',
+  'Instalaciones': 'Instalación',
+  'Garantías': 'Garantía',
+  'Prospecto No Continuado': 'No Continuado',
+};
+
+const ETAPA_DB_A_APP = {
+  'Prospecto': 'Prospectos',
+  'Cotización': 'Cotizaciones',
+  'Aprobado': 'Aprobados',
+  'En Fabricación': 'En Fabricación',
+  'Instalación': 'Instalaciones',
+  'Garantía': 'Garantías',
+  'No Continuado': 'Prospecto No Continuado',
+};
+
+function etapaAppADb(etapa) {
+  return ETAPA_APP_A_DB[etapa] || 'Prospecto';
+}
+
+function etapaDbAApp(etapa) {
+  return ETAPA_DB_A_APP[etapa] || null;
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function fechaISODeTexto(str) {
+  const d = parseFecha(str);
+  if (!d) return null;
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}
+
+function decodificarPayload(raw) {
+  if (raw && typeof raw === 'object') return raw;
+  const texto = String(raw || '');
+  if (!texto.startsWith(MG_PREFIX)) return texto ? { detalle: texto } : {};
+  try {
+    return JSON.parse(texto.slice(MG_PREFIX.length)) || {};
+  } catch (e) {
+    return { detalle: texto.slice(MG_PREFIX.length) };
+  }
+}
+
+function descripcionPendiente(x) {
+  const base = String(x.text || '')
+    .replace(/\s*\[(material|requerimiento|bloqueo|otro)\|(alta|media|baja)\]\s*$/i, '')
+    .trim();
+  const tipo = TIPO_PENDIENTE_LABEL[x.tipo] ? x.tipo : 'material';
+  const prioridad = ['alta', 'media', 'baja'].includes(x.prioridad) ? x.prioridad : 'media';
+  return `${base} [${tipo}|${prioridad}]`;
+}
+
+function filaAPendiente(row) {
+  const raw = String(row.descripcion || '');
+  const m = raw.match(/\s*\[(material|requerimiento|bloqueo|otro)\|(alta|media|baja)\]\s*$/i);
+  const text = m ? raw.slice(0, m.index).trim() : raw.trim();
+  return normalizarPendiente({
+    id: row.id,
+    text,
+    tipo: m ? m[1].toLowerCase() : 'material',
+    prioridad: m ? m[2].toLowerCase() : 'media',
+    estado: row.estado,
+    createdAt: row.created_at ? String(row.created_at).slice(0, 10) : hoyISO(),
+  });
+}
+
+function filaDesdeProyecto(p) {
+  const payload = {
+    name: p.name,
+    client: p.client,
+    neighborhood: p.neighborhood,
+    address: p.address,
+    phone: p.phone,
+    status: p.status,
+    trimester: p.trimester,
+    arquitecto: p.arquitecto,
+    leadCarpenter: p.leadCarpenter,
+    logisticOperator: p.logisticOperator,
+    dateStart: p.dateStart,
+    dateExpected: p.dateExpected,
+    muebles: p.muebles,
+    pedidos: p.pedidos,
+    bloqueos: p.bloqueos,
+    archivos: p.archivos,
+    dropboxFiles: p.dropboxFiles,
+    alert: p.alert,
+    commercialStage: p.commercialStage,
+    manufacturingPhase: p.manufacturingPhase,
+    detalle: p.commercialDetail || detalleProyecto(p),
+  };
+  return {
+    codigo_prj: p.id,
+    cliente: p.client || p.name || 'Cliente sin nombre',
+    ciudad: p.city || 'Por definir',
+    descripcion_venta: MG_PREFIX + JSON.stringify(payload),
+    fase_actual: PRODUCTION_PHASES.includes(p.manufacturingPhase) ? p.manufacturingPhase : 'Recepción',
+    etapa_comercial: etapaAppADb(p.commercialStage || 'En Fabricación'),
+    motivo_rechazo: p.motivo || null,
+    imagen_url: p.image || null,
+    trazador_responsable: p.leadCarpenter || p.logisticOperator || null,
+    fecha_entrega: fechaISODeTexto(p.dateExpected),
+  };
+}
+
+function filaDesdeProspecto(c) {
+  const payload = {
+    esProspecto: true,
+    cliente: c.cliente,
+    trimester: c.trimester,
+    status: c.status,
+    dateExpected: c.dateExpected,
+    proyectoId: c.proyectoId,
+    alert: c.alert,
+    detalle: c.detalle,
+    rechazado: c.rechazado,
+    motivo: c.motivo,
+    etapa: c.etapa,
+  };
+  return {
+    codigo_prj: c.id,
+    cliente: c.cliente || 'Cliente sin nombre',
+    ciudad: 'Por definir',
+    descripcion_venta: MG_PREFIX + JSON.stringify(payload),
+    fase_actual: 'Recepción',
+    etapa_comercial: etapaAppADb(c.etapa),
+    motivo_rechazo: c.motivo || null,
+    imagen_url: null,
+    trazador_responsable: null,
+    fecha_entrega: fechaISODeTexto(c.dateExpected),
+  };
+}
+
+function esFilaProspecto(row, ext) {
+  const payload = ext || decodificarPayload(row?.descripcion_venta);
+  return payload.esProspecto === true || /^COM-/i.test(String(row?.codigo_prj || ''));
+}
+
+function proyectoDesdeFila(row) {
+  const ext = decodificarPayload(row.descripcion_venta);
+  const proyecto = {
+    ...ext,
+    id: row.codigo_prj || row.id,
+    dbId: row.id,
+    name: ext.name || row.cliente || 'Proyecto sin nombre',
+    client: row.cliente || ext.client || 'Cliente sin nombre',
+    city: row.ciudad || ext.city || 'Por definir',
+    image: row.imagen_url || ext.image || DEFAULT_IMAGE,
+    manufacturingPhase: PRODUCTION_PHASES.includes(row.fase_actual) ? row.fase_actual : (ext.manufacturingPhase || 'Recepción'),
+    commercialStage: etapaDbAApp(row.etapa_comercial) || ext.commercialStage || 'En Fabricación',
+    dateExpected: ext.dateExpected || (row.fecha_entrega ? formatFechaLarga(row.fecha_entrega) : 'Por definir'),
+    leadCarpenter: ext.leadCarpenter || row.trazador_responsable || '',
+    motivo: row.motivo_rechazo || ext.motivo || '',
+    commercialDetail: ext.detalle || ext.commercialDetail || '',
+  };
+  if (!proyecto.commercialDetail) proyecto.commercialDetail = `${proyecto.client}: Pedido por definir.`;
+  return normalizarProyecto(proyecto);
+}
+
+function comercialDesdeFila(row) {
+  const ext = decodificarPayload(row.descripcion_venta);
+  const etapa = etapaDbAApp(row.etapa_comercial) || ext.etapa || 'Prospectos';
+  return normalizarComercial({
+    id: row.codigo_prj || row.id,
+    dbId: row.id,
+    cliente: row.cliente || ext.cliente || 'Cliente sin nombre',
+    etapa,
+    trimester: ext.trimester || 'Q4 - 2026',
+    status: ext.status || EST_PRODUCCION.EN_PROCESO,
+    dateExpected: ext.dateExpected || (row.fecha_entrega ? formatFechaLarga(row.fecha_entrega) : 'Por definir'),
+    proyectoId: ext.proyectoId || null,
+    alert: ext.alert || '',
+    detalle: ext.detalle || `${row.cliente || 'Cliente'}: Pedido por definir.`,
+    rechazado: Boolean(ext.rechazado || etapa === 'Prospecto No Continuado'),
+    motivo: row.motivo_rechazo || ext.motivo || '',
+  });
+}
+
+function tareasPlanas() {
+  const planas = [];
+  Object.entries(state.tareas || {}).forEach(([carpintero, lista]) => {
+    (lista || []).forEach((t) => planas.push({ t, carpintero }));
+  });
+  return planas;
+}
+
+function idCarpinteroPorNombre(nombre) {
+  const buscado = String(nombre || '').trim().toLowerCase();
+  const encontrado = (state.carpinteros || []).find((c) => String(c.nombre || '').trim().toLowerCase() === buscado);
+  return encontrado ? encontrado.id : null;
+}
+
+function dbIdProyecto(projectId) {
+  const p = state.proyectos.find((x) => x.id === projectId);
+  return p?.dbId || null;
+}
+
+function filaDesdeTarea(t, carpintero) {
+  return {
+    id: t.id,
+    carpintero_id: idCarpinteroPorNombre(carpintero),
+    proyecto_id: dbIdProyecto(t.projectId),
+    nombre_mueble: t.text,
+    fase_manual: PRODUCTION_PHASES.includes(t.phase) ? t.phase : 'Asignación',
+    estado_tarea: t.estado || 'En proceso',
+  };
+}
+
+function hashFila(obj) {
+  return JSON.stringify(Object.keys(obj || {}).sort().map((k) => [k, obj[k]]));
+}
+
+/* --------------------------------------------------------------------------
+   LECTURA / ESCRITURA SUPABASE
+   -------------------------------------------------------------------------- */
+
+let sbListo = false;
+let syncQueue = Promise.resolve();
+let syncSnapshot = {
+  proyectos: new Map(),
+  pendientes: new Map(),
+  tareas: new Map(),
+  carpinteros: new Map(),
+};
+
+function construirEstado(proyectos, pendientes, carpinteros, tareas) {
+  const proyectosApp = [];
+  const comercial = [];
+  const codigoPorDbId = new Map();
+
+  proyectos.forEach((row) => {
+    const ext = decodificarPayload(row.descripcion_venta);
+    codigoPorDbId.set(row.id, row.codigo_prj || row.id);
+    if (esFilaProspecto(row, ext)) comercial.push(comercialDesdeFila(row));
+    else proyectosApp.push(proyectoDesdeFila(row));
+  });
+
+  const pendientesPorProyecto = new Map();
+  pendientes.forEach((row) => {
+    if (!row.proyecto_id) return;
+    if (!pendientesPorProyecto.has(row.proyecto_id)) pendientesPorProyecto.set(row.proyecto_id, []);
+    pendientesPorProyecto.get(row.proyecto_id).push(filaAPendiente(row));
+  });
+  proyectosApp.forEach((p) => {
+    p.pendientes = (pendientesPorProyecto.get(p.dbId) || []).map(normalizarPendiente);
+    p.alert = p.pendientes[0]?.text || '';
+  });
+
+  const carpinterosApp = (carpinteros || []).map((c) => ({ id: c.id, nombre: c.nombre, cargo: c.cargo }));
+  const nombrePorId = new Map(carpinterosApp.map((c) => [c.id, c.nombre]));
+
+  const tareasApp = {};
+  (tareas || []).forEach((t) => {
+    const nombre = nombrePorId.get(t.carpintero_id) || 'Sin asignar';
+    if (!tareasApp[nombre]) tareasApp[nombre] = [];
+    tareasApp[nombre].push({
+      id: esUUID(t.id) ? t.id : nuevoUUID(),
+      text: t.nombre_mueble || 'Tarea sin descripción',
+      projectId: codigoPorDbId.get(t.proyecto_id) || null,
+      phase: PRODUCTION_PHASES.includes(t.fase_manual) ? t.fase_manual : 'Asignación',
+      estado: t.estado_tarea || 'En proceso',
+    });
+  });
+
+  return { proyectos: proyectosApp, comercial, tareas: tareasApp, carpinteros: carpinterosApp };
+}
+
+async function leerSupabase(permitirSeed = true) {
+  const [prj, pen, car, tar] = await Promise.all([
+    supabaseClient.from('proyectos').select('*').order('created_at', { ascending: true }),
+    supabaseClient.from('pendientes').select('*').order('created_at', { ascending: true }),
+    supabaseClient.from('carpinteros').select('*').order('created_at', { ascending: true }),
+    supabaseClient.from('tareas_carpintero').select('*').order('created_at', { ascending: true }),
+  ]);
+  const error = [prj, pen, car, tar].find((r) => r.error);
+  if (error) throw error.error;
+
+  if (permitirSeed && (!prj.data || prj.data.length === 0)) {
+    return sembrarSupabase();
+  }
+  return construirEstado(prj.data || [], pen.data || [], car.data || [], tar.data || []);
+}
+
+async function sembrarSupabase() {
+  console.info('[MODUGAL] Supabase vacío: insertando datos semilla.');
+  const base = seed();
+  const proyectosBase = base.proyectos.map(normalizarProyecto);
+  const comercialBase = base.comercial.map(normalizarComercial);
+
+  const filas = [
+    ...proyectosBase.map(filaDesdeProyecto),
+    ...comercialBase.map(filaDesdeProspecto),
+  ];
+  const insPrj = await supabaseClient.from('proyectos').upsert(filas, { onConflict: 'codigo_prj' }).select('*');
+  if (insPrj.error) throw insPrj.error;
+  const dbIdPorCodigo = new Map((insPrj.data || []).map((r) => [r.codigo_prj, r.id]));
+
+  const nombres = new Set();
+  proyectosBase.forEach((p) => (p.muebles || []).forEach((m) => { if (m.carpenter) nombres.add(m.carpenter); }));
+  Object.keys(base.tareas || {}).forEach((n) => { if (n) nombres.add(n); });
+
+  let carpinterosData = [];
+  if (nombres.size) {
+    const insCar = await supabaseClient.from('carpinteros').insert(
+      [...nombres].map((nombre) => ({ nombre, cargo: 'OPERARIO DE PLANTA' }))
+    ).select('*');
+    if (insCar.error) throw insCar.error;
+    carpinterosData = insCar.data || [];
+  }
+
+  const pendientesInsert = [];
+  proyectosBase.forEach((p) => {
+    (p.pendientes || []).forEach((x) => {
+      pendientesInsert.push({
+        id: x.id,
+        proyecto_id: dbIdPorCodigo.get(p.id) || null,
+        descripcion: descripcionPendiente(x),
+        estado: x.estado === 'Resuelto' ? 'Resuelto' : 'Pendiente',
+      });
+    });
+  });
+  if (pendientesInsert.length) {
+    const insPen = await supabaseClient.from('pendientes').insert(pendientesInsert);
+    if (insPen.error) throw insPen.error;
+  }
+
+  const idCarpintero = new Map((carpinterosData || []).map((c) => [String(c.nombre || '').toLowerCase(), c.id]));
+  const tareasInsert = [];
+  Object.entries(base.tareas || {}).forEach(([carpintero, lista]) => {
+    (lista || []).forEach((t) => {
+      tareasInsert.push({
+        id: t.id,
+        carpintero_id: idCarpintero.get(carpintero.toLowerCase()) || null,
+        proyecto_id: dbIdPorCodigo.get(t.projectId) || null,
+        nombre_mueble: t.text,
+        fase_manual: PRODUCTION_PHASES.includes(t.phase) ? t.phase : 'Asignación',
+        estado_tarea: t.estado || 'En proceso',
+      });
+    });
+  });
+  if (tareasInsert.length) {
+    const insTar = await supabaseClient.from('tareas_carpintero').insert(tareasInsert);
+    if (insTar.error) throw insTar.error;
+  }
+
+  return leerSupabase(false);
+}
+
+function reconstruirSnapshot() {
+  syncSnapshot = {
+    proyectos: new Map(),
+    pendientes: new Map(),
+    tareas: new Map(),
+    carpinteros: new Map(),
+  };
+  state.proyectos.forEach((p) => {
+    syncSnapshot.proyectos.set(p.id, { hash: hashFila(filaDesdeProyecto(p)), dbId: p.dbId || null });
+  });
+  state.comercial.forEach((c) => {
+    syncSnapshot.proyectos.set(c.id, { hash: hashFila(filaDesdeProspecto(c)), dbId: c.dbId || null });
+  });
+  state.proyectos.forEach((p) => {
+    (p.pendientes || []).forEach((x) => {
+      syncSnapshot.pendientes.set(x.id, {
+        hash: hashFila({ id: x.id, proyecto_id: p.dbId || null, descripcion: descripcionPendiente(x), estado: x.estado || 'Pendiente' }),
+      });
+    });
+  });
+  tareasPlanas().forEach(({ t, carpintero }) => {
+    syncSnapshot.tareas.set(t.id, { hash: hashFila(filaDesdeTarea(t, carpintero)) });
+  });
+  (state.carpinteros || []).forEach((c) => syncSnapshot.carpinteros.set(c.nombre, { id: c.id }));
+}
+
+async function sincronizarEstado() {
+  if (!sbListo) return;
+  ultimoErrorSync = null;
+
+  const locales = [
+    ...state.proyectos.map((item) => ({ item, esProspecto: false })),
+    ...state.comercial.map((item) => ({ item, esProspecto: true })),
+  ];
+  const codigosVistos = new Set();
+
+  /* 1. Proyectos y prospectos (upsert por codigo_prj) */
+  for (const { item, esProspecto } of locales) {
+    if (!item.id) continue;
+    const fila = esProspecto ? filaDesdeProspecto(item) : filaDesdeProyecto(item);
+    const hash = hashFila(fila);
+    const prev = syncSnapshot.proyectos.get(item.id);
+    codigosVistos.add(item.id);
+    if (prev && prev.hash === hash && prev.dbId) {
+      item.dbId = prev.dbId;
+      continue;
+    }
+    const { data, error } = await supabaseClient
+      .from('proyectos')
+      .upsert(fila, { onConflict: 'codigo_prj' })
+      .select('id,codigo_prj');
+    if (error) {
+      console.error('[MODUGAL] No se pudo guardar el proyecto', item.id, error);
+      continue;
+    }
+    const row = (data || [])[0];
+    if (row?.id) item.dbId = row.id;
+    syncSnapshot.proyectos.set(item.id, { hash, dbId: item.dbId || null });
+  }
+
+  /* 2. Proyectos eliminados */
+  for (const [codigo, meta] of [...syncSnapshot.proyectos]) {
+    if (codigosVistos.has(codigo)) continue;
+    if (meta.dbId) {
+      await supabaseClient.from('pendientes').delete().eq('proyecto_id', meta.dbId);
+      await supabaseClient.from('tareas_carpintero').delete().eq('proyecto_id', meta.dbId);
+      await supabaseClient.from('proyectos').delete().eq('id', meta.dbId);
+    }
+    syncSnapshot.proyectos.delete(codigo);
+  }
+
+  /* 3. Carpinteros (roster) */
+  const nombresCarpinteros = new Set(Object.keys(state.tareas || {}));
+  state.proyectos.forEach((p) => (p.muebles || []).forEach((m) => { if (m.carpenter) nombresCarpinteros.add(m.carpenter); }));
+  for (const nombre of nombresCarpinteros) {
+    if (!nombre || nombre === 'Sin asignar') continue;
+    if (idCarpinteroPorNombre(nombre)) continue;
+    const { data, error } = await supabaseClient.from('carpinteros')
+      .insert({ nombre, cargo: 'OPERARIO DE PLANTA' })
+      .select('*');
+    if (error) {
+      console.error('[MODUGAL] No se pudo crear el carpintero', nombre, error);
+      continue;
+    }
+    const row = (data || [])[0];
+    if (row) state.carpinteros.push({ id: row.id, nombre: row.nombre, cargo: row.cargo });
+  }
+
+  /* 4. Pendientes: se resuelven por proyecto_id para refrescar todas las vistas */
+  const pendientesActuales = [];
+  state.proyectos.forEach((p) => (p.pendientes || []).forEach((x) => pendientesActuales.push({ p, x })));
+  const idsPendientes = new Set();
+
+  for (const { p, x } of pendientesActuales) {
+    if (!p.dbId) continue;
+    const fila = {
+      id: x.id,
+      proyecto_id: p.dbId,
+      descripcion: descripcionPendiente(x),
+      estado: x.estado === 'Resuelto' ? 'Resuelto' : 'Pendiente',
+    };
+    const hash = hashFila(fila);
+    const prev = syncSnapshot.pendientes.get(x.id);
+    idsPendientes.add(x.id);
+    if (prev && prev.hash === hash) continue;
+    const query = prev
+      ? supabaseClient.from('pendientes').update({
+        proyecto_id: fila.proyecto_id,
+        descripcion: fila.descripcion,
+        estado: fila.estado,
+      }).eq('id', x.id)
+      : supabaseClient.from('pendientes').insert(fila);
+    const { error } = await query;
+    if (error) {
+      console.error('[MODUGAL] No se pudo guardar el pendiente', x.id, error);
+      continue;
+    }
+    syncSnapshot.pendientes.set(x.id, { hash });
+  }
+
+  for (const id of [...syncSnapshot.pendientes.keys()]) {
+    if (idsPendientes.has(id)) continue;
+    const { error } = await supabaseClient.from('pendientes').delete().eq('id', id);
+    if (!error) syncSnapshot.pendientes.delete(id);
+  }
+
+  /* 5. Tareas de carpinteros */
+  const tareasActuales = tareasPlanas();
+  const idsTareas = new Set();
+
+  for (const { t, carpintero } of tareasActuales) {
+    const fila = filaDesdeTarea(t, carpintero);
+    if (!fila.carpintero_id) continue;
+    const hash = hashFila(fila);
+    const prev = syncSnapshot.tareas.get(t.id);
+    idsTareas.add(t.id);
+    if (prev && prev.hash === hash) continue;
+    const query = prev
+      ? supabaseClient.from('tareas_carpintero').update({
+        carpintero_id: fila.carpintero_id,
+        proyecto_id: fila.proyecto_id,
+        nombre_mueble: fila.nombre_mueble,
+        fase_manual: fila.fase_manual,
+        estado_tarea: fila.estado_tarea,
+      }).eq('id', t.id)
+      : supabaseClient.from('tareas_carpintero').insert(fila);
+    const { error } = await query;
+    if (error) {
+      console.error('[MODUGAL] No se pudo guardar la tarea', t.id, error);
+      continue;
+    }
+    syncSnapshot.tareas.set(t.id, { hash });
+  }
+
+  for (const id of [...syncSnapshot.tareas.keys()]) {
+    if (idsTareas.has(id)) continue;
+    const { error } = await supabaseClient.from('tareas_carpintero').delete().eq('id', id);
+    if (!error) syncSnapshot.tareas.delete(id);
+  }
+}
+
+let ultimoErrorSync = null;
+
+function encolarSync(fn) {
+  if (!sbListo) return syncQueue;
+  syncQueue = syncQueue
+    .then(fn)
+    .catch((e) => {
+      ultimoErrorSync = e;
+      console.error('[MODUGAL] Error de sincronización con Supabase:', e);
+    });
+  return syncQueue;
+}
+
+async function refrescarPendientesProyecto(projectId) {
+  if (!sbListo) return;
+  const p = state.proyectos.find((x) => x.id === projectId);
+  if (!p?.dbId) return;
+  const dbId = p.dbId;
+  encolarSync(async () => {
+    if (ultimoErrorSync) return;
+    const { data, error } = await supabaseClient.from('pendientes').select('*').eq('proyecto_id', dbId).order('created_at', { ascending: true });
+    if (error || !Array.isArray(data)) return;
+    const actual = state.proyectos.find((x) => x.id === projectId);
+    if (!actual) return;
+    actual.pendientes = data.map(filaAPendiente);
+    actual.alert = actual.pendientes[0]?.text || '';
+    data.forEach((row) => {
+      syncSnapshot.pendientes.set(row.id, {
+        hash: hashFila({ id: row.id, proyecto_id: row.proyecto_id, descripcion: row.descripcion, estado: row.estado }),
+      });
+    });
+    renderAll();
+  });
+}
+
+/* --------------------------------------------------------------------------
+   CARGA INICIAL · CACHE LOCAL DE RESPALDO
+   -------------------------------------------------------------------------- */
+
+function cargarEstadoLocal() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
@@ -516,36 +1108,53 @@ function cargarEstado() {
           proyectos: data.proyectos.map(normalizarProyecto).filter(Boolean),
           comercial: data.comercial.map(normalizarComercial).filter(Boolean),
           tareas: data.tareas && typeof data.tareas === 'object' ? data.tareas : {},
+          carpinteros: Array.isArray(data.carpinteros) ? data.carpinteros : [],
         };
       }
     }
   } catch (e) {
-    console.warn('[MODUGAL] Error leyendo localStorage, se usan datos semilla.', e);
+    console.warn('[MODUGAL] Error leyendo el cache local, se usan datos semilla.', e);
   }
   const base = seed();
   return {
     proyectos: base.proyectos.map(normalizarProyecto),
     comercial: base.comercial.map(normalizarComercial),
     tareas: base.tareas,
+    carpinteros: [],
   };
 }
 
-function guardarEstado() {
+async function cargarEstado() {
+  try {
+    const data = await leerSupabase();
+    sbListo = true;
+    guardarCacheLocal();
+    return data;
+  } catch (e) {
+    console.error('[MODUGAL] Supabase no disponible; se usa el cache local.', e);
+    sbListo = false;
+    return cargarEstadoLocal();
+  }
+}
+
+function guardarCacheLocal() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
       proyectos: state.proyectos,
       comercial: state.comercial,
       tareas: state.tareas,
+      carpinteros: state.carpinteros,
       savedAt: new Date().toISOString(),
     }));
   } catch (e) {
-    console.warn('[MODUGAL] No se pudo persistir el estado.', e);
+    console.warn('[MODUGAL] No se pudo escribir el cache local.', e);
   }
 }
 
 function commit() {
-  guardarEstado();
+  guardarCacheLocal();
   renderAll();
+  encolarSync(sincronizarEstado);
 }
 
 function generarIdProyecto() {
@@ -589,6 +1198,7 @@ function carpentersList() {
   const nombres = new Set();
   state.proyectos.forEach((p) => (p.muebles || []).forEach((m) => { if (m.carpenter) nombres.add(m.carpenter); }));
   Object.keys(state.tareas || {}).forEach((k) => { if (k) nombres.add(k); });
+  (state.carpinteros || []).forEach((c) => { if (c.nombre) nombres.add(c.nombre); });
   return Array.from(nombres).sort((a, b) => a.localeCompare(b));
 }
 
@@ -948,6 +1558,7 @@ function guardarPendiente(e) {
   }
   p.alert = p.pendientes.length ? p.pendientes[0].text : '';
   commit();
+  refrescarPendientesProyecto(ctx.projectId);
   cerrarPendienteModal();
   showToast('Pendiente sincronizado en todas las vistas.');
 }
@@ -961,6 +1572,7 @@ function eliminarPendiente(projectId, pendienteId) {
   p.pendientes = p.pendientes.filter((x) => x.id !== pendienteId);
   p.alert = p.pendientes.length ? p.pendientes[0].text : '';
   commit();
+  refrescarPendientesProyecto(projectId);
   showToast('Pendiente eliminado.');
 }
 
@@ -1964,6 +2576,7 @@ function onPedidoGuardar(e) {
   p.alert = p.pendientes[0]?.text || '';
   state.newOrderProjectId = null;
   commit();
+  refrescarPendientesProyecto(projectId);
   document.getElementById('pedido-form').reset();
   renderNewOrder();
   showToast('Pedido guardado y agregado a los pendientes del proyecto.');
@@ -2563,9 +3176,9 @@ function bindFichaEvents() {
       p.archivos.push({ id: uid('f'), name: f.name, tipo, size: `${(f.size / 1024 / 1024).toFixed(1)} MB`, date: hoyISO(), url });
     });
     input.value = '';
-    guardarEstado();
+    commit();
     renderArchivos(p);
-    showToast('Documentación adjuntada a la ficha.');
+    showToast('Documentación adjuntada a la ficha y sincronizada.');
   });
 }
 
@@ -2791,12 +3404,7 @@ function bindChatEvents() {
    22. INICIALIZACIÓN
    ========================================================================== */
 
-function init() {
-  const cargado = cargarEstado();
-  state.proyectos = cargado.proyectos;
-  state.comercial = cargado.comercial;
-  state.tareas = cargado.tareas || {};
-
+async function init() {
   state.rol = localStorage.getItem(ROL_KEY) || 'administrativo';
   if (!ROLE_LABELS[state.rol]) state.rol = 'administrativo';
   state.user = getSesion();
@@ -2828,6 +3436,20 @@ function init() {
   } else {
     mostrarLogin();
   }
+
+  /* Carga remota: select('*') sobre proyectos, pendientes, carpinteros y
+     tareas_carpintero. Si las tablas están vacías se siembran los datos demo. */
+  const cargado = await cargarEstado();
+  state.proyectos = cargado.proyectos || [];
+  state.comercial = cargado.comercial || [];
+  state.tareas = cargado.tareas || {};
+  state.carpinteros = cargado.carpinteros || [];
+
+  reconstruirSnapshot();
+  guardarCacheLocal();
+  aplicarPermisosUI();
+  updateUserChip();
+  renderAll();
 }
 
 document.addEventListener('DOMContentLoaded', init);
