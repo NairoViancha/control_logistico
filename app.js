@@ -2,8 +2,8 @@
    MODUGAL - espacios renovados · app.js
    --------------------------------------------------------------------------
    Plataforma B2B para producción de cocinas integrales y mobiliario de alta
-   gama. Estado global reactivo persistido en localStorage, preparado para
-   migrar a Supabase.
+   gama. Estado global reactivo persistido en Supabase (PostgreSQL) con
+   sincronización en tiempo real y cache local de respaldo (localStorage).
 
    Módulos:
      1. Constantes, estado global y datos semilla
@@ -1068,8 +1068,64 @@ function encolarSync(fn) {
     .catch((e) => {
       ultimoErrorSync = e;
       console.error('[MODUGAL] Error de sincronización con Supabase:', e);
+      if (typeof showToast === 'function') showToast('No se pudo guardar en la nube. Revisa tu conexión.');
     });
   return syncQueue;
+}
+
+/* --------------------------------------------------------------------------
+   TIEMPO REAL · Supabase Realtime (postgres_changes)
+   Cuando otro dispositivo modifica proyectos, pendientes, carpinteros o
+   tareas, se recarga el estado completo desde la base y se re-renderiza.
+   Requiere que las tablas estén en la publicación `supabase_realtime`.
+   -------------------------------------------------------------------------- */
+
+const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero'];
+let rtCanal = null;
+let rtTimer = null;
+
+function usuarioEditando() {
+  const el = document.activeElement;
+  if (!el) return false;
+  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName) || el.isContentEditable;
+}
+
+function programarRecargaRemota() {
+  clearTimeout(rtTimer);
+  /* Agrupa ráfagas de eventos (un guardado toca varias tablas) */
+  rtTimer = setTimeout(() => {
+    /* No pisar lo que el usuario está escribiendo: reintentar luego */
+    if (usuarioEditando()) return programarRecargaRemota();
+    encolarSync(async () => {
+      const data = await leerSupabase(false);
+      state.proyectos = data.proyectos || [];
+      state.comercial = data.comercial || [];
+      state.tareas = data.tareas || {};
+      state.carpinteros = data.carpinteros || [];
+      reconstruirSnapshot();
+      guardarCacheLocal();
+      renderAll();
+    });
+  }, 700);
+}
+
+function iniciarTiempoReal() {
+  if (!sbListo || rtCanal) return;
+  rtCanal = supabaseClient.channel('modugal-sync');
+  RT_TABLAS.forEach((tabla) => {
+    rtCanal.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, programarRecargaRemota);
+  });
+  rtCanal.subscribe((status) => {
+    if (status === 'SUBSCRIBED') console.info('[MODUGAL] Tiempo real activo.');
+    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+      console.warn('[MODUGAL] Tiempo real no disponible:', status);
+    }
+  });
+
+  /* Al volver a la pestaña (p. ej. celular que estuvo bloqueado) se refresca */
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') programarRecargaRemota();
+  });
 }
 
 async function refrescarPendientesProyecto(projectId) {
@@ -3450,6 +3506,9 @@ async function init() {
   aplicarPermisosUI();
   updateUserChip();
   renderAll();
+
+  if (sbListo) iniciarTiempoReal();
+  else showToast('Sin conexión con la base de datos: trabajando con datos locales.');
 }
 
 document.addEventListener('DOMContentLoaded', init);
