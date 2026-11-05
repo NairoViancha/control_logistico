@@ -173,6 +173,9 @@
         <button type="button" class="mg-tab" data-tab="stats">
           <i class="fas fa-chart-bar mr-2" aria-hidden="true"></i>Estadísticas &amp; Rendimiento
         </button>
+        <button type="button" class="mg-tab hidden" data-tab="usuarios">
+          <i class="fas fa-user-shield mr-2" aria-hidden="true"></i>Usuarios &amp; Accesos
+        </button>
         <button type="button" class="mg-tab sm:hidden" data-tab="new-order">
           <i class="fas fa-cart-plus mr-2" aria-hidden="true"></i>Compra de Material
         </button>
@@ -413,6 +416,31 @@
       </div>
     </section>
 
+    <!-- MÓDULO 8 · USUARIOS & ACCESOS (solo Gerencia) -->
+    <section id="tab-usuarios" class="tab-panel p-4 is-hidden">
+      <div class="max-w-6xl mx-auto space-y-4">
+        <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <h2 class="text-xl font-black text-slate-900">Usuarios &amp; Accesos</h2>
+            <p class="text-xs text-slate-500 mt-1">Aprueba las cuentas nuevas con el cargo que solicitaron o asígnales otro rol. Nadie ve datos hasta ser aprobado.</p>
+          </div>
+          <button type="button" id="usuarios-recargar" class="self-start md:self-auto bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-2 rounded-xl text-xs border border-slate-200">
+            <i class="fas fa-rotate mr-1" aria-hidden="true"></i>Actualizar
+          </button>
+        </div>
+        <div class="flex flex-wrap gap-2" role="group" aria-label="Filtrar usuarios">
+          <button type="button" data-usr-filtro="pendiente" class="border border-slate-200 font-bold px-3 py-1.5 rounded-full text-xs">Pendientes <span data-usr-count class="ml-1 opacity-70">0</span></button>
+          <button type="button" data-usr-filtro="aprobado" class="border border-slate-200 font-bold px-3 py-1.5 rounded-full text-xs">Aprobados <span data-usr-count class="ml-1 opacity-70">0</span></button>
+          <button type="button" data-usr-filtro="suspendido" class="border border-slate-200 font-bold px-3 py-1.5 rounded-full text-xs">Suspendidos <span data-usr-count class="ml-1 opacity-70">0</span></button>
+          <button type="button" data-usr-filtro="rechazado" class="border border-slate-200 font-bold px-3 py-1.5 rounded-full text-xs">Rechazados <span data-usr-count class="ml-1 opacity-70">0</span></button>
+          <button type="button" data-usr-filtro="todos" class="border border-slate-200 font-bold px-3 py-1.5 rounded-full text-xs">Todos <span data-usr-count class="ml-1 opacity-70">0</span></button>
+        </div>
+        <div id="usuarios-lista" class="space-y-3">
+          <p class="text-xs text-slate-400 p-4">Cargando usuarios...</p>
+        </div>
+      </div>
+    </section>
+
     <!-- MÓDULO AUXILIAR · REGISTRO DE PEDIDOS / COMPRAS -->
     <section id="tab-new-order" class="tab-panel p-4">
       <div class="max-w-xl mx-auto bg-white border border-slate-200 p-8 rounded-2xl shadow-md">
@@ -503,6 +531,7 @@
         <button type="button" class="f-subtab" data-sub="pedidos">Pedidos/Compras</button>
         <button type="button" class="f-subtab" data-sub="bloqueos">Bloqueos</button>
         <button type="button" class="f-subtab" data-sub="dropbox">Archivos Dropbox (Proxy)</button>
+        <button type="button" class="f-subtab hidden" data-sub="finanzas"><i class="fas fa-lock mr-1 text-red-600" aria-hidden="true"></i>Finanzas</button>
       </div>
 
       <div class="p-6 space-y-6">
@@ -633,6 +662,63 @@
 
           <div id="dropbox-archivos-list" class="space-y-2"></div>
           <div id="dropbox-visual" class="hidden dropbox-visual"></div>
+        </div>
+
+        <!-- Finanzas (solo Gerencia · tabla proyectos_finanzas protegida por RLS) -->
+        <div id="ficha-finanzas" class="space-y-4 text-xs is-hidden">
+          <div class="bg-red-50 border border-red-100 p-3 rounded-xl flex items-start gap-2">
+            <i class="fas fa-lock text-red-600 mt-0.5" aria-hidden="true"></i>
+            <p class="text-red-900">Información exclusiva de Gerencia. Se guarda aparte del proyecto y ningún otro rol puede leerla.</p>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <div>
+              <label for="fin-valor_venta" class="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Valor de venta (COP)</label>
+              <input id="fin-valor_venta" type="number" inputmode="numeric" min="0" step="1000" placeholder="0" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+            </div>
+            <div>
+              <label for="fin-costo_materiales" class="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Costo materiales</label>
+              <input id="fin-costo_materiales" type="number" inputmode="numeric" min="0" step="1000" placeholder="0" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+            </div>
+            <div>
+              <label for="fin-costo_mano_obra" class="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Costo mano de obra</label>
+              <input id="fin-costo_mano_obra" type="number" inputmode="numeric" min="0" step="1000" placeholder="0" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+            </div>
+            <div>
+              <label for="fin-otros_costos" class="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Otros costos</label>
+              <input id="fin-otros_costos" type="number" inputmode="numeric" min="0" step="1000" placeholder="0" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+            </div>
+            <div>
+              <label for="fin-anticipo" class="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Anticipo recibido</label>
+              <input id="fin-anticipo" type="number" inputmode="numeric" min="0" step="1000" placeholder="0" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+            </div>
+          </div>
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+              <p class="text-[10px] font-bold text-slate-500 uppercase">Costo total</p>
+              <p id="fin-costo-total" class="text-base font-black text-slate-900 mt-1">$ 0</p>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+              <p class="text-[10px] font-bold text-slate-500 uppercase">Utilidad</p>
+              <p id="fin-utilidad" class="text-base font-black text-emerald-700 mt-1">$ 0</p>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+              <p class="text-[10px] font-bold text-slate-500 uppercase">Margen</p>
+              <p id="fin-margen" class="text-base font-black text-slate-900 mt-1">—</p>
+            </div>
+            <div class="bg-slate-50 border border-slate-200 rounded-xl p-3">
+              <p class="text-[10px] font-bold text-slate-500 uppercase">Saldo por cobrar</p>
+              <p id="fin-saldo" class="text-base font-black text-slate-900 mt-1">$ 0</p>
+            </div>
+          </div>
+          <div>
+            <label for="fin-notas" class="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Notas financieras</label>
+            <textarea id="fin-notas" rows="3" placeholder="Condiciones de pago, descuentos, observaciones..." class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white"></textarea>
+          </div>
+          <div class="flex justify-end">
+            <button type="button" id="fin-guardar" class="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2.5 rounded-xl text-xs shadow-md">
+              <i class="fas fa-floppy-disk mr-1" aria-hidden="true"></i>Guardar finanzas
+            </button>
+          </div>
         </div>
       </div>
 

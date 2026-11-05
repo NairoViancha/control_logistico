@@ -90,6 +90,11 @@ const state = {
   comercial: [],
   tareas: {},
   carpinteros: [],
+  /* Finanzas por código de proyecto (solo se cargan para Gerencia) */
+  finanzas: {},
+  /* Lista de usuarios para el panel de Gerencia */
+  usuarios: [],
+  usuariosFiltro: 'pendiente',
   /* Rol efectivo: viene SIEMPRE de public.usuarios (nunca del navegador).
      Sin sesión se usa el rol de menor privilegio. */
   rol: 'arquitecto',
@@ -258,7 +263,6 @@ function normalizarProyecto(p) {
   p.archivos = Array.isArray(p.archivos) ? p.archivos : [];
   p.dropboxFiles = {
     publicFiles: Array.isArray(p.dropboxFiles?.publicFiles) ? p.dropboxFiles.publicFiles : [],
-    privateFiles: Array.isArray(p.dropboxFiles?.privateFiles) ? p.dropboxFiles.privateFiles : [],
   };
 
   if (!Array.isArray(p.pendientes)) {
@@ -397,7 +401,8 @@ function filaDesdeProyecto(p) {
     pedidos: p.pedidos,
     bloqueos: p.bloqueos,
     archivos: p.archivos,
-    dropboxFiles: p.dropboxFiles,
+    /* Solo la carpeta pública: lo financiero vive en proyectos_finanzas */
+    dropboxFiles: { publicFiles: p.dropboxFiles?.publicFiles || [] },
     alert: p.alert,
     commercialStage: p.commercialStage,
     manufacturingPhase: p.manufacturingPhase,
@@ -535,9 +540,10 @@ let syncSnapshot = {
   pendientes: new Map(),
   tareas: new Map(),
   carpinteros: new Map(),
+  finanzas: new Map(),
 };
 
-function construirEstado(proyectos, pendientes, carpinteros, tareas) {
+function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRows = []) {
   const proyectosApp = [];
   const comercial = [];
   const codigoPorDbId = new Map();
@@ -576,7 +582,65 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas) {
     });
   });
 
-  return { proyectos: proyectosApp, comercial, tareas: tareasApp, carpinteros: carpinterosApp };
+  const finanzas = {};
+  (finanzasRows || []).forEach((row) => {
+    const codigo = codigoPorDbId.get(row.proyecto_id);
+    if (codigo) finanzas[codigo] = finanzasDesdeFila(row);
+  });
+
+  return { proyectos: proyectosApp, comercial, tareas: tareasApp, carpinteros: carpinterosApp, finanzas };
+}
+
+/* --------------------------------------------------------------------------
+   FINANZAS (tabla proyectos_finanzas · RLS solo Gerencia)
+   -------------------------------------------------------------------------- */
+
+const CAMPOS_FINANZAS = ['valor_venta', 'costo_materiales', 'costo_mano_obra', 'otros_costos', 'anticipo'];
+
+function numeroSeguro(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : 0;
+}
+
+function finanzasVacias() {
+  return { valor_venta: 0, costo_materiales: 0, costo_mano_obra: 0, otros_costos: 0, anticipo: 0, notas: '', archivos_privados: [] };
+}
+
+function finanzasDesdeFila(row) {
+  const f = finanzasVacias();
+  CAMPOS_FINANZAS.forEach((c) => { f[c] = numeroSeguro(row?.[c]); });
+  f.notas = row?.notas || '';
+  f.archivos_privados = Array.isArray(row?.archivos_privados) ? row.archivos_privados : [];
+  return f;
+}
+
+function finanzasDe(projectId) {
+  return state.finanzas?.[projectId] || finanzasVacias();
+}
+
+function calcularFinanzas(f) {
+  const costoTotal = numeroSeguro(f.costo_materiales) + numeroSeguro(f.costo_mano_obra) + numeroSeguro(f.otros_costos);
+  const venta = numeroSeguro(f.valor_venta);
+  const utilidad = venta - costoTotal;
+  return {
+    costoTotal,
+    utilidad,
+    margen: venta > 0 ? (utilidad / venta) * 100 : null,
+    saldo: venta - numeroSeguro(f.anticipo),
+  };
+}
+
+const formatoCOP = new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 });
+function cop(n) {
+  return formatoCOP.format(Number(n) || 0);
+}
+
+function filaDesdeFinanzas(f, dbId) {
+  const fila = { proyecto_id: dbId };
+  CAMPOS_FINANZAS.forEach((c) => { fila[c] = numeroSeguro(f[c]); });
+  fila.notas = f.notas || null;
+  fila.archivos_privados = Array.isArray(f.archivos_privados) ? f.archivos_privados : [];
+  return fila;
 }
 
 async function leerSupabase() {
@@ -588,7 +652,16 @@ async function leerSupabase() {
   ]);
   const error = [prj, pen, car, tar].find((r) => r.error);
   if (error) throw error.error;
-  return construirEstado(prj.data || [], pen.data || [], car.data || [], tar.data || []);
+
+  /* Las finanzas solo se piden si el rol es Gerencia (la RLS igual las
+     bloquea para los demás). */
+  let finanzasRows = [];
+  if (esGerencia()) {
+    const fin = await supabaseClient.from('proyectos_finanzas').select('*');
+    if (fin.error) console.warn('[MODUGAL] No se pudieron leer las finanzas.', fin.error);
+    else finanzasRows = fin.data || [];
+  }
+  return construirEstado(prj.data || [], pen.data || [], car.data || [], tar.data || [], finanzasRows);
 }
 
 function reconstruirSnapshot() {
@@ -597,7 +670,11 @@ function reconstruirSnapshot() {
     pendientes: new Map(),
     tareas: new Map(),
     carpinteros: new Map(),
+    finanzas: new Map(),
   };
+  Object.entries(state.finanzas || {}).forEach(([codigo, f]) => {
+    syncSnapshot.finanzas.set(codigo, { hash: hashFila(filaDesdeFinanzas(f, null)) });
+  });
   state.proyectos.forEach((p) => {
     syncSnapshot.proyectos.set(p.id, { hash: hashFila(filaDesdeProyecto(p)), dbId: p.dbId || null });
   });
@@ -750,6 +827,25 @@ async function sincronizarEstado() {
     const { error } = await supabaseClient.from('tareas_carpintero').delete().eq('id', id);
     if (!error) syncSnapshot.tareas.delete(id);
   }
+
+  /* 6. Finanzas (solo Gerencia; la RLS rechaza a cualquier otro rol) */
+  if (esGerencia()) {
+    for (const [codigo, f] of Object.entries(state.finanzas || {})) {
+      const dbId = dbIdProyecto(codigo);
+      if (!dbId) continue;
+      const hash = hashFila(filaDesdeFinanzas(f, null));
+      if (syncSnapshot.finanzas.get(codigo)?.hash === hash) continue;
+      const { error } = await supabaseClient
+        .from('proyectos_finanzas')
+        .upsert(filaDesdeFinanzas(f, dbId), { onConflict: 'proyecto_id' });
+      if (error) {
+        console.error('[MODUGAL] No se pudieron guardar las finanzas de', codigo, error);
+        showToast('No se pudieron guardar las finanzas. Revisa tu conexión.');
+        continue;
+      }
+      syncSnapshot.finanzas.set(codigo, { hash });
+    }
+  }
 }
 
 let ultimoErrorSync = null;
@@ -773,7 +869,7 @@ function encolarSync(fn) {
    Requiere que las tablas estén en la publicación `supabase_realtime`.
    -------------------------------------------------------------------------- */
 
-const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero'];
+const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero', 'proyectos_finanzas'];
 let rtCanal = null;
 let rtTimer = null;
 let rtVisibilidadLista = false;
@@ -794,13 +890,11 @@ function programarRecargaRemota() {
     encolarSync(async () => {
       const data = await leerSupabase();
       if (!state.user) return; /* la sesión se cerró mientras se leía */
-      state.proyectos = data.proyectos || [];
-      state.comercial = data.comercial || [];
-      state.tareas = data.tareas || {};
-      state.carpinteros = data.carpinteros || [];
+      aplicarDatos(data);
       reconstruirSnapshot();
       guardarCacheLocal();
       renderAll();
+      refrescarFichaAbierta();
     });
   }, 700);
 }
@@ -810,6 +904,13 @@ function iniciarTiempoReal() {
   rtCanal = supabaseClient.channel('modugal-sync');
   RT_TABLAS.forEach((tabla) => {
     rtCanal.on('postgres_changes', { event: '*', schema: 'public', table: tabla }, programarRecargaRemota);
+  });
+  /* usuarios: Gerencia recibe todas las filas (panel de aprobación); los
+     demás solo la suya (la RLS filtra), para enterarse si cambian su rol. */
+  rtCanal.on('postgres_changes', { event: '*', schema: 'public', table: 'usuarios' }, (payload) => {
+    const id = payload.new?.id || payload.old?.id;
+    if (id && id === state.user?.id) refrescarPerfilPropio();
+    if (esGerencia()) cargarUsuarios();
   });
   rtCanal.subscribe((status) => {
     if (status === 'SUBSCRIBED') console.info('[MODUGAL] Tiempo real activo.');
@@ -862,7 +963,15 @@ async function refrescarPendientesProyecto(projectId) {
    -------------------------------------------------------------------------- */
 
 function estadoVacio() {
-  return { proyectos: [], comercial: [], tareas: {}, carpinteros: [] };
+  return { proyectos: [], comercial: [], tareas: {}, carpinteros: [], finanzas: {}, usuarios: [] };
+}
+
+function aplicarDatos(data) {
+  state.proyectos = data.proyectos || [];
+  state.comercial = data.comercial || [];
+  state.tareas = data.tareas || {};
+  state.carpinteros = data.carpinteros || [];
+  state.finanzas = esGerencia() ? (data.finanzas || {}) : {};
 }
 
 function cargarEstadoLocal() {
@@ -878,6 +987,7 @@ function cargarEstadoLocal() {
           comercial: data.comercial.map(normalizarComercial).filter(Boolean),
           tareas: data.tareas && typeof data.tareas === 'object' ? data.tareas : {},
           carpinteros: Array.isArray(data.carpinteros) ? data.carpinteros : [],
+          finanzas: data.finanzas && typeof data.finanzas === 'object' ? data.finanzas : {},
         };
       }
     }
@@ -908,6 +1018,7 @@ function guardarCacheLocal() {
       comercial: state.comercial,
       tareas: state.tareas,
       carpinteros: state.carpinteros,
+      finanzas: esGerencia() ? state.finanzas : {},
       savedAt: new Date().toISOString(),
     }));
   } catch (e) {
@@ -1051,7 +1162,7 @@ async function registrar(email, password, cargo, nombre) {
     return { ok: false, msg: 'Ese correo ya tiene una cuenta. Inicia sesión o recupera tu contraseña.' };
   }
   if (!data?.session) {
-    return { ok: true, pendienteConfirmacion: true, msg: `Te enviamos un correo a ${mail}. Confírmalo y luego inicia sesión.` };
+    return { ok: true, pendienteConfirmacion: true, msg: `Te enviamos un correo a ${mail}. Confírmalo; luego Gerencia aprobará tu acceso.` };
   }
   return { ok: true };
 }
@@ -1059,11 +1170,51 @@ async function registrar(email, password, cargo, nombre) {
 async function cargarPerfil(authUser) {
   const { data, error } = await supabaseClient
     .from('usuarios')
-    .select('id,email,nombre,rol,cargo_solicitado,activo')
+    .select('id,email,nombre,rol,cargo_solicitado,estado_aprobacion')
     .eq('id', authUser.id)
     .maybeSingle();
   if (error) throw error;
   return data;
+}
+
+function motivoBloqueoPerfil(perfil) {
+  if (!perfil) return 'Tu cuenta no tiene perfil en MODUGAL. Pide a Gerencia que revise la tabla de usuarios.';
+  switch (perfil.estado_aprobacion) {
+    case 'aprobado': return null;
+    case 'pendiente':
+      return `Tu cuenta está pendiente de aprobación. Gerencia revisará tu solicitud como ${labelCargo(perfil.cargo_solicitado || 'arquitecto')} y podrás ingresar cuando la apruebe.`;
+    case 'rechazado': return 'Tu solicitud de acceso fue rechazada. Comunícate con Gerencia.';
+    case 'suspendido': return 'Tu cuenta está suspendida. Comunícate con Gerencia.';
+    default: return 'Tu cuenta no está habilitada. Comunícate con Gerencia.';
+  }
+}
+
+/* Gerencia cambió mi rol o mi estado mientras tenía la app abierta */
+async function refrescarPerfilPropio() {
+  if (!state.user) return;
+  let perfil;
+  try {
+    perfil = await cargarPerfil({ id: state.user.id });
+  } catch (e) {
+    return;
+  }
+  const bloqueo = motivoBloqueoPerfil(perfil);
+  if (bloqueo) {
+    await cerrarSesion();
+    mostrarErrorLogin(bloqueo, 'error');
+    return;
+  }
+  const nuevoRol = ROLES_VALIDOS.includes(perfil.rol) ? perfil.rol : 'arquitecto';
+  state.user.nombre = perfil.nombre || state.user.nombre;
+  if (nuevoRol !== state.rol) {
+    state.rol = nuevoRol;
+    state.user.cargo = nuevoRol;
+    aplicarPermisosUI();
+    switchTab(state.tab);
+    showToast(`Gerencia actualizó tu perfil: ahora eres ${labelCargo(nuevoRol)}.`);
+    programarRecargaRemota();
+  }
+  updateUserChip();
 }
 
 async function entrarConSesion(authUser) {
@@ -1077,14 +1228,13 @@ async function entrarConSesion(authUser) {
       perfil = await cargarPerfil(authUser);
     } catch (e) {
       console.error('[MODUGAL] No se pudo leer el perfil.', e);
-    }
-    if (!perfil) {
-      mostrarErrorLogin('Tu cuenta no tiene perfil en MODUGAL. Pide a Gerencia que revise la tabla de usuarios.');
+      mostrarErrorLogin('No se pudo verificar tu perfil (la base de datos no está configurada o no hay conexión). Intenta de nuevo en un momento.');
       await supabaseClient.auth.signOut();
       return;
     }
-    if (perfil.activo === false) {
-      mostrarErrorLogin('Tu cuenta está desactivada. Comunícate con Gerencia.');
+    const bloqueo = motivoBloqueoPerfil(perfil);
+    if (bloqueo) {
+      mostrarErrorLogin(bloqueo, perfil?.estado_aprobacion === 'pendiente' ? 'aviso' : 'error');
       await supabaseClient.auth.signOut();
       return;
     }
@@ -1105,10 +1255,7 @@ async function entrarConSesion(authUser) {
     switchTab(tabsPermitidos().includes(state.tab) ? state.tab : 'produccion');
 
     const cargado = await cargarEstado();
-    state.proyectos = cargado.proyectos || [];
-    state.comercial = cargado.comercial || [];
-    state.tareas = cargado.tareas || {};
-    state.carpinteros = cargado.carpinteros || [];
+    aplicarDatos(cargado);
     reconstruirSnapshot();
     guardarCacheLocal();
     renderAll();
@@ -1116,11 +1263,8 @@ async function entrarConSesion(authUser) {
     if (sbListo) iniciarTiempoReal();
     else showToast('Sin conexión con la base de datos: mostrando la última copia guardada.');
 
-    if (perfil.cargo_solicitado && perfil.cargo_solicitado !== state.rol) {
-      showToast(`Acceso de ${labelCargo(state.rol)}. Tu cargo de ${labelCargo(perfil.cargo_solicitado)} está pendiente de aprobación por Gerencia.`);
-    } else {
-      showToast(`Bienvenido, ${state.user.nombre} · ${labelCargo(state.rol)}`);
-    }
+    showToast(`Bienvenido, ${state.user.nombre} · ${labelCargo(state.rol)}`);
+    if (esGerencia()) cargarUsuarios();
   })();
 
   try {
@@ -1233,6 +1377,7 @@ function mostrarErrorLogin(msg, tipo = 'error') {
   el.textContent = msg;
   el.classList.toggle('text-red-600', tipo === 'error');
   el.classList.toggle('text-emerald-700', tipo === 'ok');
+  el.classList.toggle('text-amber-700', tipo === 'aviso');
   el.classList.remove('hidden');
 }
 
@@ -1284,7 +1429,7 @@ function puedeVerFinanzas() {
 
 function tabsPermitidos() {
   const mapa = {
-    administrativo: ['produccion', 'equipo', 'comercial', 'tabla', 'proyectos', 'centro', 'stats', 'new-order'],
+    administrativo: ['produccion', 'equipo', 'comercial', 'tabla', 'proyectos', 'centro', 'stats', 'usuarios', 'new-order'],
     operativo: ['produccion', 'equipo', 'comercial', 'tabla', 'proyectos', 'centro', 'new-order'],
     secretaria: ['produccion', 'comercial', 'tabla', 'proyectos'],
     arquitecto: ['produccion', 'comercial', 'tabla', 'proyectos'],
@@ -2121,7 +2266,7 @@ function aprobarProspecto(id) {
     pedidos: [],
     bloqueos: [],
     archivos: [],
-    dropboxFiles: { publicFiles: [], privateFiles: [] },
+    dropboxFiles: { publicFiles: [] },
   }));
   item.etapa = 'Aprobados';
   item.proyectoId = nuevoId;
@@ -2486,11 +2631,13 @@ function onPedidoGuardar(e) {
    ========================================================================== */
 
 function mostrarSubFicha(sub) {
+  if (sub === 'finanzas' && !puedeVerFinanzas()) sub = 'resumen';
   state.fichaSub = sub;
   document.querySelectorAll('#ficha-subtabs [data-sub]').forEach((b) => {
     b.classList.toggle('active', b.dataset.sub === sub);
+    if (b.dataset.sub === 'finanzas') b.classList.toggle('hidden', !puedeVerFinanzas());
   });
-  const panes = ['resumen', 'muebles', 'pendientes', 'pedidos', 'bloqueos', 'dropbox'];
+  const panes = ['resumen', 'muebles', 'pendientes', 'pedidos', 'bloqueos', 'dropbox', 'finanzas'];
   panes.forEach((nombre) => {
     const el = document.getElementById(`ficha-${nombre}`);
     if (el) el.classList.toggle('is-hidden', nombre !== sub);
@@ -2614,7 +2761,7 @@ function openFicha(id) {
 
   const privList = document.getElementById('dropbox-privado-list');
   if (puedeVerFinanzas()) {
-    privList.innerHTML = (p.dropboxFiles?.privateFiles || []).map((f) => `
+    privList.innerHTML = (finanzasDe(p.id).archivos_privados || []).map((f) => `
       <div class="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex justify-between items-center gap-2">
         <span class="text-emerald-900 font-bold break-all">${esc(f.name)}</span>
         <span class="text-emerald-700 font-bold shrink-0">Ver Archivo</span>
@@ -2628,6 +2775,7 @@ function openFicha(id) {
   document.getElementById('ficha-proxy-rol').textContent = labelCargo(state.rol);
 
   renderArchivos(p);
+  renderFinanzasFicha(p);
   document.getElementById('modal-ficha').classList.remove('is-hidden');
   mostrarSubFicha(state.fichaSub);
 }
@@ -2801,7 +2949,7 @@ function guardarProyecto(e) {
     pedidos: [],
     bloqueos: [],
     archivos: [],
-    dropboxFiles: { publicFiles: [], privateFiles: [] },
+    dropboxFiles: { publicFiles: [] },
   });
   state.proyectos.push(nuevo);
   state.fProduccion = 'todos';
@@ -2867,6 +3015,7 @@ function switchTab(tab) {
   if (destino === 'proyectos') renderProyectos();
   if (destino === 'centro') renderCentro();
   if (destino === 'stats') renderStats();
+  if (destino === 'usuarios') { renderUsuarios(); cargarUsuarios(); }
   if (destino === 'new-order') renderNewOrder();
 }
 /* ==========================================================================
@@ -3345,6 +3494,258 @@ function bindChatEvents() {
 }
 
 /* ==========================================================================
+   21b. USUARIOS & ACCESOS (solo Gerencia)
+   Lista public.usuarios; Gerencia aprueba el cargo solicitado, cambia el
+   rol, rechaza o suspende. La base (trigger + RLS) valida cada cambio.
+   ========================================================================== */
+
+const ESTADOS_USUARIO = {
+  pendiente: { label: 'Pendiente', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
+  aprobado: { label: 'Aprobado', cls: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+  rechazado: { label: 'Rechazado', cls: 'bg-red-50 text-red-700 border-red-200' },
+  suspendido: { label: 'Suspendido', cls: 'bg-slate-100 text-slate-600 border-slate-300' },
+};
+
+let cargandoUsuarios = null;
+
+async function cargarUsuarios() {
+  if (!esGerencia() || !sbListo) return;
+  if (cargandoUsuarios) return cargandoUsuarios;
+  cargandoUsuarios = (async () => {
+    const { data, error } = await supabaseClient
+      .from('usuarios')
+      .select('id,email,nombre,rol,cargo_solicitado,estado_aprobacion,aprobado_en,created_at')
+      .order('created_at', { ascending: false });
+    if (error) {
+      console.error('[MODUGAL] No se pudo cargar la lista de usuarios.', error);
+      const box = document.getElementById('usuarios-lista');
+      if (box) box.innerHTML = `<p class="text-xs font-bold text-red-600 p-4">No se pudo cargar la lista de usuarios: ${esc(error.message)}</p>`;
+      return;
+    }
+    state.usuarios = data || [];
+    actualizarBadgeUsuarios();
+    if (state.tab === 'usuarios') renderUsuarios();
+  })();
+  try { await cargandoUsuarios; } finally { cargandoUsuarios = null; }
+}
+
+function actualizarBadgeUsuarios() {
+  const btn = document.querySelector('#mg-tabs [data-tab="usuarios"]');
+  if (!btn) return;
+  const n = (state.usuarios || []).filter((u) => u.estado_aprobacion === 'pendiente').length;
+  let badge = btn.querySelector('[data-badge-usuarios]');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.dataset.badgeUsuarios = '';
+    badge.className = 'ml-2 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full bg-red-600 text-white text-[10px] font-black';
+    btn.appendChild(badge);
+  }
+  badge.textContent = String(n);
+  badge.classList.toggle('hidden', n === 0);
+}
+
+function fechaCorta(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (isNaN(d)) return '—';
+  return `${d.getDate()} ${MESES_CORTOS[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+function opcionesRol(seleccionado) {
+  return ROLES_VALIDOS.map((r) => `<option value="${r}" ${r === seleccionado ? 'selected' : ''}>${esc(labelCargo(r))}</option>`).join('');
+}
+
+function renderUsuarios() {
+  const box = document.getElementById('usuarios-lista');
+  if (!box) return;
+  const lista = state.usuarios || [];
+  const conteo = { todos: lista.length, pendiente: 0, aprobado: 0, rechazado: 0, suspendido: 0 };
+  lista.forEach((u) => { if (conteo[u.estado_aprobacion] !== undefined) conteo[u.estado_aprobacion] += 1; });
+
+  document.querySelectorAll('[data-usr-filtro]').forEach((b) => {
+    const f = b.dataset.usrFiltro;
+    b.classList.toggle('bg-slate-900', state.usuariosFiltro === f);
+    b.classList.toggle('text-white', state.usuariosFiltro === f);
+    b.classList.toggle('bg-white', state.usuariosFiltro !== f);
+    b.classList.toggle('text-slate-700', state.usuariosFiltro !== f);
+    const c = b.querySelector('[data-usr-count]');
+    if (c) c.textContent = String(conteo[f] ?? 0);
+  });
+
+  const visibles = state.usuariosFiltro === 'todos' ? lista : lista.filter((u) => u.estado_aprobacion === state.usuariosFiltro);
+  if (!visibles.length) {
+    box.innerHTML = `<div class="p-8 text-center text-xs text-slate-400 bg-white border border-dashed border-slate-300 rounded-2xl">${
+      state.usuariosFiltro === 'pendiente' ? 'No hay solicitudes pendientes.' : 'No hay usuarios en esta categoría.'
+    }</div>`;
+    return;
+  }
+
+  box.innerHTML = visibles.map((u) => {
+    const est = ESTADOS_USUARIO[u.estado_aprobacion] || ESTADOS_USUARIO.pendiente;
+    const yo = u.id === state.user?.id;
+    const rolPropuesto = u.estado_aprobacion === 'pendiente' ? (u.cargo_solicitado || u.rol) : u.rol;
+    const iniciales = String(u.nombre || u.email || '?').split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase();
+    let acciones;
+    if (yo) {
+      acciones = '<p class="text-[11px] font-bold text-slate-400">Tu cuenta · no puedes cambiar tu propio acceso</p>';
+    } else if (u.estado_aprobacion === 'pendiente') {
+      acciones = `
+        <button type="button" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs" data-usr-accion="aprobar" data-usr-id="${esc(u.id)}"><i class="fas fa-check mr-1" aria-hidden="true"></i>Aprobar</button>
+        <button type="button" class="bg-white border border-red-200 text-red-700 hover:bg-red-50 font-bold px-3 py-2 rounded-xl text-xs" data-usr-accion="rechazar" data-usr-id="${esc(u.id)}">Rechazar</button>`;
+    } else if (u.estado_aprobacion === 'aprobado') {
+      acciones = `
+        <button type="button" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-3 py-2 rounded-xl text-xs" data-usr-accion="guardar-rol" data-usr-id="${esc(u.id)}">Guardar rol</button>
+        <button type="button" class="bg-white border border-slate-300 text-slate-700 hover:bg-slate-50 font-bold px-3 py-2 rounded-xl text-xs" data-usr-accion="suspender" data-usr-id="${esc(u.id)}">Suspender</button>`;
+    } else {
+      acciones = `
+        <button type="button" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-2 rounded-xl text-xs" data-usr-accion="aprobar" data-usr-id="${esc(u.id)}">${u.estado_aprobacion === 'suspendido' ? 'Reactivar' : 'Aprobar'}</button>`;
+    }
+    return `
+      <article class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm flex flex-col lg:flex-row lg:items-center gap-4" data-usr-card="${esc(u.id)}">
+        <div class="flex items-center gap-3 min-w-0 lg:w-80">
+          <div class="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-black text-slate-600 shrink-0">${esc(iniciales)}</div>
+          <div class="min-w-0">
+            <p class="text-sm font-black text-slate-900 truncate">${esc(u.nombre || '—')}${yo ? ' <span class="text-[10px] text-slate-400">(tú)</span>' : ''}</p>
+            <p class="text-xs text-slate-500 truncate">${esc(u.email)}</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs flex-1">
+          <div>
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Solicitó</p>
+            <p class="font-bold text-slate-800">${esc(labelCargo(u.cargo_solicitado || 'arquitecto'))}</p>
+          </div>
+          <div>
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Estado</p>
+            <span class="inline-block mt-0.5 px-2 py-0.5 rounded-full border text-[10px] font-black ${est.cls}">${est.label}</span>
+          </div>
+          <div class="col-span-2 sm:col-span-1">
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Registro</p>
+            <p class="font-bold text-slate-800">${fechaCorta(u.created_at)}</p>
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 lg:justify-end lg:w-[22rem]">
+          ${yo ? '' : `<label class="sr-only" for="usr-rol-${esc(u.id)}">Rol asignado</label>
+          <select id="usr-rol-${esc(u.id)}" data-usr-rol="${esc(u.id)}" class="bg-slate-50 border border-slate-200 rounded-xl px-2 py-2 text-xs font-bold text-slate-900">${opcionesRol(rolPropuesto)}</select>`}
+          ${acciones}
+        </div>
+      </article>`;
+  }).join('');
+}
+
+async function accionUsuario(accion, id) {
+  if (!esGerencia()) { showToast('Solo Gerencia gestiona usuarios.'); return; }
+  const u = (state.usuarios || []).find((x) => x.id === id);
+  if (!u) return;
+  const rolSel = document.querySelector(`[data-usr-rol="${CSS.escape(id)}"]`)?.value;
+  let cambios;
+  if (accion === 'aprobar') cambios = { estado_aprobacion: 'aprobado', rol: ROLES_VALIDOS.includes(rolSel) ? rolSel : (u.cargo_solicitado || 'arquitecto') };
+  else if (accion === 'guardar-rol') cambios = { rol: ROLES_VALIDOS.includes(rolSel) ? rolSel : u.rol };
+  else if (accion === 'rechazar') cambios = { estado_aprobacion: 'rechazado' };
+  else if (accion === 'suspender') cambios = { estado_aprobacion: 'suspendido' };
+  else return;
+
+  const card = document.querySelector(`[data-usr-card="${CSS.escape(id)}"]`);
+  card?.querySelectorAll('button,select').forEach((el) => { el.disabled = true; });
+  const { data, error } = await supabaseClient.from('usuarios').update(cambios).eq('id', id).select();
+  if (error || !data?.length) {
+    card?.querySelectorAll('button,select').forEach((el) => { el.disabled = false; });
+    showToast(`No se pudo actualizar a ${u.nombre}: ${error?.message || 'sin permiso'}`);
+    return;
+  }
+  Object.assign(u, data[0]);
+  actualizarBadgeUsuarios();
+  renderUsuarios();
+  const textos = {
+    aprobar: `${u.nombre} aprobado como ${labelCargo(u.rol)}.`,
+    'guardar-rol': `${u.nombre} ahora es ${labelCargo(u.rol)}.`,
+    rechazar: `Solicitud de ${u.nombre} rechazada.`,
+    suspender: `${u.nombre} fue suspendido.`,
+  };
+  showToast(textos[accion]);
+}
+
+function bindUsuariosEvents() {
+  const panel = document.getElementById('tab-usuarios');
+  if (!panel) return;
+  panel.addEventListener('click', (e) => {
+    const filtro = e.target.closest('[data-usr-filtro]');
+    if (filtro) {
+      state.usuariosFiltro = filtro.dataset.usrFiltro;
+      renderUsuarios();
+      return;
+    }
+    const btn = e.target.closest('[data-usr-accion]');
+    if (btn) accionUsuario(btn.dataset.usrAccion, btn.dataset.usrId);
+    if (e.target.closest('#usuarios-recargar')) cargarUsuarios();
+  });
+}
+
+/* ==========================================================================
+   21c. FINANZAS DEL PROYECTO (subpestaña de la ficha · solo Gerencia)
+   ========================================================================== */
+
+function renderFinanzasFicha(p) {
+  const pane = document.getElementById('ficha-finanzas');
+  if (!pane || !p) return;
+  /* Para otros roles no se muestra ni se rellena nada */
+  const f = puedeVerFinanzas() ? finanzasDe(p.id) : finanzasVacias();
+  CAMPOS_FINANZAS.forEach((c) => {
+    const el = document.getElementById(`fin-${c}`);
+    if (el) el.value = f[c] ? String(f[c]) : '';
+  });
+  const notas = document.getElementById('fin-notas');
+  if (notas) notas.value = f.notas || '';
+  pintarResumenFinanzas(leerFormularioFinanzas());
+}
+
+function leerFormularioFinanzas() {
+  const f = finanzasVacias();
+  CAMPOS_FINANZAS.forEach((c) => { f[c] = numeroSeguro(document.getElementById(`fin-${c}`)?.value); });
+  f.notas = document.getElementById('fin-notas')?.value.trim() || '';
+  return f;
+}
+
+function pintarResumenFinanzas(f) {
+  const r = calcularFinanzas(f);
+  const set = (id, txt) => { const el = document.getElementById(id); if (el) el.textContent = txt; };
+  set('fin-costo-total', cop(r.costoTotal));
+  set('fin-utilidad', cop(r.utilidad));
+  set('fin-margen', r.margen === null ? '—' : `${r.margen.toFixed(1)}%`);
+  set('fin-saldo', cop(r.saldo));
+  const util = document.getElementById('fin-utilidad');
+  if (util) {
+    util.classList.toggle('text-red-600', r.utilidad < 0);
+    util.classList.toggle('text-emerald-700', r.utilidad >= 0);
+  }
+}
+
+function guardarFinanzas() {
+  if (!puedeVerFinanzas()) { showToast('Solo Gerencia puede editar las finanzas.'); return; }
+  const p = state.proyectos.find((x) => x.id === state.fichaId);
+  if (!p) return;
+  const actual = finanzasDe(p.id);
+  const nuevo = { ...leerFormularioFinanzas(), archivos_privados: actual.archivos_privados || [] };
+  state.finanzas = { ...(state.finanzas || {}), [p.id]: nuevo };
+  commit();
+  showToast(`Finanzas de ${p.name} guardadas.`);
+}
+
+function bindFinanzasEvents() {
+  const pane = document.getElementById('ficha-finanzas');
+  if (!pane) return;
+  pane.addEventListener('input', () => pintarResumenFinanzas(leerFormularioFinanzas()));
+  document.getElementById('fin-guardar')?.addEventListener('click', guardarFinanzas);
+}
+
+function refrescarFichaAbierta() {
+  const modal = document.getElementById('modal-ficha');
+  if (!state.fichaId || !modal || modal.classList.contains('is-hidden')) return;
+  /* Si el usuario está escribiendo en la ficha, no se repinta */
+  if (usuarioEditando()) return;
+  openFicha(state.fichaId);
+}
+
+/* ==========================================================================
    22. INICIALIZACIÓN
    ========================================================================== */
 
@@ -3365,6 +3766,8 @@ async function init() {
   bindGlobalDelegation();
   bindDragAndDrop();
   bindChatEvents();
+  bindUsuariosEvents();
+  bindFinanzasEvents();
 
   /* Sin sesión no se muestra ni se consulta ningún dato */
   aplicarPermisosUI();
