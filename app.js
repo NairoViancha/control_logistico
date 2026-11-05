@@ -53,6 +53,20 @@ const ACTIVIDADES = [
 const ACTIVIDAD_POR_NOMBRE = Object.fromEntries(ACTIVIDADES.map((a) => [a.v, a]));
 const BUCKET_IMAGENES = 'proyectos-imagenes';
 
+/* Compras de material (tabla compras, v6) */
+const ESTADOS_COMPRA = ['Solicitado', 'Confirmado', 'En tránsito', 'Recibido parcial', 'Recibido', 'Cancelado'];
+const ESTADOS_COMPRA_CERRADOS = ['Recibido', 'Cancelado'];
+const CALIDAD_COMPRA = ['Pendiente', 'Aprobado', 'Con novedad'];
+const UNIDADES_COMPRA = ['und', 'm', 'm²', 'ml', 'láminas', 'kg', 'galones', 'juegos', 'cajas'];
+const ESTILO_ESTADO_COMPRA = {
+  Solicitado: 'bg-slate-100 text-slate-700 border-slate-200',
+  Confirmado: 'bg-sky-50 text-sky-800 border-sky-200',
+  'En tránsito': 'bg-violet-50 text-violet-800 border-violet-200',
+  'Recibido parcial': 'bg-amber-50 text-amber-800 border-amber-200',
+  Recibido: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+  Cancelado: 'bg-white text-slate-400 border-slate-200 line-through',
+};
+
 const ROLE_LABELS = {
   administrativo: 'Gerencia',
   operativo: 'Logística / Operativo',
@@ -253,6 +267,47 @@ function normalizarPendiente(x, index) {
   };
 }
 
+function normalizarPedido(od, index) {
+  const item = od || {};
+  const legado = { Bodega: 'Recibido', Entregado: 'Recibido', 'En Tránsito': 'En tránsito' };
+  const estado = ESTADOS_COMPRA.includes(item.status) ? item.status : (legado[item.status] || 'Solicitado');
+  const fechaPrometida = item.fechaPrometida || fechaISODeTexto(item.expected) || null;
+  const cantidad = Number(item.cantidad) > 0 ? Number(item.cantidad) : 1;
+  return {
+    id: item.id || `od-mig-${index}`,
+    category: item.category || '',
+    item: item.item || 'Material sin descripción',
+    supplier: item.supplier || 'Proveedor por definir',
+    guide: item.guide && item.guide !== 'Sin Guía' ? item.guide : '',
+    cantidad,
+    unidad: item.unidad || 'und',
+    cantidadRecibida: Number(item.cantidadRecibida) >= 0 ? Number(item.cantidadRecibida) : 0,
+    fechaSolicitud: item.fechaSolicitud || null,
+    fechaPrometida,
+    fechaRecibida: item.fechaRecibida || null,
+    expected: fechaPrometida ? formatFechaLarga(parseFecha(fechaPrometida)) : (item.expected || 'Por definir'),
+    status: estado,
+    qc: CALIDAD_COMPRA.includes(item.qc) ? item.qc : 'Pendiente',
+    notas: item.notas || '',
+    pendienteId: item.pendienteId || null,
+    dbVersion: Number.isInteger(item.dbVersion) ? item.dbVersion : null,
+  };
+}
+
+function compraAbierta(od) {
+  return !ESTADOS_COMPRA_CERRADOS.includes(od?.status);
+}
+
+/* Días de atraso respecto a la fecha prometida (0 si no aplica) */
+function diasAtrasoCompra(od) {
+  if (!compraAbierta(od) || !od.fechaPrometida) return 0;
+  const prometida = parseFecha(od.fechaPrometida);
+  if (!prometida) return 0;
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.round((hoy - prometida) / 86400000));
+}
+
 function normalizarMueble(m, index) {
   const item = m || {};
   const fase = PRODUCTION_PHASES.includes(item.manufacturingPhase) ? item.manufacturingPhase : 'Recepción';
@@ -290,7 +345,7 @@ function normalizarProyecto(p) {
   p.dateStart = p.dateStart || 'Por definir';
   p.dateExpected = p.dateExpected || 'Por definir';
   p.muebles = Array.isArray(p.muebles) ? p.muebles.map(normalizarMueble) : [];
-  p.pedidos = Array.isArray(p.pedidos) ? p.pedidos : [];
+  p.pedidos = Array.isArray(p.pedidos) ? p.pedidos.map(normalizarPedido) : [];
   p.bloqueos = Array.isArray(p.bloqueos) ? p.bloqueos : [];
   p.archivos = Array.isArray(p.archivos) ? p.archivos : [];
   p.dropboxFiles = {
@@ -309,7 +364,7 @@ function normalizarProyecto(p) {
     if (p.alert) push(p.alert, 'material', 'alta');
     (p.bloqueos || []).forEach((b) => { if (!b.solved) push(b.reason, 'bloqueo', 'alta'); });
     (p.pedidos || []).forEach((pedido) => {
-      if (!['Bodega', 'Entregado'].includes(pedido.status)) push(`${pedido.item} (${pedido.supplier || 'proveedor'})`, 'material', 'media');
+      if (compraAbierta(pedido)) push(`${pedido.item} (${pedido.supplier || 'proveedor'})`, 'material', 'media');
     });
     p.pendientes = derivados;
   }
@@ -431,7 +486,7 @@ function filaDesdeProyecto(p) {
     dateExpected: p.dateExpected,
     /* Con la tabla proyecto_muebles activa, los muebles ya no viajan en el JSON */
     muebles: mueblesEnTabla ? undefined : p.muebles,
-    pedidos: p.pedidos,
+    pedidos: comprasEnTabla ? undefined : p.pedidos,
     bloqueos: p.bloqueos,
     archivos: p.archivos,
     /* Solo la carpeta pública: lo financiero vive en proyectos_finanzas */
@@ -500,7 +555,7 @@ function proyectoDesdeFila(row) {
     image: row.imagen_url || ext.image || DEFAULT_IMAGE,
     manufacturingPhase: PRODUCTION_PHASES.includes(row.fase_actual) ? row.fase_actual : (ext.manufacturingPhase || 'Recepción'),
     commercialStage: etapaDbAApp(row.etapa_comercial) || ext.commercialStage || 'En Fabricación',
-    dateExpected: ext.dateExpected || (row.fecha_entrega ? formatFechaLarga(row.fecha_entrega) : 'Por definir'),
+    dateExpected: ext.dateExpected || (row.fecha_entrega ? formatFechaLarga(parseFecha(row.fecha_entrega)) : 'Por definir'),
     leadCarpenter: ext.leadCarpenter || row.trazador_responsable || '',
     motivo: row.motivo_rechazo || ext.motivo || '',
     commercialDetail: ext.detalle || ext.commercialDetail || '',
@@ -519,7 +574,7 @@ function comercialDesdeFila(row) {
     etapa,
     trimester: ext.trimester || 'Q4 - 2026',
     status: ext.status || EST_PRODUCCION.EN_PROCESO,
-    dateExpected: ext.dateExpected || (row.fecha_entrega ? formatFechaLarga(row.fecha_entrega) : 'Por definir'),
+    dateExpected: ext.dateExpected || (row.fecha_entrega ? formatFechaLarga(parseFecha(row.fecha_entrega)) : 'Por definir'),
     proyectoId: ext.proyectoId || null,
     alert: ext.alert || '',
     detalle: ext.detalle || `${row.cliente || 'Cliente'}: Pedido por definir.`,
@@ -575,6 +630,8 @@ let syncQueue = Promise.resolve();
 /* Fase 2: los muebles viven en public.proyecto_muebles. Si la tabla aún no
    existe (script v5 sin ejecutar) se sigue usando el JSON del proyecto. */
 let mueblesEnTabla = false;
+/* Fase 2 (parte 2): compras en public.compras (v6); si no existe, JSON. */
+let comprasEnTabla = false;
 
 let syncSnapshot = {
   proyectos: new Map(),
@@ -583,7 +640,65 @@ let syncSnapshot = {
   carpinteros: new Map(),
   finanzas: new Map(),
   muebles: new Map(),
+  compras: new Map(),
 };
+
+function filaDesdeCompra(od, p) {
+  const pendienteExiste = (p.pendientes || []).some((x) => x.id === od.pendienteId);
+  const fila = {
+    id: od.id,
+    proyecto_id: p.dbId || null,
+    categoria: od.category || null,
+    material: String(od.item || '').trim() || 'Material sin descripción',
+    cantidad: Number(od.cantidad) > 0 ? Number(od.cantidad) : 1,
+    unidad: od.unidad || 'und',
+    cantidad_recibida: Number(od.cantidadRecibida) >= 0 ? Number(od.cantidadRecibida) : 0,
+    proveedor: String(od.supplier || '').trim() || 'Proveedor por definir',
+    numero_guia: od.guide || null,
+    fecha_prometida: od.fechaPrometida || null,
+    fecha_recibida: od.fechaRecibida || null,
+    estado: ESTADOS_COMPRA.includes(od.status) ? od.status : 'Solicitado',
+    control_calidad: CALIDAD_COMPRA.includes(od.qc) ? od.qc : 'Pendiente',
+    notas: od.notas || null,
+    pendiente_id: pendienteExiste && esUUID(od.pendienteId) ? od.pendienteId : null,
+  };
+  if (od.fechaSolicitud) fila.fecha_solicitud = od.fechaSolicitud;
+  return fila;
+}
+
+/* Sincroniza filas hijas de proyectos (compras, …) con control de versión.
+   items: [{ obj, fila, etiqueta }]. Devuelve los conflictos detectados. */
+async function sincronizarHijos(tabla, items, snap) {
+  const vistos = new Set();
+  const conflictos = [];
+  for (const { obj, fila, etiqueta } of items) {
+    vistos.add(fila.id);
+    const hash = hashFila(fila);
+    const prev = snap.get(fila.id);
+    if (prev && prev.hash === hash) continue;
+    let res;
+    if (prev) {
+      const { id, ...cambios } = fila;
+      let q = supabaseClient.from(tabla).update(cambios).eq('id', id);
+      if (Number.isInteger(obj.dbVersion)) q = q.eq('version', obj.dbVersion);
+      res = await q.select('id,version');
+      if (!res.error && !(res.data || []).length) { conflictos.push(etiqueta); continue; }
+    } else {
+      res = await supabaseClient.from(tabla).insert(fila).select('id,version');
+    }
+    if (res.error) { registrarFallo(etiqueta, res.error); continue; }
+    const row = (res.data || [])[0];
+    if (Number.isInteger(row?.version)) obj.dbVersion = row.version;
+    snap.set(fila.id, { hash });
+  }
+  for (const id of [...snap.keys()]) {
+    if (vistos.has(id)) continue;
+    const { error } = await supabaseClient.from(tabla).delete().eq('id', id);
+    if (error) { registrarFallo(`el borrado en ${tabla}`, error); continue; }
+    snap.delete(id);
+  }
+  return conflictos;
+}
 
 function filaDesdeMueble(m, p, orden) {
   return {
@@ -599,7 +714,7 @@ function filaDesdeMueble(m, p, orden) {
   };
 }
 
-function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRows = [], mueblesRows = null) {
+function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRows = [], mueblesRows = null, comprasRows = null) {
   const proyectosApp = [];
   const comercial = [];
   const codigoPorDbId = new Map();
@@ -632,6 +747,35 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRow
     activo: c.activo !== false,
   }));
   const nombrePorId = new Map(carpinterosApp.map((c) => [c.id, c.nombre]));
+
+  /* Compras desde la tabla (fuente de verdad cuando existe) */
+  if (Array.isArray(comprasRows)) {
+    const porProyecto = new Map();
+    comprasRows.forEach((row) => {
+      if (!porProyecto.has(row.proyecto_id)) porProyecto.set(row.proyecto_id, []);
+      porProyecto.get(row.proyecto_id).push(row);
+    });
+    proyectosApp.forEach((p) => {
+      p.pedidos = (porProyecto.get(p.dbId) || []).map((row, i) => normalizarPedido({
+        id: row.id,
+        category: row.categoria,
+        item: row.material,
+        supplier: row.proveedor,
+        guide: row.numero_guia,
+        cantidad: Number(row.cantidad),
+        unidad: row.unidad,
+        cantidadRecibida: Number(row.cantidad_recibida),
+        fechaSolicitud: row.fecha_solicitud,
+        fechaPrometida: row.fecha_prometida,
+        fechaRecibida: row.fecha_recibida,
+        status: row.estado,
+        qc: row.control_calidad,
+        notas: row.notas,
+        pendienteId: row.pendiente_id,
+        dbVersion: row.version,
+      }, i));
+    });
+  }
 
   /* Muebles desde la tabla (fuente de verdad cuando existe) */
   if (Array.isArray(mueblesRows)) {
@@ -747,12 +891,22 @@ async function leerSupabase() {
   const mue = await supabaseClient.from('proyecto_muebles').select('*').order('orden', { ascending: true });
   let mueblesRows = null;
   if (mue.error) {
-    const noExiste = ['42P01', 'PGRST205', 'PGRST200'].includes(mue.error.code) || /does not exist|could not find/i.test(mue.error.message || '');
-    if (!noExiste) throw mue.error;
+    if (!esTablaInexistente(mue.error)) throw mue.error;
     mueblesEnTabla = false;
   } else {
     mueblesEnTabla = true;
     mueblesRows = mue.data || [];
+  }
+
+  /* Compras en tabla propia (v6) */
+  const com = await supabaseClient.from('compras').select('*').order('created_at', { ascending: true });
+  let comprasRows = null;
+  if (com.error) {
+    if (!esTablaInexistente(com.error)) throw com.error;
+    comprasEnTabla = false;
+  } else {
+    comprasEnTabla = true;
+    comprasRows = com.data || [];
   }
 
   /* Las finanzas solo se piden si el rol es Gerencia (la RLS igual las
@@ -763,7 +917,11 @@ async function leerSupabase() {
     if (fin.error) console.warn('[MODUGAL] No se pudieron leer las finanzas.', fin.error);
     else finanzasRows = fin.data || [];
   }
-  return construirEstado(prj.data || [], pen.data || [], car.data || [], tar.data || [], finanzasRows, mueblesRows);
+  return construirEstado(prj.data || [], pen.data || [], car.data || [], tar.data || [], finanzasRows, mueblesRows, comprasRows);
+}
+
+function esTablaInexistente(error) {
+  return ['42P01', 'PGRST205', 'PGRST200'].includes(error?.code) || /does not exist|could not find/i.test(error?.message || '');
 }
 
 function reconstruirSnapshot() {
@@ -774,7 +932,13 @@ function reconstruirSnapshot() {
     carpinteros: new Map(),
     finanzas: new Map(),
     muebles: new Map(),
+    compras: new Map(),
   };
+  if (comprasEnTabla) {
+    state.proyectos.forEach((p) => (p.pedidos || []).forEach((od) => {
+      syncSnapshot.compras.set(od.id, { hash: hashFila(filaDesdeCompra(od, p)) });
+    }));
+  }
   if (mueblesEnTabla) {
     state.proyectos.forEach((p) => (p.muebles || []).forEach((m, i) => {
       syncSnapshot.muebles.set(m.id, { hash: hashFila(filaDesdeMueble(m, p, i)) });
@@ -1002,6 +1166,23 @@ async function sincronizarEstado() {
     }
   }
 
+  /* 5c. Compras de material (tabla compras, con control de versión) */
+  if (comprasEnTabla) {
+    const items = [];
+    state.proyectos.forEach((p) => {
+      if (!p.dbId) return;
+      (p.pedidos || []).forEach((od) => {
+        if (!esUUID(od.id)) od.id = nuevoUUID();
+        items.push({ obj: od, fila: filaDesdeCompra(od, p), etiqueta: `${p.id} · ${od.item}` });
+      });
+    });
+    const conflictosCompras = await sincronizarHijos('compras', items, syncSnapshot.compras);
+    if (conflictosCompras.length) {
+      showToast(`${conflictosCompras.join(', ')}: otra persona la actualizó. Se cargó la versión más reciente.`);
+      setTimeout(() => recargarTrasConflicto(), 0);
+    }
+  }
+
   /* 6. Finanzas (solo Gerencia; la RLS rechaza a cualquier otro rol) */
   if (esGerencia()) {
     for (const [codigo, f] of Object.entries(state.finanzas || {})) {
@@ -1177,7 +1358,7 @@ function recargarTrasConflicto() {
    Requiere que las tablas estén en la publicación `supabase_realtime`.
    -------------------------------------------------------------------------- */
 
-const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero', 'proyectos_finanzas', 'proyecto_muebles'];
+const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero', 'proyectos_finanzas', 'proyecto_muebles', 'compras'];
 let rtCanal = null;
 let rtTimer = null;
 let rtVisibilidadLista = false;
@@ -3192,45 +3373,272 @@ function renderStats() {
 }
 
 /* ==========================================================================
-   15. REGISTRO DE PEDIDOS / COMPRAS
+   15. COMPRAS DE MATERIAL · registro y seguimiento
    ========================================================================== */
+
+function todasLasCompras() {
+  const lista = [];
+  state.proyectos.forEach((p) => (p.pedidos || []).forEach((od) => lista.push({ p, od })));
+  return lista;
+}
+
+function proveedoresConocidos() {
+  const set = new Map();
+  todasLasCompras().forEach(({ od }) => {
+    const nombre = String(od.supplier || '').trim();
+    if (nombre && nombre !== 'Proveedor por definir') set.set(nombre.toLowerCase(), nombre);
+  });
+  return [...set.values()].sort((a, b) => a.localeCompare(b));
+}
+
+function badgeEstadoCompra(od) {
+  return `<span class="inline-block px-2 py-0.5 rounded-full border text-[10px] font-black ${ESTILO_ESTADO_COMPRA[od.status] || ESTILO_ESTADO_COMPRA.Solicitado}">${esc(od.status)}</span>`;
+}
+
+function textoCantidad(n) {
+  const v = Number(n) || 0;
+  return Number.isInteger(v) ? String(v) : v.toLocaleString('es-CO', { maximumFractionDigits: 2 });
+}
+
+function cantidadCompraHTML(od) {
+  const recibida = Number(od.cantidadRecibida) || 0;
+  const parcial = recibida > 0 && recibida < od.cantidad;
+  return `${esc(textoCantidad(od.cantidad))} ${esc(od.unidad)}${parcial || od.status === 'Recibido parcial' ? ` <span class="text-amber-700 font-bold">(${esc(textoCantidad(recibida))} recib.)</span>` : ''}`;
+}
+
+function fechaPrometidaHTML(od) {
+  const atraso = diasAtrasoCompra(od);
+  if (!od.fechaPrometida) return '<span class="text-slate-400">Sin fecha</span>';
+  const fecha = esc(formatFechaLarga(parseFecha(od.fechaPrometida)));
+  return atraso
+    ? `<span class="text-red-700 font-bold">${fecha}</span> <span class="inline-block bg-red-600 text-white text-[10px] font-black px-1.5 py-0.5 rounded">${atraso} d atraso</span>`
+    : fecha;
+}
 
 function renderNewOrder() {
   const select = document.getElementById('pedido-proyecto');
-  if (!select) return;
-  const actual = select.value || state.newOrderProjectId || '';
-  select.innerHTML = '<option value="">Seleccionar proyecto...</option>';
-  state.proyectos.forEach((p) => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = `${p.name} - (${p.client})`;
-    select.appendChild(opt);
+  if (select) {
+    const actual = select.value || state.newOrderProjectId || '';
+    select.innerHTML = '<option value="">Seleccionar proyecto...</option>' + state.proyectos
+      .filter((p) => p.status !== EST_PRODUCCION.COMPLETADO || p.id === actual)
+      .map((p) => `<option value="${esc(p.id)}">${esc(p.id)} · ${esc(p.name)} (${esc(p.client)})</option>`).join('');
+    if (actual) select.value = actual;
+  }
+  const unidad = document.getElementById('pedido-unidad');
+  if (unidad && !unidad.options.length) unidad.innerHTML = UNIDADES_COMPRA.map((u) => `<option value="${esc(u)}">${esc(u)}</option>`).join('');
+  const dl = document.getElementById('proveedores-list');
+  if (dl) dl.innerHTML = proveedoresConocidos().map((n) => `<option value="${esc(n)}"></option>`).join('');
+  const form = document.getElementById('pedido-form');
+  if (form) form.closest('.bg-white')?.classList.toggle('hidden', !puedeGestionarCompras());
+  renderSeguimientoCompras();
+}
+
+function renderSeguimientoCompras() {
+  const box = document.getElementById('compras-lista');
+  if (!box) return;
+  const todas = todasLasCompras();
+  const abiertas = todas.filter(({ od }) => compraAbierta(od));
+  const atrasadas = abiertas.filter(({ od }) => diasAtrasoCompra(od) > 0);
+
+  const resumen = document.getElementById('compras-resumen');
+  if (resumen) {
+    resumen.innerHTML = `
+      <span class="bg-slate-100 border border-slate-200 rounded-lg px-2.5 py-1 font-bold text-slate-700">${abiertas.length} abiertas</span>
+      <span class="${atrasadas.length ? 'bg-red-50 border-red-200 text-red-700' : 'bg-emerald-50 border-emerald-200 text-emerald-700'} border rounded-lg px-2.5 py-1 font-bold">${atrasadas.length} atrasadas</span>`;
+  }
+  /* Proveedores con entregas atrasadas, de más a menos */
+  const porProveedor = new Map();
+  atrasadas.forEach(({ od }) => {
+    const k = od.supplier;
+    const prev = porProveedor.get(k) || { n: 0, max: 0 };
+    porProveedor.set(k, { n: prev.n + 1, max: Math.max(prev.max, diasAtrasoCompra(od)) });
   });
-  if (actual) select.value = actual;
+  const prov = document.getElementById('compras-proveedores');
+  if (prov) {
+    prov.innerHTML = porProveedor.size
+      ? `<p class="text-[11px] text-red-800 bg-red-50 border border-red-100 rounded-lg px-3 py-2"><i class="fas fa-truck-ramp-box mr-1" aria-hidden="true"></i><strong>Proveedores con atraso:</strong> ${[...porProveedor.entries()]
+        .sort((a, b) => b[1].max - a[1].max)
+        .map(([n, v]) => `${esc(n)} (${v.n} · hasta ${v.max} d)`).join(' · ')}</p>`
+      : '';
+  }
+
+  const filtro = state.comprasFiltro || 'abiertas';
+  document.querySelectorAll('[data-compra-filtro]').forEach((b) => {
+    const activo = b.dataset.compraFiltro === filtro;
+    b.classList.toggle('active', activo);
+    b.setAttribute('aria-pressed', String(activo));
+  });
+  let lista = todas;
+  if (filtro === 'abiertas') lista = abiertas;
+  if (filtro === 'atrasadas') lista = atrasadas;
+  if (filtro === 'recibidas') lista = todas.filter(({ od }) => od.status === 'Recibido');
+  lista = lista.slice().sort((a, b) => (diasAtrasoCompra(b.od) - diasAtrasoCompra(a.od))
+    || String(a.od.fechaPrometida || '9999').localeCompare(String(b.od.fechaPrometida || '9999')));
+
+  if (!lista.length) {
+    box.innerHTML = `<p class="text-xs text-slate-400 text-center py-8 border border-dashed border-slate-300 rounded-xl">${
+      filtro === 'atrasadas' ? 'No hay compras atrasadas.' : 'No hay compras en esta categoría.'}</p>`;
+    return;
+  }
+  box.innerHTML = lista.map(({ p, od }) => `
+    <article class="border ${diasAtrasoCompra(od) ? 'border-red-200 bg-red-50/40' : 'border-slate-200 bg-white'} rounded-xl p-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+      <div class="min-w-0 flex-1 basis-56">
+        <p class="font-black text-slate-900 truncate">${esc(od.item)}</p>
+        <p class="text-slate-500 truncate"><span class="font-mono text-red-600 font-bold">${esc(p.id)}</span> · ${esc(p.client)}${od.category ? ` · ${esc(od.category)}` : ''}</p>
+      </div>
+      <div class="basis-28"><p class="text-[10px] text-slate-400 uppercase font-bold">Cantidad</p><p class="font-bold text-slate-800">${cantidadCompraHTML(od)}</p></div>
+      <div class="basis-32 min-w-0"><p class="text-[10px] text-slate-400 uppercase font-bold">Proveedor</p><p class="font-bold text-slate-800 truncate">${esc(od.supplier)}</p></div>
+      <div class="basis-40"><p class="text-[10px] text-slate-400 uppercase font-bold">Prometida</p><p>${fechaPrometidaHTML(od)}</p></div>
+      <div class="flex items-center gap-2 ml-auto">
+        ${badgeEstadoCompra(od)}
+        ${od.qc === 'Con novedad' ? '<span class="text-[10px] font-black text-amber-800 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5">Con novedad</span>' : ''}
+        ${puedeGestionarCompras() ? `<button type="button" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-3 py-1.5 rounded-lg" data-compra-editar="${esc(od.id)}" data-compra-proyecto="${esc(p.id)}">Actualizar</button>` : ''}
+      </div>
+    </article>`).join('');
 }
 
 function onPedidoGuardar(e) {
   e.preventDefault();
-  if (!puedeGestionarCompras()) { showToast('Solo Gerencia puede registrar compras y pedidos.'); return; }
+  if (!puedeGestionarCompras()) { showToast('Solo Gerencia y Logística registran compras.'); return; }
   const projectId = document.getElementById('pedido-proyecto').value;
-  const category = document.getElementById('pedido-categoria').value || 'Material';
-  const item = document.getElementById('pedido-item').value.trim();
-  const supplier = document.getElementById('pedido-proveedor').value.trim();
-  const guide = document.getElementById('pedido-guia').value.trim() || 'Sin Guía';
-  const expectedDate = document.getElementById('pedido-fecha').value.trim() || 'Por definir';
+  const item = document.getElementById('pedido-item').value.trim().replace(/\s+/g, ' ');
+  const supplier = document.getElementById('pedido-proveedor').value.trim().replace(/\s+/g, ' ');
+  const cantidad = Number(document.getElementById('pedido-cantidad').value);
   if (!projectId || !item || !supplier) { showToast('Completa proyecto, material y proveedor.'); return; }
+  if (!(cantidad > 0)) { showToast('La cantidad debe ser mayor que cero.'); return; }
   const p = state.proyectos.find((x) => x.id === projectId);
   if (!p) return;
-  p.pedidos.push({ id: uid('p'), category, item, supplier, guide, expected: expectedDate, status: 'Solicitado', qc: 'Pendiente' });
-  p.pendientes.push({ id: uid('pd'), text: `${item} (${supplier})`, tipo: 'material', prioridad: 'media', createdAt: hoyISO() });
+  /* Mismo proveedor escrito distinto (mayúsculas/espacios) → se unifica */
+  const proveedor = proveedoresConocidos().find((n) => n.toLowerCase() === supplier.toLowerCase()) || supplier;
+  const unidad = document.getElementById('pedido-unidad').value || 'und';
+  const pendiente = { id: uid(), text: `${item} · ${textoCantidad(cantidad)} ${unidad} (${proveedor})`, tipo: 'material', prioridad: 'media', estado: 'Pendiente', createdAt: hoyISO() };
+  p.pendientes.push(pendiente);
+  p.pedidos.push(normalizarPedido({
+    id: uid(),
+    category: document.getElementById('pedido-categoria').value,
+    item,
+    supplier: proveedor,
+    guide: document.getElementById('pedido-guia').value.trim(),
+    cantidad,
+    unidad,
+    fechaSolicitud: hoyISO(),
+    fechaPrometida: document.getElementById('pedido-fecha').value || null,
+    notas: document.getElementById('pedido-notas').value.trim(),
+    status: 'Solicitado',
+    pendienteId: pendiente.id,
+  }, p.pedidos.length));
   p.alert = p.pendientes[0]?.text || '';
   state.newOrderProjectId = null;
   commit();
   refrescarPendientesProyecto(projectId);
+  const sel = document.getElementById('pedido-proyecto').value;
   document.getElementById('pedido-form').reset();
+  document.getElementById('pedido-proyecto').value = sel; /* se mantiene el proyecto para registrar varias */
   renderNewOrder();
-  showToast('Pedido guardado y agregado a los pendientes del proyecto.');
+  showToast(`Compra registrada: ${item} para ${p.id}.`);
 }
+
+/* ---- Modal de actualización ---- */
+
+function abrirCompraModal(projectId, compraId) {
+  if (!puedeGestionarCompras()) { showToast('Solo Gerencia y Logística actualizan compras.'); return; }
+  const p = state.proyectos.find((x) => x.id === projectId);
+  const od = (p?.pedidos || []).find((x) => x.id === compraId);
+  if (!od) return;
+  state.compraCtx = { projectId, compraId };
+  const opts = (lista, actual) => lista.map((v) => `<option value="${esc(v)}" ${v === actual ? 'selected' : ''}>${esc(v)}</option>`).join('');
+  document.getElementById('compra-sub').textContent = `${od.item} · ${p.id} ${p.name}`;
+  document.getElementById('compra-estado').innerHTML = opts(ESTADOS_COMPRA, od.status);
+  document.getElementById('compra-calidad').innerHTML = opts(CALIDAD_COMPRA, od.qc);
+  document.getElementById('compra-recibida').value = od.cantidadRecibida || 0;
+  document.getElementById('compra-recibida-de').textContent = `de ${textoCantidad(od.cantidad)} ${od.unidad}`;
+  document.getElementById('compra-fecha-recibida').value = od.fechaRecibida || '';
+  document.getElementById('compra-guia').value = od.guide || '';
+  document.getElementById('compra-fecha-prometida').value = od.fechaPrometida || '';
+  document.getElementById('compra-notas').value = od.notas || '';
+  document.getElementById('compra-material').value = od.item;
+  document.getElementById('compra-cantidad').value = od.cantidad;
+  document.getElementById('compra-unidad').innerHTML = opts([...new Set([...UNIDADES_COMPRA, od.unidad])], od.unidad);
+  document.getElementById('compra-proveedor').value = od.supplier;
+  document.getElementById('compra-modal').classList.remove('is-hidden');
+}
+
+function cerrarCompraModal() {
+  document.getElementById('compra-modal')?.classList.add('is-hidden');
+  state.compraCtx = null;
+}
+
+/* Al marcar "Recibido" se completa la cantidad y la fecha de llegada */
+function alCambiarEstadoCompra() {
+  const estado = document.getElementById('compra-estado').value;
+  const cantidad = Number(document.getElementById('compra-cantidad').value) || 0;
+  const recibida = document.getElementById('compra-recibida');
+  const fecha = document.getElementById('compra-fecha-recibida');
+  if (estado === 'Recibido' && Number(recibida.value) < cantidad) recibida.value = cantidad;
+  if (['Recibido', 'Recibido parcial'].includes(estado) && !fecha.value) fecha.value = hoyISO();
+}
+
+function guardarCompra() {
+  const ctx = state.compraCtx;
+  const p = state.proyectos.find((x) => x.id === ctx?.projectId);
+  const od = (p?.pedidos || []).find((x) => x.id === ctx?.compraId);
+  if (!od) return;
+  const cantidad = Number(document.getElementById('compra-cantidad').value);
+  const recibida = Number(document.getElementById('compra-recibida').value) || 0;
+  const material = document.getElementById('compra-material').value.trim();
+  const proveedor = document.getElementById('compra-proveedor').value.trim();
+  let estado = document.getElementById('compra-estado').value;
+  if (!material || !proveedor) { showToast('Material y proveedor no pueden quedar vacíos.'); return; }
+  if (!(cantidad > 0)) { showToast('La cantidad pedida debe ser mayor que cero.'); return; }
+  if (recibida < 0) { showToast('La cantidad recibida no puede ser negativa.'); return; }
+  /* Coherencia entre cantidad recibida y estado */
+  if (estado === 'Recibido' && recibida > 0 && recibida < cantidad) estado = 'Recibido parcial';
+  if (['Solicitado', 'Confirmado', 'En tránsito'].includes(estado) && recibida > 0) estado = recibida >= cantidad ? 'Recibido' : 'Recibido parcial';
+
+  const estabaCerrada = !compraAbierta(od);
+  Object.assign(od, {
+    status: estado,
+    qc: document.getElementById('compra-calidad').value,
+    cantidadRecibida: recibida,
+    fechaRecibida: document.getElementById('compra-fecha-recibida').value || null,
+    guide: document.getElementById('compra-guia').value.trim(),
+    fechaPrometida: document.getElementById('compra-fecha-prometida').value || null,
+    notas: document.getElementById('compra-notas').value.trim(),
+    item: material,
+    cantidad,
+    unidad: document.getElementById('compra-unidad').value,
+    supplier: proveedor,
+  });
+  od.expected = od.fechaPrometida ? formatFechaLarga(parseFecha(od.fechaPrometida)) : 'Por definir';
+
+  /* El pendiente ligado se cierra/reabre igual que lo hace la base (v6) */
+  const pend = (p.pendientes || []).find((x) => x.id === od.pendienteId);
+  if (pend) {
+    if (!compraAbierta(od) && !estabaCerrada) pend.estado = 'Resuelto';
+    if (compraAbierta(od) && estabaCerrada) pend.estado = 'Pendiente';
+  }
+  commit();
+  refrescarPendientesProyecto(p.id);
+  cerrarCompraModal();
+  renderSeguimientoCompras();
+  if (state.fichaId === p.id) { openFicha(p.id); mostrarSubFicha('pedidos'); }
+  showToast(`${od.item}: ${od.status}${od.qc === 'Con novedad' ? ' · con novedad' : ''}.`);
+}
+
+function bindComprasEvents() {
+  document.querySelectorAll('[data-compra-filtro]').forEach((b) => b.addEventListener('click', () => {
+    state.comprasFiltro = b.dataset.compraFiltro;
+    renderSeguimientoCompras();
+  }));
+  document.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-compra-editar]');
+    if (btn) abrirCompraModal(btn.dataset.compraProyecto, btn.dataset.compraEditar);
+  });
+  document.getElementById('compra-estado')?.addEventListener('change', alCambiarEstadoCompra);
+  document.getElementById('compra-guardar')?.addEventListener('click', guardarCompra);
+  document.getElementById('compra-cancelar')?.addEventListener('click', cerrarCompraModal);
+}
+
 /* ==========================================================================
    16. MODAL · FICHA DE PROYECTO
    ========================================================================== */
@@ -3342,13 +3750,14 @@ function openFicha(id) {
       </div>`).join('');
 
   document.getElementById('ficha-pedidos-tbody').innerHTML = (p.pedidos || []).map((od) => `
-    <tr>
-      <td class="p-3 font-bold text-slate-900">${esc(od.category)}</td>
-      <td class="p-3 text-slate-700">${esc(od.item)}</td>
-      <td class="p-3 text-slate-500">${esc(od.supplier)}</td>
-      <td class="p-3 font-mono text-slate-500">${esc(od.guide)}</td>
-      <td class="p-3 font-bold text-emerald-600">${esc(od.status)}</td>
-    </tr>`).join('') || '<tr><td colspan="5" class="p-4 text-center text-slate-400">Sin pedidos registrados.</td></tr>';
+    <tr class="${diasAtrasoCompra(od) ? 'bg-red-50/50' : ''}">
+      <td class="p-3"><p class="font-bold text-slate-900">${esc(od.item)}</p>${od.category ? `<p class="text-[10px] text-slate-400">${esc(od.category)}</p>` : ''}</td>
+      <td class="p-3 text-slate-700 whitespace-nowrap">${cantidadCompraHTML(od)}</td>
+      <td class="p-3 text-slate-600">${esc(od.supplier)}${od.guide ? `<p class="font-mono text-[10px] text-slate-400">${esc(od.guide)}</p>` : ''}</td>
+      <td class="p-3 whitespace-nowrap">${fechaPrometidaHTML(od)}</td>
+      <td class="p-3">${badgeEstadoCompra(od)}${od.qc === 'Con novedad' ? '<p class="text-[10px] font-black text-amber-700 mt-1">Con novedad</p>' : ''}</td>
+      <td class="p-3 text-right">${puedeGestionarCompras() ? `<button type="button" class="task-icon-btn" data-compra-editar="${esc(od.id)}" data-compra-proyecto="${esc(p.id)}" title="Actualizar compra" aria-label="Actualizar ${esc(od.item)}"><i class="fas fa-pen" aria-hidden="true"></i></button>` : ''}</td>
+    </tr>`).join('') || '<tr><td colspan="6" class="p-4 text-center text-slate-400">Sin compras registradas.</td></tr>';
 
   document.getElementById('ficha-pendientes-list').innerHTML = pendientesHTML(p);
 
@@ -4001,7 +4410,7 @@ function bindFichaEvents() {
   document.getElementById('ficha-pedido-add')?.addEventListener('click', () => {
     const id = state.fichaId;
     if (!id) return;
-    if (!puedeGestionarCompras()) { showToast('Solo Gerencia puede registrar compras.'); return; }
+    if (!puedeGestionarCompras()) { showToast('Solo Gerencia y Logística registran compras.'); return; }
     closeFicha();
     state.newOrderProjectId = id;
     switchTab('new-order');
@@ -4514,7 +4923,10 @@ const ETIQUETAS_CAMPO = {
   fecha_entrega: 'Fecha de entrega (BD)', imagen_url: 'Imagen', trazador_responsable: 'Responsable',
   motivo_rechazo: 'Motivo de rechazo', codigo_prj: 'Código', descripcion: 'Descripción', estado: 'Estado',
   actividad: 'Actividad', detalle: 'Detalle', nombre_mueble: 'Mueble / trabajo', carpintero_id: 'Personal',
-  es_lider: 'Líder de instalación', nombre: 'Nombre', fase: 'Fase', responsable_id: 'Responsable', cargo: 'Cargo', activo: 'Activo',
+  es_lider: 'Líder de instalación', nombre: 'Nombre', fase: 'Fase', responsable_id: 'Responsable',
+  material: 'Material', categoria: 'Categoría', cantidad: 'Cantidad', unidad: 'Unidad', cantidad_recibida: 'Cantidad recibida',
+  proveedor: 'Proveedor', numero_guia: 'Guía', fecha_prometida: 'Fecha prometida', fecha_recibida: 'Fecha de llegada',
+  fecha_solicitud: 'Fecha de solicitud', control_calidad: 'Control de calidad', cargo: 'Cargo', activo: 'Activo',
   valor_venta: 'Valor de venta', costo_materiales: 'Costo materiales', costo_mano_obra: 'Costo mano de obra',
   otros_costos: 'Otros costos', anticipo: 'Anticipo', notas: 'Notas', utilidad: 'Utilidad', margen_pct: 'Margen %',
   'ficha.name': 'Nombre del proyecto', 'ficha.muebles': 'Muebles', 'ficha.pedidos': 'Pedidos de material',
@@ -4527,7 +4939,7 @@ const ETIQUETAS_CAMPO = {
 /* Campos técnicos o duplicados que no aportan al lector */
 const CAMPOS_OCULTOS = new Set(['id', 'proyecto_id', 'grupo_id', 'fase_manual', 'estado_tarea', 'ficha.alert',
   'ficha.manufacturingPhase', 'ficha.commercialStage', 'ficha.client', 'ficha.image', 'ficha.city', 'archivos_privados',
-  'activo_desde', 'descripcion_venta', 'orden', 'legacy_id', 'responsable_nombre']);
+  'activo_desde', 'descripcion_venta', 'orden', 'legacy_id', 'responsable_nombre', 'pendiente_id', 'creado_por']);
 const TABLAS_HIST = {
   proyectos: { label: 'Proyecto', icon: 'fa-folder-open', color: 'bg-slate-900' },
   pendientes: { label: 'Pendiente', icon: 'fa-clipboard-list', color: 'bg-amber-600' },
@@ -4535,6 +4947,7 @@ const TABLAS_HIST = {
   carpinteros: { label: 'Personal', icon: 'fa-id-badge', color: 'bg-violet-700' },
   proyectos_finanzas: { label: 'Finanzas', icon: 'fa-lock', color: 'bg-red-600' },
   proyecto_muebles: { label: 'Mueble', icon: 'fa-couch', color: 'bg-orange-600' },
+  compras: { label: 'Compra', icon: 'fa-truck', color: 'bg-teal-700' },
   usuarios: { label: 'Usuario', icon: 'fa-user-shield', color: 'bg-emerald-700' },
 };
 
@@ -4578,9 +4991,9 @@ function lineasCambio(ev) {
   const claves = Object.keys(cambios).filter((k) => !CAMPOS_OCULTOS.has(k));
   if (ev.accion === 'crear' || ev.accion === 'eliminar') {
     const lado = ev.accion === 'crear' ? 'despues' : 'antes';
-    const principal = ['descripcion', 'nombre_mueble', 'ficha.name', 'nombre', 'cliente']
+    const principal = ['descripcion', 'nombre_mueble', 'material', 'ficha.name', 'nombre', 'cliente']
       .find((k) => cambios[k]?.[lado]);
-    const extra = ['fase', 'actividad', 'detalle', 'carpintero_id', 'responsable_id', 'estado', 'cargo']
+    const extra = ['fase', 'actividad', 'detalle', 'carpintero_id', 'responsable_id', 'cantidad', 'proveedor', 'fecha_prometida', 'estado', 'cargo']
       .filter((k) => cambios[k]?.[lado] !== undefined && cambios[k]?.[lado] !== null && cambios[k]?.[lado] !== '')
       .map((k) => `${ETIQUETAS_CAMPO[k] || k}: ${valorHist(k, cambios[k][lado])}`);
     return [principal ? valorHist(principal, cambios[principal][lado]) : '', ...extra].filter(Boolean);
@@ -4770,6 +5183,7 @@ async function init() {
   bindEstadoSync();
   bindHistorialEvents();
   bindMueblesEvents();
+  bindComprasEvents();
   bindFinanzasEvents();
 
   /* Sin sesión no se muestra ni se consulta ningún dato */

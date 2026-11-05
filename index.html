@@ -184,7 +184,7 @@
         <button type="button" class="mg-tab hidden" data-tab="usuarios">
           <i class="fas fa-user-shield mr-2" aria-hidden="true"></i>Usuarios
         </button>
-        <button type="button" class="mg-tab sm:hidden" data-tab="new-order">
+        <button type="button" class="mg-tab" data-tab="new-order">
           <i class="fas fa-cart-plus mr-2" aria-hidden="true"></i>Compras
         </button>
       </div>
@@ -466,56 +466,88 @@
 
     <!-- MÓDULO AUXILIAR · REGISTRO DE PEDIDOS / COMPRAS -->
     <section id="tab-new-order" class="tab-panel p-4">
-      <div class="max-w-xl mx-auto bg-white border border-slate-200 p-8 rounded-2xl shadow-md">
-        <div class="flex items-start justify-between mb-1">
-          <h2 class="text-2xl font-black text-slate-900">Registrar Compra de Material</h2>
-          <button type="button" class="text-xs font-bold text-slate-500 hover:text-red-600" data-tab="tabla">
-            <i class="fas fa-arrow-left mr-1" aria-hidden="true"></i>Volver
-          </button>
-        </div>
-        <p class="text-xs text-slate-500 mb-6">El material solicitado se agrega automáticamente a los pendientes del proyecto.</p>
+      <div class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-[minmax(0,26rem)_minmax(0,1fr)] gap-6 items-start">
 
-        <form id="pedido-form" class="space-y-4 text-xs">
-          <div>
-            <label for="pedido-proyecto" class="block font-bold text-slate-700 uppercase mb-1">Proyecto</label>
-            <select id="pedido-proyecto" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-bold focus:ring-2 focus:ring-red-600 focus:bg-white">
-              <option value="">Seleccionar proyecto...</option>
-            </select>
-          </div>
-          <div class="grid grid-cols-2 gap-4">
+        <!-- Registro -->
+        <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
+          <h2 class="text-xl font-black text-slate-900">Registrar compra</h2>
+          <p class="text-xs text-slate-500 mb-5">Se agrega a los pendientes del proyecto y se cierra sola cuando el material llega completo.</p>
+          <form id="pedido-form" class="space-y-3 text-xs" novalidate>
             <div>
-              <label for="pedido-categoria" class="block font-bold text-slate-700 uppercase mb-1">Categoría</label>
-              <select id="pedido-categoria" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white">
-                <option value="">Seleccionar categoría...</option>
-                <option value="Madecor / Tableros">Madecor / Tableros</option>
-                <option value="Herrajes Blum">Herrajes Blum</option>
-                <option value="Mesón Cuarzo/Granito">Mesón Cuarzo/Granito</option>
-                <option value="Vidrios & Aluminio">Vidrios &amp; Aluminio</option>
-              </select>
+              <label for="pedido-proyecto" class="block font-bold text-slate-700 uppercase mb-1">Proyecto</label>
+              <select id="pedido-proyecto" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white font-bold"><option value="">Seleccionar proyecto...</option></select>
             </div>
             <div>
-              <label for="pedido-proveedor" class="block font-bold text-slate-700 uppercase mb-1">Proveedor</label>
-              <input id="pedido-proveedor" type="text" placeholder="Ej. Serviherrajes, Pelíkano" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" required />
+              <label for="pedido-item" class="block font-bold text-slate-700 uppercase mb-1">Material</label>
+              <input id="pedido-item" type="text" maxlength="160" placeholder="Ej. Tira LED cálida 3000K con transformador" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
             </div>
-          </div>
-          <div>
-            <label for="pedido-item" class="block font-bold text-slate-700 uppercase mb-1">Descripción Material</label>
-            <input id="pedido-item" type="text" placeholder="Ej. Tira LED cálida 3000K con transformador" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" required />
-          </div>
-          <div class="grid grid-cols-2 gap-4">
+            <div class="grid grid-cols-[1fr_auto] gap-3">
+              <div>
+                <label for="pedido-cantidad" class="block font-bold text-slate-700 uppercase mb-1">Cantidad</label>
+                <input id="pedido-cantidad" type="number" min="0.01" step="0.01" value="1" inputmode="decimal" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+              </div>
+              <div>
+                <label for="pedido-unidad" class="block font-bold text-slate-700 uppercase mb-1">Unidad</label>
+                <select id="pedido-unidad" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white"></select>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="pedido-categoria" class="block font-bold text-slate-700 uppercase mb-1">Categoría</label>
+                <select id="pedido-categoria" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white">
+                  <option value="">Sin categoría</option>
+                  <option value="Madecor / Tableros">Madecor / Tableros</option>
+                  <option value="Herrajes Blum">Herrajes Blum</option>
+                  <option value="Mesón Cuarzo/Granito">Mesón Cuarzo/Granito</option>
+                  <option value="Vidrios &amp; Aluminio">Vidrios &amp; Aluminio</option>
+                  <option value="Iluminación">Iluminación</option>
+                  <option value="Otros">Otros</option>
+                </select>
+              </div>
+              <div>
+                <label for="pedido-proveedor" class="block font-bold text-slate-700 uppercase mb-1">Proveedor</label>
+                <input id="pedido-proveedor" type="text" list="proveedores-list" maxlength="120" placeholder="Ej. Serviherrajes" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+                <datalist id="proveedores-list"></datalist>
+              </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="pedido-fecha" class="block font-bold text-slate-700 uppercase mb-1">Fecha prometida</label>
+                <input id="pedido-fecha" type="date" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+              </div>
+              <div>
+                <label for="pedido-guia" class="block font-bold text-slate-700 uppercase mb-1">N° guía</label>
+                <input id="pedido-guia" type="text" maxlength="60" placeholder="Opcional" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+              </div>
+            </div>
             <div>
-              <label for="pedido-guia" class="block font-bold text-slate-700 uppercase mb-1">N° Guía</label>
-              <input id="pedido-guia" type="text" placeholder="GUI-00000" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+              <label for="pedido-notas" class="block font-bold text-slate-700 uppercase mb-1">Notas</label>
+              <input id="pedido-notas" type="text" maxlength="300" placeholder="Opcional" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
             </div>
+            <button type="submit" id="pedido-guardar" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl shadow-md text-sm">
+              <i class="fas fa-check mr-2" aria-hidden="true"></i>Guardar compra
+            </button>
+          </form>
+        </div>
+
+        <!-- Seguimiento -->
+        <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm min-w-0">
+          <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <label for="pedido-fecha" class="block font-bold text-slate-700 uppercase mb-1">Fecha esperada</label>
-              <input id="pedido-fecha" type="text" placeholder="Ej. 20 Nov 2026" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+              <h2 class="text-xl font-black text-slate-900">Seguimiento de compras</h2>
+              <p class="text-xs text-slate-500">Todas las compras de todos los proyectos.</p>
             </div>
+            <div id="compras-resumen" class="flex flex-wrap gap-2 text-xs"></div>
           </div>
-          <button type="submit" id="pedido-guardar" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 rounded-xl shadow-md text-sm mt-4 transition-all">
-            <i class="fas fa-check mr-2" aria-hidden="true"></i> Guardar Pedido
-          </button>
-        </form>
+          <div id="compras-proveedores" class="mt-3"></div>
+          <div class="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-full border border-slate-200 mt-4 w-fit" role="group" aria-label="Filtrar compras">
+            <button type="button" class="f-chip active" data-compra-filtro="abiertas" aria-pressed="true">Abiertas</button>
+            <button type="button" class="f-chip" data-compra-filtro="atrasadas" aria-pressed="false">Atrasadas</button>
+            <button type="button" class="f-chip" data-compra-filtro="recibidas" aria-pressed="false">Recibidas</button>
+            <button type="button" class="f-chip" data-compra-filtro="todas" aria-pressed="false">Todas</button>
+          </div>
+          <div id="compras-lista" class="mt-4 space-y-2"></div>
+        </div>
       </div>
     </section>
   </main>
@@ -643,11 +675,12 @@
             <table class="w-full text-left text-xs">
               <thead class="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                 <tr>
-                  <th class="p-3">Categoría</th>
-                  <th class="p-3">Producto</th>
+                  <th class="p-3">Material</th>
+                  <th class="p-3">Cantidad</th>
                   <th class="p-3">Proveedor</th>
-                  <th class="p-3">N° Guía</th>
+                  <th class="p-3">Prometida</th>
                   <th class="p-3">Estado</th>
+                  <th class="p-3"><span class="sr-only">Acciones</span></th>
                 </tr>
               </thead>
               <tbody id="ficha-pedidos-tbody" class="divide-y divide-slate-200"></tbody>
@@ -1107,6 +1140,72 @@
         <button type="button" id="tarea-guardar" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">Guardar</button>
         <button type="button" id="tarea-eliminar" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 py-2.5 rounded-xl text-sm hidden">Eliminar</button>
         <button type="button" id="tarea-close" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Actualizar compra (Gerencia y Logística) -->
+  <div id="compra-modal" class="is-hidden fixed inset-0 z-[96] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white border border-slate-200 w-full max-w-lg rounded-2xl shadow-2xl p-6 max-h-[92vh] overflow-y-auto">
+      <h3 class="text-xl font-black text-slate-900 mb-1">Actualizar compra</h3>
+      <p class="text-xs text-slate-500 mb-4" id="compra-sub"></p>
+      <div class="space-y-3 text-xs">
+        <p class="font-black text-slate-400 uppercase tracking-wide text-[10px]">Recepción</p>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="compra-estado" class="block font-bold text-slate-500 uppercase mb-1">Estado</label>
+            <select id="compra-estado" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white font-bold"></select>
+          </div>
+          <div>
+            <label for="compra-calidad" class="block font-bold text-slate-500 uppercase mb-1">Control de calidad</label>
+            <select id="compra-calidad" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white"></select>
+          </div>
+          <div>
+            <label for="compra-recibida" class="block font-bold text-slate-500 uppercase mb-1">Cantidad recibida <span id="compra-recibida-de" class="normal-case text-slate-400"></span></label>
+            <input id="compra-recibida" type="number" min="0" step="0.01" inputmode="decimal" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+          </div>
+          <div>
+            <label for="compra-fecha-recibida" class="block font-bold text-slate-500 uppercase mb-1">Fecha de llegada</label>
+            <input id="compra-fecha-recibida" type="date" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+          </div>
+          <div>
+            <label for="compra-guia" class="block font-bold text-slate-500 uppercase mb-1">N° guía</label>
+            <input id="compra-guia" type="text" maxlength="60" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+          </div>
+          <div>
+            <label for="compra-fecha-prometida" class="block font-bold text-slate-500 uppercase mb-1">Fecha prometida</label>
+            <input id="compra-fecha-prometida" type="date" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+          </div>
+        </div>
+        <div>
+          <label for="compra-notas" class="block font-bold text-slate-500 uppercase mb-1">Notas</label>
+          <input id="compra-notas" type="text" maxlength="300" placeholder="Ej. Llegaron 2 láminas rayadas" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+        </div>
+        <details class="border border-slate-200 rounded-xl p-3">
+          <summary class="font-bold text-slate-600 cursor-pointer">Corregir datos del pedido</summary>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+            <div class="sm:col-span-2">
+              <label for="compra-material" class="block font-bold text-slate-500 uppercase mb-1">Material</label>
+              <input id="compra-material" type="text" maxlength="160" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+            </div>
+            <div>
+              <label for="compra-cantidad" class="block font-bold text-slate-500 uppercase mb-1">Cantidad pedida</label>
+              <input id="compra-cantidad" type="number" min="0.01" step="0.01" inputmode="decimal" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+            </div>
+            <div>
+              <label for="compra-unidad" class="block font-bold text-slate-500 uppercase mb-1">Unidad</label>
+              <select id="compra-unidad" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white"></select>
+            </div>
+            <div class="sm:col-span-2">
+              <label for="compra-proveedor" class="block font-bold text-slate-500 uppercase mb-1">Proveedor</label>
+              <input id="compra-proveedor" type="text" list="proveedores-list" maxlength="120" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+            </div>
+          </div>
+        </details>
+      </div>
+      <div class="flex flex-wrap gap-2 mt-5">
+        <button type="button" id="compra-guardar" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">Guardar</button>
+        <button type="button" id="compra-cancelar" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm">Cerrar</button>
       </div>
     </div>
   </div>
