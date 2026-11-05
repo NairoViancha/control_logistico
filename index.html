@@ -133,6 +133,8 @@
           <span id="mg-rol-label" class="text-xs font-bold text-slate-800"></span>
         </div>
 
+        <button type="button" id="mg-sync" class="hidden mg-sync" aria-live="polite"></button>
+
         <div id="mg-user" class="hidden flex items-center bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 shadow-inner">
           <i class="fas fa-user w-3.5 h-3.5 text-slate-500 mr-1" aria-hidden="true"></i>
           <span id="mg-user-info" class="text-xs font-bold text-slate-800"></span>
@@ -552,6 +554,7 @@
         <button type="button" class="f-subtab" data-sub="pedidos">Pedidos/Compras</button>
         <button type="button" class="f-subtab" data-sub="bloqueos">Bloqueos</button>
         <button type="button" class="f-subtab" data-sub="dropbox">Archivos Dropbox (Proxy)</button>
+        <button type="button" class="f-subtab hidden" data-sub="historial"><i class="fas fa-clock-rotate-left mr-1" aria-hidden="true"></i>Historial</button>
         <button type="button" class="f-subtab hidden" data-sub="finanzas"><i class="fas fa-lock mr-1 text-red-600" aria-hidden="true"></i>Finanzas</button>
       </div>
 
@@ -684,6 +687,15 @@
 
           <div id="dropbox-archivos-list" class="space-y-2"></div>
           <div id="dropbox-visual" class="hidden dropbox-visual"></div>
+        </div>
+
+        <!-- Historial: cronología de cambios (historial_eventos, escrito por la base) -->
+        <div id="ficha-historial" class="text-xs is-hidden">
+          <div class="flex items-center justify-between gap-2 mb-3">
+            <p class="text-slate-500">Quién cambió qué y cuándo. Lo registra la base de datos y no se puede editar.</p>
+            <button type="button" id="historial-recargar" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-1.5 rounded-lg border border-slate-200 shrink-0"><i class="fas fa-rotate mr-1" aria-hidden="true"></i>Actualizar</button>
+          </div>
+          <ol id="historial-lista" class="space-y-3"></ol>
         </div>
 
         <!-- Finanzas (solo Gerencia · tabla proyectos_finanzas protegida por RLS) -->
@@ -852,6 +864,11 @@
           <div>
             <label for="proyecto-fecha-entrega" class="block font-bold text-slate-700 uppercase mb-1">Fecha de entrega</label>
             <input id="proyecto-fecha-entrega" type="text" placeholder="Ej. 20 Nov 2026" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
+          </div>
+          <div id="proyecto-motivo-wrap" class="sm:col-span-2 hidden">
+            <label for="proyecto-motivo" class="block font-bold text-amber-800 uppercase mb-1"><i class="fas fa-triangle-exclamation mr-1" aria-hidden="true"></i>Motivo del cambio de fecha de entrega</label>
+            <input id="proyecto-motivo" type="text" maxlength="300" placeholder="Ej. Retraso del proveedor de herrajes" class="w-full bg-amber-50 border border-amber-200 rounded-xl p-3 text-slate-900" />
+            <p class="text-[10px] text-slate-500 mt-1">Obligatorio: queda guardado en el historial del proyecto con tu nombre.</p>
           </div>
           <div class="sm:col-span-2">
             <label for="proyecto-imagen-file" class="block font-bold text-slate-700 uppercase mb-1">Imagen del proyecto</label>

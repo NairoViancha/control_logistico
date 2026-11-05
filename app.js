@@ -582,8 +582,11 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRow
   proyectos.forEach((row) => {
     const ext = decodificarPayload(row.descripcion_venta);
     codigoPorDbId.set(row.id, row.codigo_prj || row.id);
-    if (esFilaProspecto(row, ext)) comercial.push(comercialDesdeFila(row));
-    else proyectosApp.push(proyectoDesdeFila(row));
+    const item = esFilaProspecto(row, ext) ? comercialDesdeFila(row) : proyectoDesdeFila(row);
+    /* Versión de la fila para el control de concurrencia (columna de la v4) */
+    item.dbVersion = Number.isInteger(row.version) ? row.version : null;
+    if (esFilaProspecto(row, ext)) comercial.push(item);
+    else proyectosApp.push(item);
   });
 
   const pendientesPorProyecto = new Map();
@@ -744,28 +747,61 @@ async function sincronizarEstado() {
   ];
   const codigosVistos = new Set();
 
-  /* 1. Proyectos y prospectos (upsert por codigo_prj) */
+  /* 1. Proyectos y prospectos
+        - Existentes: UPDATE condicionado a la versión que este usuario cargó.
+          Si otra persona guardó antes, no se pisa: se marca conflicto.
+        - Nuevos: INSERT; si el código ya lo tomó otra persona, se renombra. */
+  const conflictos = [];
   for (const { item, esProspecto } of locales) {
     if (!item.id) continue;
-    const fila = esProspecto ? filaDesdeProspecto(item) : filaDesdeProyecto(item);
+    let fila = esProspecto ? filaDesdeProspecto(item) : filaDesdeProyecto(item);
     const hash = hashFila(fila);
     const prev = syncSnapshot.proyectos.get(item.id);
     codigosVistos.add(item.id);
-    if (prev && prev.hash === hash && prev.dbId) {
+    if (prev && prev.hash === hash && prev.dbId && !item._motivoCambio) {
       item.dbId = prev.dbId;
       continue;
     }
-    const { data, error } = await supabaseClient
-      .from('proyectos')
-      .upsert(fila, { onConflict: 'codigo_prj' })
-      .select('id,codigo_prj');
-    if (error) {
-      console.error('[MODUGAL] No se pudo guardar el proyecto', item.id, error);
+    const conMotivo = item._motivoCambio ? { ...fila, motivo_cambio: item._motivoCambio } : fila;
+    const dbId = prev?.dbId || item.dbId;
+    let res;
+    if (dbId) {
+      let q = supabaseClient.from('proyectos').update(conMotivo).eq('id', dbId);
+      if (Number.isInteger(item.dbVersion)) q = q.eq('version', item.dbVersion);
+      res = await q.select('id,codigo_prj,version');
+      if (!res.error && !(res.data || []).length) {
+        conflictos.push(item.id);
+        continue;
+      }
+    } else {
+      res = await supabaseClient.from('proyectos').insert(conMotivo).select('id,codigo_prj,version');
+      if (res.error?.code === '23505') {
+        /* Otra persona creó un proyecto con el mismo código: se toma el siguiente libre */
+        const anterior = item.id;
+        const nuevo = await siguienteCodigoLibre(esProspecto ? 'COM' : 'PRJ');
+        renombrarCodigo(item, anterior, nuevo);
+        codigosVistos.delete(anterior);
+        codigosVistos.add(nuevo);
+        fila = esProspecto ? filaDesdeProspecto(item) : filaDesdeProyecto(item);
+        res = await supabaseClient.from('proyectos')
+          .insert(item._motivoCambio ? { ...fila, motivo_cambio: item._motivoCambio } : fila)
+          .select('id,codigo_prj,version');
+        if (!res.error) showToast(`El código ${anterior} ya estaba en uso: tu registro quedó como ${nuevo}.`);
+      }
+    }
+    if (res.error) {
+      registrarFallo('el proyecto ' + item.id, res.error);
       continue;
     }
-    const row = (data || [])[0];
+    const row = (res.data || [])[0];
     if (row?.id) item.dbId = row.id;
-    syncSnapshot.proyectos.set(item.id, { hash, dbId: item.dbId || null });
+    if (Number.isInteger(row?.version)) item.dbVersion = row.version;
+    delete item._motivoCambio;
+    syncSnapshot.proyectos.set(item.id, { hash: hashFila(fila), dbId: item.dbId || null });
+  }
+  if (conflictos.length) {
+    showToast(`${conflictos.join(', ')}: otra persona lo modificó (o no tienes permiso). Se cargó la versión más reciente; revisa y vuelve a aplicar tu cambio.`);
+    setTimeout(() => recargarTrasConflicto(), 0);
   }
 
   /* 2. Proyectos eliminados */
@@ -808,7 +844,7 @@ async function sincronizarEstado() {
       : supabaseClient.from('pendientes').insert(fila);
     const { error } = await query;
     if (error) {
-      console.error('[MODUGAL] No se pudo guardar el pendiente', x.id, error);
+      registrarFallo('el pendiente ' + x.id, error);
       continue;
     }
     syncSnapshot.pendientes.set(x.id, { hash });
@@ -848,7 +884,7 @@ async function sincronizarEstado() {
       : supabaseClient.from('tareas_carpintero').insert(fila);
     const { error } = await query;
     if (error) {
-      console.error('[MODUGAL] No se pudo guardar la tarea', t.id, error);
+      registrarFallo('la tarea ' + t.id, error);
       continue;
     }
     syncSnapshot.tareas.set(t.id, { hash });
@@ -871,8 +907,7 @@ async function sincronizarEstado() {
         .from('proyectos_finanzas')
         .upsert(filaDesdeFinanzas(f, dbId), { onConflict: 'proyecto_id' });
       if (error) {
-        console.error('[MODUGAL] No se pudieron guardar las finanzas de', codigo, error);
-        showToast('No se pudieron guardar las finanzas. Revisa tu conexión.');
+        registrarFallo('las finanzas de ' + codigo, error);
         continue;
       }
       syncSnapshot.finanzas.set(codigo, { hash });
@@ -882,16 +917,151 @@ async function sincronizarEstado() {
 
 let ultimoErrorSync = null;
 
+/* --------------------------------------------------------------------------
+   ESTADO DE SINCRONIZACIÓN visible + reintentos seguros
+   La sincronización compara contra el último estado confirmado (snapshot),
+   así que reintentar solo reenvía lo que no se pudo guardar.
+   -------------------------------------------------------------------------- */
+let syncPendientes = 0;
+let syncFallos = 0;
+let syncConError = false;
+let syncReintentos = 0;
+let syncReintentoTimer = null;
+let syncUltimoOk = null;
+const ESPERAS_REINTENTO = [5, 15, 30, 60];
+
+function registrarFallo(que, error) {
+  syncFallos += 1;
+  console.error(`[MODUGAL] No se pudo guardar ${que}`, error);
+}
+
 function encolarSync(fn) {
   if (!sbListo) return syncQueue;
+  syncPendientes += 1;
+  pintarEstadoSync();
   syncQueue = syncQueue
-    .then(fn)
+    .then(async () => {
+      syncFallos = 0;
+      await fn();
+      if (syncFallos > 0) throw new Error(`${syncFallos} cambio(s) no se pudieron guardar`);
+      syncConError = false;
+      syncReintentos = 0;
+      syncUltimoOk = new Date();
+    })
     .catch((e) => {
       ultimoErrorSync = e;
       console.error('[MODUGAL] Error de sincronización con Supabase:', e);
-      if (typeof showToast === 'function') showToast('No se pudo guardar en la nube. Revisa tu conexión.');
+      if (!syncConError && typeof showToast === 'function') {
+        showToast('Hay cambios sin guardar en la nube. Se reintentará automáticamente.');
+      }
+      syncConError = true;
+      programarReintento();
+    })
+    .finally(() => {
+      syncPendientes -= 1;
+      pintarEstadoSync();
     });
   return syncQueue;
+}
+
+function programarReintento() {
+  clearTimeout(syncReintentoTimer);
+  if (!navigator.onLine) return; /* se reintenta en el evento 'online' */
+  const espera = ESPERAS_REINTENTO[Math.min(syncReintentos, ESPERAS_REINTENTO.length - 1)];
+  syncReintentos += 1;
+  syncReintentoTimer = setTimeout(reintentarSync, espera * 1000);
+}
+
+function reintentarSync() {
+  clearTimeout(syncReintentoTimer);
+  if (syncConError && sbListo && state.user) encolarSync(sincronizarEstado);
+}
+
+function pintarEstadoSync() {
+  const el = document.getElementById('mg-sync');
+  if (!el) return;
+  let icono; let texto; let cls; let titulo;
+  if (!state.user) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  if (!navigator.onLine) {
+    icono = 'fa-wifi'; texto = 'Sin conexión'; cls = 'mg-sync--alerta';
+    titulo = 'Sin internet. Tus cambios se guardarán al volver la conexión.';
+  } else if (!sbListo) {
+    icono = 'fa-database'; texto = 'Modo local'; cls = 'mg-sync--alerta';
+    titulo = 'No hay conexión con la base de datos: los cambios no se están guardando en la nube.';
+  } else if (syncPendientes > 0) {
+    icono = 'fa-rotate fa-spin'; texto = 'Guardando…'; cls = 'mg-sync--trabajando';
+    titulo = 'Sincronizando con la nube';
+  } else if (syncConError) {
+    icono = 'fa-triangle-exclamation'; texto = 'Sin guardar · Reintentar'; cls = 'mg-sync--error';
+    titulo = 'Algunos cambios no se guardaron. Clic para reintentar ahora.';
+  } else {
+    icono = 'fa-check'; texto = 'Guardado'; cls = 'mg-sync--ok';
+    titulo = syncUltimoOk ? `Último guardado: ${syncUltimoOk.toLocaleTimeString('es-CO')}` : 'Todo está guardado';
+  }
+  el.className = `mg-sync ${cls}`;
+  el.title = titulo;
+  el.innerHTML = `<i class="fas ${icono}" aria-hidden="true"></i><span class="hidden sm:inline">${texto}</span>`;
+  el.setAttribute('aria-label', titulo);
+}
+
+function hayCambiosSinGuardar() {
+  return Boolean(state.user) && (syncPendientes > 0 || syncConError);
+}
+
+function bindEstadoSync() {
+  document.getElementById('mg-sync')?.addEventListener('click', () => {
+    if (syncConError) reintentarSync();
+  });
+  window.addEventListener('online', () => {
+    pintarEstadoSync();
+    if (syncConError) reintentarSync();
+    else if (state.user) programarRecargaRemota();
+  });
+  window.addEventListener('offline', pintarEstadoSync);
+  /* Aviso del navegador si se intenta cerrar con cambios sin guardar */
+  window.addEventListener('beforeunload', (e) => {
+    if (!hayCambiosSinGuardar()) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+}
+
+/* Códigos únicos aunque dos personas creen registros al mismo tiempo */
+async function siguienteCodigoLibre(prefijo) {
+  const { data } = await supabaseClient.from('proyectos').select('codigo_prj').like('codigo_prj', `${prefijo}-%`);
+  const nums = [...(data || []).map((r) => r.codigo_prj), ...state.proyectos.map((p) => p.id), ...state.comercial.map((c) => c.id)]
+    .filter((c) => String(c || '').startsWith(`${prefijo}-`))
+    .map((c) => parseInt(String(c).replace(/\D/g, ''), 10))
+    .filter((n) => !isNaN(n));
+  const max = nums.length ? Math.max(...nums) : 0;
+  return `${prefijo}-${String(max + 1).padStart(3, '0')}`;
+}
+
+function renombrarCodigo(item, anterior, nuevo) {
+  item.id = nuevo;
+  Object.values(state.tareas || {}).forEach((lista) => (lista || []).forEach((t) => { if (t.projectId === anterior) t.projectId = nuevo; }));
+  state.comercial.forEach((c) => { if (c.proyectoId === anterior) c.proyectoId = nuevo; });
+  if (state.finanzas?.[anterior]) {
+    state.finanzas[nuevo] = state.finanzas[anterior];
+    delete state.finanzas[anterior];
+  }
+  if (state.fichaId === anterior) state.fichaId = nuevo;
+  guardarCacheLocal();
+  renderAll();
+}
+
+/* Tras un conflicto se descarta la copia local y se carga la de la base */
+function recargarTrasConflicto() {
+  encolarSync(async () => {
+    const data = await leerSupabase();
+    if (!state.user) return;
+    aplicarDatos(data);
+    reconstruirSnapshot();
+    guardarCacheLocal();
+    renderAll();
+    refrescarFichaAbierta();
+  });
 }
 
 /* --------------------------------------------------------------------------
@@ -919,6 +1089,9 @@ function programarRecargaRemota() {
     /* No pisar lo que el usuario está escribiendo: reintentar luego */
     if (usuarioEditando()) return programarRecargaRemota();
     if (!sbListo || !state.user) return;
+    /* Si hay cambios locales sin guardar, primero se reintenta guardarlos:
+       recargar desde la base los borraría. */
+    if (syncConError) { reintentarSync(); return; }
     encolarSync(async () => {
       const data = await leerSupabase();
       if (!state.user) return; /* la sesión se cerró mientras se leía */
@@ -1317,6 +1490,7 @@ async function entrarConSesion(authUser) {
 
     if (sbListo) iniciarTiempoReal();
     else showToast('Sin conexión con la base de datos: mostrando la última copia guardada.');
+    pintarEstadoSync();
 
     showToast(`Bienvenido, ${state.user.nombre} · ${labelCargo(state.rol)}`);
     if (esGerencia()) cargarUsuarios();
@@ -1331,6 +1505,9 @@ async function entrarConSesion(authUser) {
 
 function salirDeSesion() {
   detenerTiempoReal();
+  clearTimeout(syncReintentoTimer);
+  syncConError = false;
+  syncReintentos = 0;
   const key = storageKey();
   if (key) { try { localStorage.removeItem(key); } catch (e) { /* noop */ } }
   sesionUserId = null;
@@ -1343,12 +1520,17 @@ function salirDeSesion() {
   aplicarPermisosUI();
   updateUserChip();
   renderAll();
+  pintarEstadoSync();
   mostrarLogin();
 }
 
 async function cerrarSesion() {
   /* Se espera a que terminen los guardados pendientes antes de salir */
   try { await syncQueue; } catch (e) { /* noop */ }
+  if (syncConError && !window.confirm('Hay cambios que no se han guardado en la nube y se perderán al cerrar sesión. ¿Cerrar sesión de todos modos?')) {
+    reintentarSync();
+    return;
+  }
   const { error } = await supabaseClient.auth.signOut();
   if (error) console.warn('[MODUGAL] signOut:', error);
   salirDeSesion();
@@ -2949,16 +3131,19 @@ function onPedidoGuardar(e) {
 
 function mostrarSubFicha(sub) {
   if (sub === 'finanzas' && !puedeVerFinanzas()) sub = 'resumen';
+  if (sub === 'historial' && !puedeVerHistorial()) sub = 'resumen';
   state.fichaSub = sub;
   document.querySelectorAll('#ficha-subtabs [data-sub]').forEach((b) => {
     b.classList.toggle('active', b.dataset.sub === sub);
     if (b.dataset.sub === 'finanzas') b.classList.toggle('hidden', !puedeVerFinanzas());
+    if (b.dataset.sub === 'historial') b.classList.toggle('hidden', !puedeVerHistorial());
   });
-  const panes = ['resumen', 'muebles', 'pendientes', 'pedidos', 'bloqueos', 'dropbox', 'finanzas'];
+  const panes = ['resumen', 'muebles', 'pendientes', 'pedidos', 'bloqueos', 'dropbox', 'finanzas', 'historial'];
   panes.forEach((nombre) => {
     const el = document.getElementById(`ficha-${nombre}`);
     if (el) el.classList.toggle('is-hidden', nombre !== sub);
   });
+  if (sub === 'historial' && state.fichaId) cargarHistorial(state.fichaId);
 }
 
 function openFicha(id) {
@@ -3165,6 +3350,9 @@ function abrirProyectoModal(id, focus) {
   set('proyecto-operador', p?.logisticOperator || 'Wilyer');
   set('proyecto-fecha-inicio', p?.dateStart || formatFechaLarga(new Date()));
   set('proyecto-fecha-entrega', p?.dateExpected || '');
+  state.fechaEntregaOriginal = p ? (p.dateExpected || '') : null;
+  set('proyecto-motivo', '');
+  document.getElementById('proyecto-motivo-wrap')?.classList.add('hidden');
   set('proyecto-imagen', p?.image && p.image !== DEFAULT_IMAGE ? p.image : '');
   const fileImg = document.getElementById('proyecto-imagen-file');
   if (fileImg) fileImg.value = '';
@@ -3282,8 +3470,19 @@ async function guardarProyecto(e) {
   const cliente = document.getElementById('proyecto-cliente').value.trim();
   if (!nombre || !cliente) { showToast('Nombre y cliente son obligatorios.'); return; }
 
-  /* Imagen: si se escogió un archivo, se sube a Supabase Storage primero */
+  /* Cambiar la fecha prometida exige un motivo (queda en el historial) */
   const editando = state.proyectoModalMode === 'editar' && state.proyectoModalId;
+  const nuevaFecha = document.getElementById('proyecto-fecha-entrega').value.trim() || 'Por definir';
+  const cambiaFecha = editando && state.fechaEntregaOriginal !== null && nuevaFecha !== (state.fechaEntregaOriginal || 'Por definir');
+  const motivoFecha = document.getElementById('proyecto-motivo')?.value.trim() || '';
+  if (cambiaFecha && !motivoFecha) {
+    document.getElementById('proyecto-motivo-wrap')?.classList.remove('hidden');
+    document.getElementById('proyecto-motivo')?.focus();
+    showToast('Escribe el motivo del cambio de fecha de entrega.');
+    return;
+  }
+
+  /* Imagen: si se escogió un archivo, se sube a Supabase Storage primero */
   const codigo = editando ? state.proyectoModalId : generarIdProyecto();
   const archivo = document.getElementById('proyecto-imagen-file')?.files?.[0];
   if (archivo) {
@@ -3336,6 +3535,7 @@ async function guardarProyecto(e) {
     };
     Object.assign(p, datos);
     if (!puedeAsignar()) Object.assign(p, originalProduccion);
+    if (cambiaFecha) p._motivoCambio = `Fecha de entrega: ${state.fechaEntregaOriginal || 'Por definir'} → ${nuevaFecha}. Motivo: ${motivoFecha}`;
     p.commercialDetail = p.commercialDetail || detalleProyecto(p);
     p.alert = primerPendiente(p)?.text || '';
     commit();
@@ -3652,6 +3852,11 @@ function bindFichaEvents() {
     if (!file) return;
     if (!TIPOS_IMAGEN.includes(file.type)) { showToast('La imagen debe ser JPG, PNG o WEBP.'); e.target.value = ''; return; }
     pintarPreviewImagen(URL.createObjectURL(file));
+  });
+  document.getElementById('proyecto-fecha-entrega')?.addEventListener('input', (e) => {
+    const editando = state.proyectoModalMode === 'editar' && state.fechaEntregaOriginal !== null;
+    const cambia = editando && (e.target.value.trim() || 'Por definir') !== (state.fechaEntregaOriginal || 'Por definir');
+    document.getElementById('proyecto-motivo-wrap')?.classList.toggle('hidden', !cambia);
   });
   document.getElementById('proyecto-imagen-quitar')?.addEventListener('click', () => {
     document.getElementById('proyecto-imagen').value = '';
@@ -4189,6 +4394,159 @@ function refrescarFichaAbierta() {
 }
 
 /* ==========================================================================
+   21d. HISTORIAL DEL PROYECTO (tabla historial_eventos · solo lectura)
+   ========================================================================== */
+
+function puedeVerHistorial() {
+  return ['administrativo', 'operativo', 'secretaria'].includes(state.rol);
+}
+
+const ETIQUETAS_CAMPO = {
+  cliente: 'Cliente', ciudad: 'Ciudad', fase_actual: 'Fase de producción', etapa_comercial: 'Etapa comercial',
+  fecha_entrega: 'Fecha de entrega (BD)', imagen_url: 'Imagen', trazador_responsable: 'Responsable',
+  motivo_rechazo: 'Motivo de rechazo', codigo_prj: 'Código', descripcion: 'Descripción', estado: 'Estado',
+  actividad: 'Actividad', detalle: 'Detalle', nombre_mueble: 'Mueble / trabajo', carpintero_id: 'Personal',
+  es_lider: 'Líder de instalación', nombre: 'Nombre', cargo: 'Cargo', activo: 'Activo',
+  valor_venta: 'Valor de venta', costo_materiales: 'Costo materiales', costo_mano_obra: 'Costo mano de obra',
+  otros_costos: 'Otros costos', anticipo: 'Anticipo', notas: 'Notas', utilidad: 'Utilidad', margen_pct: 'Margen %',
+  'ficha.name': 'Nombre del proyecto', 'ficha.muebles': 'Muebles', 'ficha.pedidos': 'Pedidos de material',
+  'ficha.bloqueos': 'Bloqueos', 'ficha.dateExpected': 'Fecha de entrega', 'ficha.dateStart': 'Fecha de inicio',
+  'ficha.status': 'Estado', 'ficha.detalle': 'Detalle comercial', 'ficha.leadCarpenter': 'Carpintero líder',
+  'ficha.arquitecto': 'Arquitecto', 'ficha.logisticOperator': 'Operador logístico', 'ficha.neighborhood': 'Barrio',
+  'ficha.address': 'Dirección', 'ficha.phone': 'Teléfono', 'ficha.trimester': 'Trimestre',
+  'ficha.archivos': 'Archivos', 'ficha.dropboxFiles': 'Carpeta pública',
+};
+/* Campos técnicos o duplicados que no aportan al lector */
+const CAMPOS_OCULTOS = new Set(['id', 'proyecto_id', 'grupo_id', 'fase_manual', 'estado_tarea', 'ficha.alert',
+  'ficha.manufacturingPhase', 'ficha.commercialStage', 'ficha.client', 'ficha.image', 'ficha.city', 'archivos_privados',
+  'activo_desde', 'descripcion_venta']);
+const TABLAS_HIST = {
+  proyectos: { label: 'Proyecto', icon: 'fa-folder-open', color: 'bg-slate-900' },
+  pendientes: { label: 'Pendiente', icon: 'fa-clipboard-list', color: 'bg-amber-600' },
+  tareas_carpintero: { label: 'Tarea', icon: 'fa-hammer', color: 'bg-sky-700' },
+  carpinteros: { label: 'Personal', icon: 'fa-id-badge', color: 'bg-violet-700' },
+  proyectos_finanzas: { label: 'Finanzas', icon: 'fa-lock', color: 'bg-red-600' },
+  usuarios: { label: 'Usuario', icon: 'fa-user-shield', color: 'bg-emerald-700' },
+};
+
+function valorHist(clave, v) {
+  if (v === null || v === undefined || v === '') return '—';
+  if (clave === 'carpintero_id') return (state.carpinteros || []).find((c) => c.id === v)?.nombre || 'Personal eliminado';
+  if (clave === 'descripcion') return String(v).replace(/\s*\[[^\]]*\]\s*$/, '');
+  if (typeof v === 'boolean') return v ? 'Sí' : 'No';
+  if (typeof v === 'number' && ['valor_venta', 'costo_materiales', 'costo_mano_obra', 'otros_costos', 'anticipo', 'utilidad'].includes(clave)) return cop(v);
+  if (Array.isArray(v)) return `${v.length} elemento${v.length === 1 ? '' : 's'}`;
+  if (typeof v === 'object') return 'actualizado';
+  const t = String(v);
+  return t.length > 90 ? `${t.slice(0, 90)}…` : t;
+}
+
+/* Muebles, pedidos y bloqueos: qué se agregó, quitó o cambió */
+function diffLista(antes, despues) {
+  const a = Array.isArray(antes) ? antes : [];
+  const d = Array.isArray(despues) ? despues : [];
+  const nombre = (x) => x?.name || x?.material || x?.text || x?.descripcion || x?.motivo || x?.id || 'elemento';
+  const porId = (lista) => new Map(lista.filter((x) => x && x.id).map((x) => [x.id, x]));
+  const ma = porId(a);
+  const md = porId(d);
+  const lineas = [];
+  md.forEach((x, id) => { if (!ma.has(id)) lineas.push(`+ ${nombre(x)}`); });
+  ma.forEach((x, id) => { if (!md.has(id)) lineas.push(`− ${nombre(x)}`); });
+  md.forEach((x, id) => {
+    const y = ma.get(id);
+    if (!y) return;
+    const cambios = Object.keys({ ...x, ...y })
+      .filter((k) => k !== 'id' && JSON.stringify(x[k]) !== JSON.stringify(y[k]) && typeof (x[k] ?? y[k]) !== 'object')
+      .map((k) => `${k === 'carpenter' ? 'responsable' : k === 'manufacturingPhase' ? 'fase' : k}: ${valorHist(k, y[k])} → ${valorHist(k, x[k])}`);
+    if (cambios.length) lineas.push(`${nombre(x)} · ${cambios.join(', ')}`);
+  });
+  if (!lineas.length && a.length !== d.length) lineas.push(`${a.length} → ${d.length} elementos`);
+  return lineas.slice(0, 8);
+}
+
+function lineasCambio(ev) {
+  const cambios = ev.cambios || {};
+  const claves = Object.keys(cambios).filter((k) => !CAMPOS_OCULTOS.has(k));
+  if (ev.accion === 'crear' || ev.accion === 'eliminar') {
+    const lado = ev.accion === 'crear' ? 'despues' : 'antes';
+    const principal = ['descripcion', 'nombre_mueble', 'ficha.name', 'nombre', 'cliente']
+      .find((k) => cambios[k]?.[lado]);
+    const extra = ['actividad', 'detalle', 'carpintero_id', 'estado', 'cargo']
+      .filter((k) => cambios[k]?.[lado] !== undefined && cambios[k]?.[lado] !== null && cambios[k]?.[lado] !== '')
+      .map((k) => `${ETIQUETAS_CAMPO[k] || k}: ${valorHist(k, cambios[k][lado])}`);
+    return [principal ? valorHist(principal, cambios[principal][lado]) : '', ...extra].filter(Boolean);
+  }
+  const out = [];
+  claves.forEach((k) => {
+    const { antes, despues } = cambios[k] || {};
+    if (Array.isArray(antes) || Array.isArray(despues)) {
+      diffLista(antes, despues).forEach((l) => out.push(`${ETIQUETAS_CAMPO[k] || k}: ${l}`));
+    } else {
+      out.push(`${ETIQUETAS_CAMPO[k] || k}: ${valorHist(k, antes)} → ${valorHist(k, despues)}`);
+    }
+  });
+  return out;
+}
+
+function fechaHoraHist(iso) {
+  const d = new Date(iso);
+  if (isNaN(d)) return '';
+  return d.toLocaleString('es-CO', { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+async function cargarHistorial(codigo) {
+  const lista = document.getElementById('historial-lista');
+  if (!lista) return;
+  if (!puedeVerHistorial()) { lista.innerHTML = ''; return; }
+  if (!sbListo) {
+    lista.innerHTML = '<li class="text-slate-400 p-4 text-center">El historial requiere conexión con la base de datos.</li>';
+    return;
+  }
+  lista.innerHTML = '<li class="text-slate-400 p-4 text-center"><i class="fas fa-spinner fa-spin mr-1" aria-hidden="true"></i>Cargando historial…</li>';
+  const { data, error } = await supabaseClient
+    .from('historial_eventos')
+    .select('id,tabla,accion,cambios,motivo,usuario_nombre,usuario_rol,creado_en')
+    .eq('codigo_prj', codigo)
+    .order('creado_en', { ascending: false })
+    .limit(150);
+  if (state.fichaId !== codigo) return; /* el usuario ya cambió de ficha */
+  if (error) {
+    lista.innerHTML = `<li class="text-red-600 font-bold p-4">No se pudo cargar el historial: ${esc(error.message)}</li>`;
+    return;
+  }
+  const eventos = (data || []).map((ev) => ({ ...ev, lineas: lineasCambio(ev) }))
+    .filter((ev) => ev.accion !== 'modificar' || ev.lineas.length || ev.motivo);
+  if (!eventos.length) {
+    lista.innerHTML = '<li class="text-slate-400 p-6 text-center border border-dashed border-slate-300 rounded-xl">Aún no hay cambios registrados para este proyecto.</li>';
+    return;
+  }
+  const verbos = { crear: 'creó', modificar: 'modificó', eliminar: 'eliminó' };
+  lista.innerHTML = eventos.map((ev) => {
+    const t = TABLAS_HIST[ev.tabla] || { label: ev.tabla, icon: 'fa-circle', color: 'bg-slate-500' };
+    return `
+      <li class="hist-item">
+        <span class="hist-dot ${t.color}"><i class="fas ${t.icon}" aria-hidden="true"></i></span>
+        <div class="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
+          <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+            <p class="text-slate-800"><strong>${esc(ev.usuario_nombre || 'Desconocido')}</strong>
+              <span class="text-slate-500">${verbos[ev.accion] || ev.accion} ${esc(t.label.toLowerCase())}</span></p>
+            <time class="text-[10px] text-slate-400 font-bold" datetime="${esc(ev.creado_en)}">${esc(fechaHoraHist(ev.creado_en))}</time>
+          </div>
+          ${ev.usuario_rol ? `<p class="text-[10px] text-slate-400 uppercase font-bold">${esc(labelCargo(ev.usuario_rol))}</p>` : ''}
+          ${ev.motivo ? `<p class="mt-2 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg px-2 py-1"><i class="fas fa-quote-left text-[9px] mr-1" aria-hidden="true"></i>${esc(ev.motivo)}</p>` : ''}
+          ${ev.lineas.length ? `<ul class="mt-2 space-y-0.5 text-slate-700">${ev.lineas.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : ''}
+        </div>
+      </li>`;
+  }).join('');
+}
+
+function bindHistorialEvents() {
+  document.getElementById('historial-recargar')?.addEventListener('click', () => {
+    if (state.fichaId) cargarHistorial(state.fichaId);
+  });
+}
+
+/* ==========================================================================
    22. INICIALIZACIÓN
    ========================================================================== */
 
@@ -4211,6 +4569,8 @@ async function init() {
   bindChatEvents();
   bindUsuariosEvents();
   bindEquipoEvents();
+  bindEstadoSync();
+  bindHistorialEvents();
   bindFinanzasEvents();
 
   /* Sin sesión no se muestra ni se consulta ningún dato */
