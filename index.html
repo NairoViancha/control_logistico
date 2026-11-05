@@ -51,6 +51,10 @@
           <input id="login-password" type="password" autocomplete="current-password" minlength="6" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" required />
         </div>
         <div data-solo-registro class="hidden">
+          <label for="login-password2" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Confirmar contraseña</label>
+          <input id="login-password2" type="password" autocomplete="new-password" minlength="6" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+        </div>
+        <div data-solo-registro class="hidden">
           <label for="login-cargo" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Cargo solicitado</label>
           <select id="login-cargo" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white">
             <option value="administrativo">Gerencia / Administrativo</option>
@@ -85,6 +89,8 @@
         <div id="forgot-pass-wrap" class="hidden">
           <label for="forgot-pass" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Nueva contraseña</label>
           <input id="forgot-pass" type="password" autocomplete="new-password" minlength="6" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+          <label for="forgot-pass2" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1 mt-3">Confirmar contraseña</label>
+          <input id="forgot-pass2" type="password" autocomplete="new-password" minlength="6" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
         </div>
       </div>
       <p id="forgot-msg" class="hidden" role="status"></p>
@@ -153,31 +159,31 @@
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
       <div class="flex overflow-x-auto scrollbar-hide">
         <button type="button" class="mg-tab active" data-tab="produccion">
-          <i class="fas fa-layout-dashboard mr-2" aria-hidden="true"></i>Tablero de Producción
+          <i class="fas fa-layout-dashboard mr-2" aria-hidden="true"></i>Producción
         </button>
         <button type="button" class="mg-tab" data-tab="equipo">
-          <i class="fas fa-users mr-2" aria-hidden="true"></i>Equipo &amp; Asignaciones
+          <i class="fas fa-users mr-2" aria-hidden="true"></i>Equipo
         </button>
         <button type="button" class="mg-tab" data-tab="comercial">
-          <i class="fas fa-briefcase mr-2" aria-hidden="true"></i>Seguimiento Comercial
+          <i class="fas fa-briefcase mr-2" aria-hidden="true"></i>Comercial
         </button>
         <button type="button" class="mg-tab" data-tab="tabla">
-          <i class="fas fa-table mr-2" aria-hidden="true"></i>Tabla General de Proyectos
+          <i class="fas fa-table mr-2" aria-hidden="true"></i>Tabla General
         </button>
         <button type="button" class="mg-tab" data-tab="proyectos">
           <i class="fas fa-calendar-alt mr-2" aria-hidden="true"></i>Proyectos
         </button>
         <button type="button" class="mg-tab" data-tab="centro">
-          <i class="fas fa-tower-broadcast mr-2" aria-hidden="true"></i>Centro de Control Logístico
+          <i class="fas fa-tower-broadcast mr-2" aria-hidden="true"></i>Control
         </button>
         <button type="button" class="mg-tab" data-tab="stats">
-          <i class="fas fa-chart-bar mr-2" aria-hidden="true"></i>Estadísticas &amp; Rendimiento
+          <i class="fas fa-chart-bar mr-2" aria-hidden="true"></i>Estadísticas
         </button>
         <button type="button" class="mg-tab hidden" data-tab="usuarios">
-          <i class="fas fa-user-shield mr-2" aria-hidden="true"></i>Usuarios &amp; Accesos
+          <i class="fas fa-user-shield mr-2" aria-hidden="true"></i>Usuarios
         </button>
         <button type="button" class="mg-tab sm:hidden" data-tab="new-order">
-          <i class="fas fa-cart-plus mr-2" aria-hidden="true"></i>Compra de Material
+          <i class="fas fa-cart-plus mr-2" aria-hidden="true"></i>Compras
         </button>
       </div>
     </div>
@@ -227,14 +233,18 @@
           <p class="text-xs text-slate-500 mt-0.5">Control visual por proyecto · fases bidireccionales y pendientes sincronizados</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
+          <div class="vista-toggle" role="group" aria-label="Tipo de vista" data-vista-para="produccion">
+            <button type="button" data-vista="tarjetas" title="Vista en tarjetas" aria-label="Vista en tarjetas"><i class="fas fa-grip" aria-hidden="true"></i></button>
+            <button type="button" data-vista="lista" title="Vista en lista" aria-label="Vista en lista"><i class="fas fa-list" aria-hidden="true"></i></button>
+          </div>
           <button type="button" class="bg-red-600 hover:bg-red-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs shadow-sm" data-accion="nuevo-proyecto">
             <i class="fas fa-plus mr-1" aria-hidden="true"></i>Nuevo Proyecto
           </button>
-          <div id="filtros-produccion" class="flex flex-wrap items-center gap-2 bg-slate-200/60 p-1 rounded-xl border border-slate-200">
-            <button type="button" class="f-chip active bg-red-600 text-white border-red-600" data-filtro="todos">Todos</button>
-            <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="Detenido">Detenido</button>
-            <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="En proceso">En proceso</button>
-            <button type="button" class="f-chip bg-white text-slate-600 border-slate-200" data-filtro="Completado">Completado</button>
+          <div id="filtros-produccion" class="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-full border border-slate-200" role="group" aria-label="Filtrar por estado">
+            <button type="button" class="f-chip active" data-filtro="todos" aria-pressed="true">Todos</button>
+            <button type="button" class="f-chip" data-filtro="Detenido" aria-pressed="false">Detenido</button>
+            <button type="button" class="f-chip" data-filtro="En proceso" aria-pressed="false">En proceso</button>
+            <button type="button" class="f-chip" data-filtro="Completado" aria-pressed="false">Completado</button>
           </div>
         </div>
       </div>
@@ -267,11 +277,16 @@
       <div class="mb-6 border-b border-slate-200 pb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
           <h2 class="text-xl font-black text-slate-900 tracking-wide">Carga Laboral y Asignaciones</h2>
-          <p class="text-xs text-slate-500 mt-0.5">Modifica, reasigna o elimina tareas · control de fase por mueble</p>
+          <p class="text-xs text-slate-500 mt-0.5">Qué está haciendo cada persona: trazado, material, armado, luces, embalaje o instalación</p>
         </div>
-        <button type="button" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-3.5 py-2 rounded-xl text-xs shadow-sm" id="equipo-nueva-tarea" data-accion="nueva-tarea">
-          <i class="fas fa-plus mr-1" aria-hidden="true"></i>Asignar Tarea
-        </button>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="hidden bg-white hover:bg-slate-50 text-slate-800 font-bold px-3.5 py-2 rounded-xl text-xs shadow-sm border border-slate-200" id="equipo-personal">
+            <i class="fas fa-id-badge mr-1" aria-hidden="true"></i>Personal
+          </button>
+          <button type="button" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-3.5 py-2 rounded-xl text-xs shadow-sm" id="equipo-nueva-tarea" data-accion="nueva-tarea">
+            <i class="fas fa-plus mr-1" aria-hidden="true"></i>Asignar Tarea
+          </button>
+        </div>
       </div>
       <div id="equipo-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"></div>
     </section>
@@ -344,9 +359,15 @@
             <h2 class="text-xl font-black text-slate-900 tracking-wide">Proyectos</h2>
             <p class="text-xs text-slate-500">Todos los proyectos activos de la fábrica · filtros de planeación</p>
           </div>
+          <div class="flex flex-wrap items-center gap-2">
+          <div class="vista-toggle" role="group" aria-label="Tipo de vista" data-vista-para="proyectos">
+            <button type="button" data-vista="tarjetas" title="Vista en tarjetas" aria-label="Vista en tarjetas"><i class="fas fa-grip" aria-hidden="true"></i></button>
+            <button type="button" data-vista="lista" title="Vista en lista" aria-label="Vista en lista"><i class="fas fa-list" aria-hidden="true"></i></button>
+          </div>
           <button type="button" class="bg-red-600 hover:bg-red-700 text-white font-bold px-3.5 py-2 rounded-xl text-xs shadow-sm" data-accion="nuevo-proyecto">
             <i class="fas fa-plus mr-1" aria-hidden="true"></i>Nuevo Proyecto
           </button>
+          </div>
         </div>
         <div class="flex flex-wrap items-center gap-3 mt-5">
           <div class="flex items-center space-x-2">
@@ -540,8 +561,9 @@
           <div class="space-y-2">
             <img id="ficha-imagen" src="" alt="" class="w-full h-64 object-cover rounded-xl border border-slate-200 shadow-sm bg-slate-100" />
             <button type="button" id="ficha-cambiar-imagen" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2 rounded-xl text-xs border border-slate-200">
-              <i class="fas fa-image mr-1" aria-hidden="true"></i>Cambiar imagen / URL
+              <i class="fas fa-image mr-1" aria-hidden="true"></i>Cambiar imagen
             </button>
+            <input id="ficha-imagen-file" type="file" accept="image/jpeg,image/png,image/webp" class="hidden" />
           </div>
           <div class="space-y-4 text-xs">
             <div class="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
@@ -779,7 +801,7 @@
           </div>
           <div>
             <label for="proyecto-carpintero" class="block font-bold text-slate-700 uppercase mb-1">Carpintero líder</label>
-            <input id="proyecto-carpintero" type="text" list="carpinteros-list" placeholder="Sin asignar" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
+            <select id="proyecto-carpintero" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900"></select>
           </div>
           <div>
             <label for="proyecto-operador" class="block font-bold text-slate-700 uppercase mb-1">Operador logístico</label>
@@ -832,9 +854,18 @@
             <input id="proyecto-fecha-entrega" type="text" placeholder="Ej. 20 Nov 2026" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
           </div>
           <div class="sm:col-span-2">
-            <label for="proyecto-imagen" class="block font-bold text-slate-700 uppercase mb-1">URL de imagen representativa</label>
-            <input id="proyecto-imagen" type="url" placeholder="https://..." class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
-            <p class="text-[10px] text-slate-400 mt-1">Pega una URL pública (Unsplash, Dropbox, CDN). Si se deja vacía se usa una imagen por defecto.</p>
+            <label for="proyecto-imagen-file" class="block font-bold text-slate-700 uppercase mb-1">Imagen del proyecto</label>
+            <div class="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3">
+              <img id="proyecto-imagen-preview" src="" alt="Vista previa de la imagen" class="w-24 h-16 object-cover rounded-lg border border-slate-200 bg-slate-100 shrink-0" />
+              <div class="flex-1 min-w-0 space-y-1.5">
+                <input id="proyecto-imagen-file" type="file" accept="image/jpeg,image/png,image/webp" class="w-full text-xs text-slate-700 file:mr-2 file:rounded-lg file:border-0 file:bg-red-600 file:px-3 file:py-1.5 file:font-bold file:text-white hover:file:bg-red-700" />
+                <div class="flex items-center justify-between gap-2">
+                  <p class="text-[10px] text-slate-400">JPG, PNG o WEBP · se optimiza antes de subir.</p>
+                  <button type="button" id="proyecto-imagen-quitar" class="text-[10px] font-bold text-slate-500 hover:text-red-600 shrink-0">Quitar</button>
+                </div>
+              </div>
+            </div>
+            <input id="proyecto-imagen" type="hidden" />
           </div>
           <div class="sm:col-span-2">
             <label for="proyecto-detalle" class="block font-bold text-slate-700 uppercase mb-1">Desglose escrito del pedido</label>
@@ -1018,29 +1049,65 @@
        MODAL · ASIGNAR / EDITAR TAREA A CARPINTERO
        ============================================================ -->
   <div id="tarea-modal" class="is-hidden fixed inset-0 z-[88] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-    <div class="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl p-6">
+    <div class="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl p-6 max-h-[92vh] overflow-y-auto">
       <h3 class="text-xl font-black text-slate-900 mb-4" id="tarea-title">Asignar Tarea</h3>
       <div class="space-y-3 text-xs">
         <div>
-          <label for="tarea-carpintero-input" class="block font-bold text-slate-500 uppercase mb-1">Carpintero</label>
-          <input id="tarea-carpintero-input" type="text" list="carpinteros-list" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-bold" placeholder="Nombre del carpintero" />
-          <datalist id="carpinteros-list"></datalist>
+          <label for="tarea-actividad" class="block font-bold text-slate-500 uppercase mb-1">¿Qué va a hacer?</label>
+          <select id="tarea-actividad" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-bold"></select>
         </div>
+        <div>
+          <label for="tarea-carpintero-input" id="tarea-persona-label" class="block font-bold text-slate-500 uppercase mb-1">Personal</label>
+          <select id="tarea-carpintero-input" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-bold"></select>
+        </div>
+        <div id="tarea-equipo-box" class="hidden">
+          <p class="block font-bold text-slate-500 uppercase mb-1">Equipo de apoyo en la instalación</p>
+          <div id="tarea-equipo" class="grid grid-cols-1 gap-1.5 max-h-48 overflow-y-auto"></div>
+        </div>
+        <label id="tarea-lider-box" class="hidden flex items-center gap-2 p-2.5 rounded-xl border border-emerald-200 bg-emerald-50 font-bold text-emerald-900 cursor-pointer">
+          <input id="tarea-es-lider" type="checkbox" class="accent-red-600" />
+          Es el líder de esta instalación
+        </label>
         <div>
           <label for="tarea-proyecto" class="block font-bold text-slate-500 uppercase mb-1">Proyecto</label>
           <select id="tarea-proyecto" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900"></select>
         </div>
         <div>
-          <label for="tarea-texto" class="block font-bold text-slate-500 uppercase mb-1">Descripción de la tarea / mueble</label>
-          <input id="tarea-texto" type="text" placeholder="Ej. Trazado de isla - Proyecto X" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
+          <label for="tarea-texto" class="block font-bold text-slate-500 uppercase mb-1">Mueble o trabajo</label>
+          <input id="tarea-texto" type="text" placeholder="Ej. Isla central, closet principal" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
+        </div>
+        <div>
+          <label for="tarea-detalle" class="block font-bold text-slate-500 uppercase mb-1">Detalle</label>
+          <input id="tarea-detalle" type="text" placeholder="Ej. Material Ámbar · luces LED cálidas" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
         </div>
         <p id="tarea-info" class="text-[10px] text-slate-500 bg-slate-50 border border-slate-200 rounded-lg p-2"></p>
       </div>
-      <div class="flex flex-wrap space-x-2 mt-5">
+      <div class="flex flex-wrap gap-2 mt-5">
         <button type="button" id="tarea-guardar" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">Guardar</button>
         <button type="button" id="tarea-eliminar" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 py-2.5 rounded-xl text-sm hidden">Eliminar</button>
         <button type="button" id="tarea-close" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm">Cancelar</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal: Personal de planta (solo Gerencia) -->
+  <div id="personal-modal" class="is-hidden fixed inset-0 z-[88] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white border border-slate-200 w-full max-w-lg rounded-2xl shadow-2xl p-6 max-h-[92vh] flex flex-col">
+      <div class="flex items-start justify-between gap-3 mb-4">
+        <div>
+          <h3 class="text-xl font-black text-slate-900">Personal de planta</h3>
+          <p class="text-xs text-slate-500 mt-1">Solo el personal registrado aquí se puede asignar a tareas e instalaciones.</p>
+        </div>
+        <button type="button" id="personal-close" class="bg-slate-100 hover:bg-slate-200 text-slate-700 w-8 h-8 rounded-full shrink-0" aria-label="Cerrar"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+      </div>
+      <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2 text-xs bg-slate-50 border border-slate-200 rounded-xl p-3">
+        <label for="personal-nombre" class="sr-only">Nombre</label>
+        <input id="personal-nombre" type="text" placeholder="Nombre completo" class="bg-white border border-slate-200 rounded-lg p-2.5 text-slate-900" />
+        <label for="personal-cargo" class="sr-only">Cargo</label>
+        <select id="personal-cargo" class="bg-white border border-slate-200 rounded-lg p-2.5 font-bold text-slate-900"></select>
+        <button type="button" id="personal-agregar" class="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2.5 rounded-lg"><i class="fas fa-user-plus mr-1" aria-hidden="true"></i>Registrar</button>
+      </div>
+      <div id="personal-lista" class="space-y-2 mt-4 overflow-y-auto"></div>
     </div>
   </div>
 

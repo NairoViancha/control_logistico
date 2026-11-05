@@ -38,6 +38,21 @@ const STAGES_STATS = [
   { phase: 'Instalación Final', days: '4.1 Días', label: 'Normal', color: 'border-slate-200 bg-slate-50 text-slate-800' },
 ];
 
+/* Personal de planta y actividades que puede estar haciendo cada persona.
+   (Las fases Recepción/Asignación/Despacho son del proyecto, no del operario.) */
+const CARGOS_PERSONAL = ['Carpintero', 'Auxiliar de carpintería', 'Eléctrico'];
+const ACTIVIDADES = [
+  { v: 'Trazando', icon: 'fa-ruler-combined', cls: 'bg-sky-50 text-sky-800 border-sky-200' },
+  { v: 'Escogiendo material', icon: 'fa-boxes-stacked', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
+  { v: 'Armando', icon: 'fa-hammer', cls: 'bg-slate-100 text-slate-800 border-slate-300' },
+  { v: 'Añadiendo luces', icon: 'fa-lightbulb', cls: 'bg-yellow-50 text-yellow-800 border-yellow-200' },
+  { v: 'Embalaje', icon: 'fa-box', cls: 'bg-violet-50 text-violet-800 border-violet-200' },
+  { v: 'Instalación', icon: 'fa-screwdriver-wrench', cls: 'bg-emerald-50 text-emerald-800 border-emerald-200' },
+  { v: 'Otra', icon: 'fa-ellipsis', cls: 'bg-white text-slate-700 border-slate-200' },
+];
+const ACTIVIDAD_POR_NOMBRE = Object.fromEntries(ACTIVIDADES.map((a) => [a.v, a]));
+const BUCKET_IMAGENES = 'proyectos-imagenes';
+
 const ROLE_LABELS = {
   administrativo: 'Gerencia',
   operativo: 'Logística / Operativo',
@@ -59,6 +74,16 @@ const TEMA_KEY = 'modugal_tema';
    (guardaban usuarios y contraseñas en texto plano). */
 const CLAVES_LEGADAS = ['modugal_estado_v1', 'modugal_rol', 'modugal_usuarios', 'modugal_sesion'];
 const ROLES_VALIDOS = ['administrativo', 'operativo', 'secretaria', 'arquitecto'];
+
+const VISTAS_KEY = 'modugal_vistas';
+function leerVistas() {
+  try {
+    const v = JSON.parse(localStorage.getItem(VISTAS_KEY) || '{}');
+    return { produccion: v.produccion === 'lista' ? 'lista' : 'tarjetas', proyectos: v.proyectos === 'lista' ? 'lista' : 'tarjetas' };
+  } catch (e) {
+    return { produccion: 'tarjetas', proyectos: 'tarjetas' };
+  }
+}
 
 function storageKey() {
   return state.user?.id ? STORAGE_PREFIX + state.user.id : null;
@@ -95,6 +120,8 @@ const state = {
   /* Lista de usuarios para el panel de Gerencia */
   usuarios: [],
   usuariosFiltro: 'pendiente',
+  /* Vista de Producción y Proyectos: 'tarjetas' | 'lista' (se recuerda por navegador) */
+  vistas: leerVistas(),
   /* Rol efectivo: viene SIEMPRE de public.usuarios (nunca del navegador).
      Sin sesión se usa el rol de menor privilegio. */
   rol: 'arquitecto',
@@ -522,6 +549,10 @@ function filaDesdeTarea(t, carpintero) {
     nombre_mueble: t.text,
     fase_manual: PRODUCTION_PHASES.includes(t.phase) ? t.phase : 'Asignación',
     estado_tarea: t.estado || 'En proceso',
+    actividad: ACTIVIDAD_POR_NOMBRE[t.actividad] ? t.actividad : 'Otra',
+    detalle: t.detalle || null,
+    grupo_id: t.grupoId || null,
+    es_lider: Boolean(t.esLider),
   };
 }
 
@@ -566,7 +597,12 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRow
     p.alert = p.pendientes[0]?.text || '';
   });
 
-  const carpinterosApp = (carpinteros || []).map((c) => ({ id: c.id, nombre: c.nombre, cargo: c.cargo }));
+  const carpinterosApp = (carpinteros || []).map((c) => ({
+    id: c.id,
+    nombre: c.nombre,
+    cargo: CARGOS_PERSONAL.includes(c.cargo) ? c.cargo : 'Carpintero',
+    activo: c.activo !== false,
+  }));
   const nombrePorId = new Map(carpinterosApp.map((c) => [c.id, c.nombre]));
 
   const tareasApp = {};
@@ -578,6 +614,10 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRow
       text: t.nombre_mueble || 'Tarea sin descripción',
       projectId: codigoPorDbId.get(t.proyecto_id) || null,
       phase: PRODUCTION_PHASES.includes(t.fase_manual) ? t.fase_manual : 'Asignación',
+      actividad: ACTIVIDAD_POR_NOMBRE[t.actividad] ? t.actividad : 'Otra',
+      detalle: t.detalle || '',
+      grupoId: t.grupo_id || null,
+      esLider: Boolean(t.es_lider),
       estado: t.estado_tarea || 'En proceso',
     });
   });
@@ -739,22 +779,8 @@ async function sincronizarEstado() {
     syncSnapshot.proyectos.delete(codigo);
   }
 
-  /* 3. Carpinteros (roster) */
-  const nombresCarpinteros = new Set(Object.keys(state.tareas || {}));
-  state.proyectos.forEach((p) => (p.muebles || []).forEach((m) => { if (m.carpenter) nombresCarpinteros.add(m.carpenter); }));
-  for (const nombre of nombresCarpinteros) {
-    if (!nombre || nombre === 'Sin asignar') continue;
-    if (idCarpinteroPorNombre(nombre)) continue;
-    const { data, error } = await supabaseClient.from('carpinteros')
-      .insert({ nombre, cargo: 'OPERARIO DE PLANTA' })
-      .select('*');
-    if (error) {
-      console.error('[MODUGAL] No se pudo crear el carpintero', nombre, error);
-      continue;
-    }
-    const row = (data || [])[0];
-    if (row) state.carpinteros.push({ id: row.id, nombre: row.nombre, cargo: row.cargo });
-  }
+  /* 3. Personal: solo Gerencia lo registra (módulo Equipo > Personal).
+        La sincronización ya no crea carpinteros a partir de nombres libres. */
 
   /* 4. Pendientes: se resuelven por proyecto_id para refrescar todas las vistas */
   const pendientesActuales = [];
@@ -800,10 +826,12 @@ async function sincronizarEstado() {
 
   for (const { t, carpintero } of tareasActuales) {
     const fila = filaDesdeTarea(t, carpintero);
+    /* Se marca antes de cualquier "continue" para que nunca se borre de la
+       base una tarea solo porque su personal no se encontró localmente. */
+    idsTareas.add(t.id);
     if (!fila.carpintero_id) continue;
     const hash = hashFila(fila);
     const prev = syncSnapshot.tareas.get(t.id);
-    idsTareas.add(t.id);
     if (prev && prev.hash === hash) continue;
     const query = prev
       ? supabaseClient.from('tareas_carpintero').update({
@@ -812,6 +840,10 @@ async function sincronizarEstado() {
         nombre_mueble: fila.nombre_mueble,
         fase_manual: fila.fase_manual,
         estado_tarea: fila.estado_tarea,
+        actividad: fila.actividad,
+        detalle: fila.detalle,
+        grupo_id: fila.grupo_id,
+        es_lider: fila.es_lider,
       }).eq('id', t.id)
       : supabaseClient.from('tareas_carpintero').insert(fila);
     const { error } = await query;
@@ -1069,12 +1101,34 @@ function completitudFicha(p) {
   return Math.round((ok / (checks.length + 2)) * 100);
 }
 
+/* Solo el personal registrado por Gerencia y activo */
+function personalActivo() {
+  return (state.carpinteros || [])
+    .filter((c) => c.activo !== false && c.nombre)
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+}
+
 function carpentersList() {
-  const nombres = new Set();
-  state.proyectos.forEach((p) => (p.muebles || []).forEach((m) => { if (m.carpenter) nombres.add(m.carpenter); }));
-  Object.keys(state.tareas || {}).forEach((k) => { if (k) nombres.add(k); });
-  (state.carpinteros || []).forEach((c) => { if (c.nombre) nombres.add(c.nombre); });
-  return Array.from(nombres).sort((a, b) => a.localeCompare(b));
+  return personalActivo().map((c) => c.nombre);
+}
+
+function cargoDe(nombre) {
+  return (state.carpinteros || []).find((c) => c.nombre === nombre)?.cargo || null;
+}
+
+/* <option>s de personal; incluye el valor actual aunque ya no esté activo */
+function opcionesPersonal(actual, vacio = 'Seleccionar personal...') {
+  const lista = personalActivo();
+  let html = `<option value="">${esc(vacio)}</option>`;
+  CARGOS_PERSONAL.forEach((cargo) => {
+    const grupo = lista.filter((c) => c.cargo === cargo);
+    if (!grupo.length) return;
+    html += `<optgroup label="${esc(cargo)}">${grupo.map((c) => `<option value="${esc(c.nombre)}" ${c.nombre === actual ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('')}</optgroup>`;
+  });
+  if (actual && !lista.some((c) => c.nombre === actual)) {
+    html += `<option value="${esc(actual)}" selected>${esc(actual)} (no registrado)</option>`;
+  }
+  return html;
 }
 
 function proyectosActivos() {
@@ -1142,10 +1196,11 @@ async function iniciarSesion(email, password) {
   return { ok: true };
 }
 
-async function registrar(email, password, cargo, nombre) {
+async function registrar(email, password, cargo, nombre, confirmacion) {
   const mail = String(email || '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) return { ok: false, msg: 'Correo electrónico inválido.' };
   if (String(password).length < 6) return { ok: false, msg: 'La contraseña debe tener mínimo 6 caracteres.' };
+  if (password !== confirmacion) return { ok: false, msg: 'Las contraseñas no coinciden.' };
   if (!String(nombre || '').trim()) return { ok: false, msg: 'Escribe tu nombre completo.' };
   const { data, error } = await supabaseClient.auth.signUp({
     email: mail,
@@ -1307,8 +1362,9 @@ async function enviarRecuperacion(email) {
   return { ok: true };
 }
 
-async function cambiarContrasena(nueva) {
+async function cambiarContrasena(nueva, confirmacion) {
   if (String(nueva || '').length < 6) return { ok: false, msg: 'La contraseña debe tener mínimo 6 caracteres.' };
+  if (nueva !== confirmacion) return { ok: false, msg: 'Las contraseñas no coinciden.' };
   const { error } = await supabaseClient.auth.updateUser({ password: nueva });
   if (error) return { ok: false, msg: traducirErrorAuth(error) };
   return { ok: true };
@@ -1758,16 +1814,76 @@ function filtrarProduccion() {
   return lista;
 }
 
+/* ---- Vista en lista (alternativa a las tarjetas) ---- */
+
+const CLASES_VISTA = {
+  tarjetas: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6',
+  lista: 'flex flex-col gap-2',
+};
+
+function prepararContenedorVista(el, clave, extra = '') {
+  const vista = state.vistas?.[clave] === 'lista' ? 'lista' : 'tarjetas';
+  el.className = `${CLASES_VISTA[vista]} ${extra}`.trim();
+  document.querySelectorAll(`[data-vista-para="${clave}"] [data-vista]`).forEach((b) => {
+    const activo = b.dataset.vista === vista;
+    b.classList.toggle('active', activo);
+    b.setAttribute('aria-pressed', String(activo));
+  });
+  return vista;
+}
+
+function crearFilaProyecto(p) {
+  const fila = document.createElement('article');
+  const detenido = p.status === EST_PRODUCCION.DETENIDO;
+  const completado = p.status === EST_PRODUCCION.COMPLETADO;
+  const pendientes = (p.pendientes || []).filter((x) => x.estado !== 'Resuelto').length;
+  const estado = detenido
+    ? '<span class="bg-red-600 text-white px-2 py-0.5 rounded-md text-[10px] font-black">DETENIDO</span>'
+    : completado
+      ? '<span class="bg-emerald-600 text-white px-2 py-0.5 rounded-md text-[10px] font-black">ENTREGADO</span>'
+      : '<span class="bg-slate-900 text-white px-2 py-0.5 rounded-md text-[10px] font-black">EN PROCESO</span>';
+  fila.className = `bg-white border rounded-xl p-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow ${detenido ? 'border-red-300' : 'border-slate-200'}`;
+  fila.innerHTML = `
+    <img src="${esc(p.image || DEFAULT_IMAGE)}" alt="" class="w-16 h-12 sm:w-20 sm:h-14 object-cover rounded-lg border border-slate-200 bg-slate-100 shrink-0" />
+    <div class="min-w-0 flex-1 grid grid-cols-1 md:grid-cols-12 gap-x-4 gap-y-1 items-center text-xs">
+      <div class="md:col-span-4 min-w-0">
+        <p class="font-black text-slate-900 truncate"><span class="font-mono text-[10px] text-red-600 mr-1">${esc(p.id)}</span>${esc(p.name)}</p>
+        <p class="text-slate-500 truncate">${esc(p.client)} · ${esc(p.city)}</p>
+      </div>
+      <div class="md:col-span-3 min-w-0">
+        <p class="font-bold text-slate-700 uppercase text-[10px] mb-1">${esc(p.manufacturingPhase)}</p>
+        <div class="flex items-center w-full space-x-1">${stepperBarras(p.manufacturingPhase)}</div>
+      </div>
+      <div class="hidden md:block md:col-span-2">
+        <p class="text-[10px] text-slate-400 uppercase font-bold">Entrega</p>
+        <p class="font-bold text-slate-800 truncate">${esc(p.dateExpected || 'Por definir')}</p>
+      </div>
+      <div class="hidden md:block md:col-span-1">
+        <p class="text-[10px] text-slate-400 uppercase font-bold">Pend.</p>
+        <p class="font-black ${pendientes ? 'text-amber-700' : 'text-slate-400'}">${pendientes}</p>
+      </div>
+      <div class="md:col-span-2 flex md:justify-end">${estado}</div>
+    </div>
+    <button type="button" class="bg-slate-900 hover:bg-slate-800 text-white w-9 h-9 rounded-lg shrink-0" data-open-ficha="${esc(p.id)}" title="Ficha del proyecto" aria-label="Abrir ficha de ${esc(p.name)}">
+      <i class="fas fa-chevron-right" aria-hidden="true"></i>
+    </button>`;
+  const img = fila.querySelector('img');
+  if (img) img.addEventListener('error', () => { img.src = DEFAULT_IMAGE; }, { once: true });
+  return fila;
+}
+
 function renderProduccion() {
   const grid = document.getElementById('proyectos-grid');
   if (!grid) return;
   grid.innerHTML = '';
+  pintarChipsProduccion();
+  const vista = prepararContenedorVista(grid, 'produccion', 'mt-5');
   const lista = filtrarProduccion();
   if (lista.length === 0) {
     grid.innerHTML = '<div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center text-slate-500 text-sm md:col-span-2 lg:col-span-3">No hay proyectos para el filtro seleccionado.</div>';
     return;
   }
-  lista.forEach((p) => grid.appendChild(crearTarjetaProduccion(p)));
+  lista.forEach((p) => grid.appendChild(vista === 'lista' ? crearFilaProyecto(p) : crearTarjetaProduccion(p)));
 }
 
 function renderProyectos() {
@@ -1784,13 +1900,14 @@ function renderProyectos() {
     const q = state.search.toLowerCase();
     lista = lista.filter((p) => `${p.id} ${p.client} ${p.name} ${p.city}`.toLowerCase().includes(q));
   }
+  const vista = prepararContenedorVista(grid, 'proyectos');
   const count = document.getElementById('proyectos-count');
   if (count) count.textContent = `${lista.length} proyecto${lista.length === 1 ? '' : 's'}`;
   if (lista.length === 0) {
     grid.innerHTML = '<div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center text-slate-500 text-sm md:col-span-2 lg:col-span-3">No hay proyectos para los filtros seleccionados.</div>';
     return;
   }
-  lista.forEach((p) => grid.appendChild(crearTarjetaProduccion(p)));
+  lista.forEach((p) => grid.appendChild(vista === 'lista' ? crearFilaProyecto(p) : crearTarjetaProduccion(p)));
 }
 
 function renderKpis() {
@@ -1812,26 +1929,32 @@ function renderKpis() {
    10. EQUIPO & ASIGNACIONES · EDITAR / REASIGNAR / ELIMINAR / FASE
    ========================================================================== */
 
-function botonesFaseTarea(task) {
-  if (!puedeAsignar()) return '';
-  const actual = Math.max(0, PRODUCTION_PHASES.indexOf(task.phase));
-  const atras = actual <= 0 ? 'disabled' : '';
-  const adelante = actual >= PRODUCTION_PHASES.length - 1 ? 'disabled' : '';
-  const comun = task.kind === 'mueble'
-    ? `data-task-kind="mueble" data-project="${esc(task.projectId)}" data-mueble="${esc(task.muebleId)}"`
-    : `data-task-kind="tarea" data-carpenter="${esc(task.carpenter)}" data-task="${esc(task.taskId)}"`;
-  return `
-    <div class="flex items-center gap-1">
-      <button type="button" class="fase-btn" data-task-phase="-1" ${comun} ${atras} title="Retroceder fase" aria-label="Retroceder fase"><i class="fas fa-arrow-left" aria-hidden="true"></i></button>
-      <button type="button" class="fase-btn fase-btn--next" data-task-phase="1" ${comun} ${adelante} title="Avanzar fase" aria-label="Avanzar fase"><i class="fas fa-arrow-right" aria-hidden="true"></i></button>
-    </div>`;
+function puedeGestionarPersonal() {
+  return esGerencia();
 }
 
-function renderEquipo() {
-  const contenedor = document.getElementById('equipo-grid');
-  if (!contenedor) return;
-  contenedor.innerHTML = '';
+function badgeActividad(actividad) {
+  const a = ACTIVIDAD_POR_NOMBRE[actividad] || ACTIVIDAD_POR_NOMBRE.Otra;
+  return `<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[10px] font-black ${a.cls}"><i class="fas ${a.icon}" aria-hidden="true"></i>${esc(a.v)}</span>`;
+}
 
+/* Líder de un grupo de instalación (por grupo_id) */
+function liderDeGrupo(grupoId) {
+  if (!grupoId) return null;
+  for (const [nombre, lista] of Object.entries(state.tareas || {})) {
+    if ((lista || []).some((t) => t.grupoId === grupoId && t.esLider)) return nombre;
+  }
+  return null;
+}
+
+function equipoDeGrupo(grupoId) {
+  if (!grupoId) return [];
+  return Object.entries(state.tareas || {})
+    .filter(([, lista]) => (lista || []).some((t) => t.grupoId === grupoId))
+    .map(([nombre]) => nombre);
+}
+
+function asignacionesPorPersona() {
   const assignments = {};
   state.proyectos.forEach((p) => {
     if (p.status === EST_PRODUCCION.COMPLETADO) return;
@@ -1843,113 +1966,173 @@ function renderEquipo() {
         muebleId: m.id,
         taskId: null,
         text: m.name,
+        actividad: m.actividad || 'Armando',
+        detalle: m.detalle || '',
         projectId: p.id,
         projectName: p.name,
-        phase: m.manufacturingPhase || 'Recepción',
-        status: m.status || m.manufacturingPhase,
         carpenter: m.carpenter,
-        projectStatus: p.status,
         detenido: p.status === EST_PRODUCCION.DETENIDO,
       });
     });
   });
-
   Object.entries(state.tareas || {}).forEach(([carpenter, tareas]) => {
     (tareas || []).forEach((t) => {
       const p = state.proyectos.find((x) => x.id === t.projectId);
+      if (p?.status === EST_PRODUCCION.COMPLETADO) return;
       if (!assignments[carpenter]) assignments[carpenter] = [];
       assignments[carpenter].push({
         kind: 'tarea',
         muebleId: null,
         taskId: t.id,
         text: t.text,
+        actividad: t.actividad || 'Otra',
+        detalle: t.detalle || '',
+        grupoId: t.grupoId || null,
+        esLider: Boolean(t.esLider),
         projectId: t.projectId,
         projectName: p?.name || 'Sin proyecto',
-        phase: t.phase || 'Asignación',
-        status: t.phase || 'Asignación',
         carpenter,
-        projectStatus: p?.status || EST_PRODUCCION.EN_PROCESO,
         detenido: p?.status === EST_PRODUCCION.DETENIDO,
       });
     });
   });
+  return assignments;
+}
 
-  const entries = Object.entries(assignments);
-  if (entries.length === 0) {
-    contenedor.innerHTML = '<div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center text-slate-500 text-sm md:col-span-2 lg:col-span-3">No hay tareas activas asignadas a carpinteros en este momento.</div>';
+function tarjetaTareaHTML(task) {
+  const instalacion = task.actividad === 'Instalación';
+  const lider = instalacion ? (task.esLider ? task.carpenter : liderDeGrupo(task.grupoId)) : null;
+  const companeros = instalacion ? equipoDeGrupo(task.grupoId).filter((n) => n !== task.carpenter && n !== lider) : [];
+  const datos = `data-task-kind="${task.kind}" data-project="${esc(task.projectId || '')}" data-mueble="${esc(task.muebleId || '')}" data-task="${esc(task.taskId || '')}" data-carpenter="${esc(task.carpenter)}"`;
+  return `
+    <div class="p-3 rounded-xl border text-xs ${task.detenido ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200 shadow-sm'}">
+      <div class="flex justify-between items-start gap-2 mb-2">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <span class="text-[10px] font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded uppercase">${esc(task.projectId || 'SIN-PRY')}</span>
+          ${badgeActividad(task.actividad)}
+          ${task.esLider ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-black"><i class="fas fa-crown" aria-hidden="true"></i>Líder</span>' : ''}
+        </div>
+        ${puedeAsignar() ? `
+          <div class="flex items-center gap-1 shrink-0">
+            <button type="button" class="task-icon-btn" data-task-edit ${datos} title="Editar tarea" aria-label="Editar tarea"><i class="fas fa-pen" aria-hidden="true"></i></button>
+            ${task.kind === 'tarea' ? `<button type="button" class="task-icon-btn task-icon-btn--danger" data-task-del ${datos} title="Eliminar tarea" aria-label="Eliminar tarea"><i class="fas fa-trash" aria-hidden="true"></i></button>` : ''}
+          </div>` : ''}
+      </div>
+      <p class="font-bold text-slate-900 leading-tight">${esc(task.text)}</p>
+      ${task.detalle ? `<p class="text-slate-700 mt-1"><i class="fas fa-arrow-right text-[9px] text-slate-400 mr-1" aria-hidden="true"></i>${esc(task.detalle)}</p>` : ''}
+      <p class="text-slate-500 mt-1 truncate">Proyecto: ${esc(task.projectName)}</p>
+      ${instalacion && (lider || companeros.length) ? `
+        <p class="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1 mt-2">
+          ${lider && !task.esLider ? `Líder: <strong>${esc(lider)}</strong>` : ''}${lider && !task.esLider && companeros.length ? ' · ' : ''}${companeros.length ? `Con: ${esc(companeros.join(', '))}` : ''}
+        </p>` : ''}
+    </div>`;
+}
+
+function renderEquipo() {
+  const contenedor = document.getElementById('equipo-grid');
+  if (!contenedor) return;
+  contenedor.innerHTML = '';
+  document.getElementById('equipo-personal')?.classList.toggle('hidden', !puedeGestionarPersonal());
+
+  const assignments = asignacionesPorPersona();
+  /* Una tarjeta por cada persona activa, aunque no tenga tareas */
+  const personas = personalActivo().map((c) => ({ nombre: c.nombre, cargo: c.cargo, registrado: true }));
+  Object.keys(assignments).forEach((nombre) => {
+    if (!personas.some((x) => x.nombre === nombre)) personas.push({ nombre, cargo: cargoDe(nombre), registrado: false });
+  });
+
+  if (personas.length === 0) {
+    contenedor.innerHTML = `<div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8 text-center text-slate-500 text-sm md:col-span-2 lg:col-span-3">
+      No hay personal registrado. ${puedeGestionarPersonal() ? 'Usa el botón <strong>Personal</strong> para registrar carpinteros, auxiliares y eléctricos.' : 'Gerencia debe registrar el personal de planta.'}
+    </div>`;
     return;
   }
 
-  entries.sort(([a], [b]) => a.localeCompare(b)).forEach(([carpenter, tasks]) => {
+  personas.sort((a, b) => (CARGOS_PERSONAL.indexOf(a.cargo) - CARGOS_PERSONAL.indexOf(b.cargo)) || a.nombre.localeCompare(b.nombre));
+  personas.forEach(({ nombre, cargo, registrado }) => {
+    const tasks = assignments[nombre] || [];
     const card = document.createElement('div');
     card.className = 'bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col';
     card.innerHTML = `
-      <div class="bg-slate-50 p-4 border-b border-slate-200 flex items-center justify-between">
-        <div class="flex items-center space-x-3">
-          <div class="w-10 h-10 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-600 font-black">${esc(String(carpenter).charAt(0).toUpperCase())}</div>
-          <div>
-            <h3 class="font-bold text-slate-900">${esc(carpenter)}</h3>
-            <p class="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Operario de Planta</p>
+      <div class="bg-slate-50 p-4 border-b border-slate-200 flex items-center justify-between gap-2">
+        <div class="flex items-center space-x-3 min-w-0">
+          <div class="w-10 h-10 rounded-full bg-slate-200 border border-slate-300 flex items-center justify-center text-slate-600 font-black shrink-0">${esc(String(nombre).charAt(0).toUpperCase())}</div>
+          <div class="min-w-0">
+            <h3 class="font-bold text-slate-900 truncate">${esc(nombre)}</h3>
+            <p class="text-[10px] uppercase font-bold tracking-wider ${registrado ? 'text-slate-500' : 'text-amber-700'}">${esc(registrado ? cargo : 'No registrado · revisar en Personal')}</p>
           </div>
         </div>
-        <span class="bg-slate-900 text-white text-xs font-black px-3 py-1 rounded-lg shadow-sm">${tasks.length} Tareas</span>
+        <span class="bg-slate-900 text-white text-xs font-black px-3 py-1 rounded-lg shadow-sm shrink-0">${tasks.length} ${tasks.length === 1 ? 'Tarea' : 'Tareas'}</span>
       </div>
       <div class="p-4 flex-1 overflow-y-auto space-y-3">
-        ${tasks.map((task) => `
-          <div class="p-3 rounded-xl border text-xs ${task.detenido ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200 shadow-sm'}">
-            <div class="flex justify-between items-start gap-2 mb-1.5">
-              <span class="text-[10px] font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded uppercase">${esc(task.projectId || 'SIN-PRY')}</span>
-              <div class="flex items-center gap-1">
-                <span class="font-bold ${task.phase === 'Despacho' ? 'text-emerald-600' : 'text-slate-500'}">${esc(task.phase)}</span>
-                ${puedeAsignar() ? `
-                  <button type="button" class="task-icon-btn" data-task-edit data-task-kind="${task.kind}" data-project="${esc(task.projectId || '')}" data-mueble="${esc(task.muebleId || '')}" data-task="${esc(task.taskId || '')}" data-carpenter="${esc(task.carpenter)}" title="Editar tarea" aria-label="Editar tarea"><i class="fas fa-pen" aria-hidden="true"></i></button>
-                  <button type="button" class="task-icon-btn task-icon-btn--danger" data-task-del data-task-kind="${task.kind}" data-project="${esc(task.projectId || '')}" data-mueble="${esc(task.muebleId || '')}" data-task="${esc(task.taskId || '')}" data-carpenter="${esc(task.carpenter)}" title="Eliminar tarea" aria-label="Eliminar tarea"><i class="fas fa-trash" aria-hidden="true"></i></button>
-                ` : ''}
-              </div>
-            </div>
-            <p class="font-bold text-slate-900 leading-tight mb-1">${esc(task.text)}</p>
-            <p class="text-slate-500 mb-2 truncate">Proyecto: ${esc(task.projectName)}</p>
-            <div class="flex items-center justify-between text-[10px] font-bold text-slate-500 mb-1.5">
-              <span>Fase del Manual: <span class="text-slate-900">${esc(task.phase)}</span></span>
-              ${botonesFaseTarea(task)}
-            </div>
-            <div class="flex space-x-1">${stepperBarras(task.phase)}</div>
-          </div>`).join('')}
-        <button type="button" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-xs transition-colors border border-slate-200" data-tarea-add="${esc(carpenter)}">
-          <i class="fas fa-plus w-3.5 h-3.5 mr-1" aria-hidden="true"></i>Asignar Tarea
-        </button>
+        ${tasks.length ? tasks.map(tarjetaTareaHTML).join('') : '<p class="text-xs text-slate-400 text-center py-3">Sin tareas asignadas.</p>'}
+        ${puedeAsignar() && registrado ? `
+          <button type="button" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 px-4 rounded-xl text-xs transition-colors border border-slate-200" data-tarea-add="${esc(nombre)}">
+            <i class="fas fa-plus w-3.5 h-3.5 mr-1" aria-hidden="true"></i>Asignar Tarea
+          </button>` : ''}
       </div>`;
     contenedor.appendChild(card);
   });
 }
 
+/* ---- Modal de tarea: personal + proyecto + actividad + detalle ---- */
+
+function pintarModoTarea() {
+  const actividad = document.getElementById('tarea-actividad')?.value;
+  const creando = !state.tareaCtx;
+  const esInstalacion = actividad === 'Instalación';
+  const esMueble = state.tareaCtx?.kind === 'mueble';
+  document.getElementById('tarea-persona-label').textContent = esInstalacion && creando ? 'Líder de instalación' : 'Personal';
+  document.getElementById('tarea-equipo-box').classList.toggle('hidden', !(esInstalacion && creando));
+  document.getElementById('tarea-lider-box').classList.toggle('hidden', !(esInstalacion && !creando && !esMueble));
+  if (esInstalacion && creando) pintarEquipoInstalacion();
+}
+
+function pintarEquipoInstalacion() {
+  const box = document.getElementById('tarea-equipo');
+  if (!box) return;
+  const lider = document.getElementById('tarea-carpintero-input').value;
+  const marcados = new Set(Array.from(box.querySelectorAll('input:checked')).map((i) => i.value));
+  const lista = personalActivo().filter((c) => c.nombre !== lider);
+  box.innerHTML = lista.length
+    ? lista.map((c) => `
+        <label class="flex items-center gap-2 p-2 rounded-lg border border-slate-200 bg-white cursor-pointer hover:bg-slate-50">
+          <input type="checkbox" value="${esc(c.nombre)}" ${marcados.has(c.nombre) ? 'checked' : ''} class="accent-red-600" />
+          <span class="font-bold text-slate-800">${esc(c.nombre)}</span>
+          <span class="text-[10px] text-slate-400 ml-auto">${esc(c.cargo)}</span>
+        </label>`).join('')
+    : '<p class="text-[11px] text-slate-400">No hay más personal registrado.</p>';
+}
+
 function abrirModalTarea(carpenter, ctx) {
   if (!puedeAsignar()) { showToast('Solo Gerencia u Operaciones pueden gestionar asignaciones.'); return; }
+  if (!personalActivo().length) {
+    showToast(puedeGestionarPersonal() ? 'Primero registra el personal en Equipo > Personal.' : 'Gerencia debe registrar el personal antes de asignar tareas.');
+    return;
+  }
   state.tareaCtx = ctx || null;
   const editando = Boolean(ctx);
   document.getElementById('tarea-title').textContent = editando ? 'Editar Tarea' : 'Asignar Tarea';
-  document.getElementById('tarea-carpintero-input').value = carpenter || '';
+  document.getElementById('tarea-carpintero-input').innerHTML = opcionesPersonal(carpenter || '');
   document.getElementById('tarea-texto').value = ctx?.text || '';
+  document.getElementById('tarea-detalle').value = ctx?.detalle || '';
+  document.getElementById('tarea-actividad').innerHTML = ACTIVIDADES
+    .map((a) => `<option value="${esc(a.v)}" ${a.v === (ctx?.actividad || 'Armando') ? 'selected' : ''}>${esc(a.v)}</option>`).join('');
+  document.getElementById('tarea-es-lider').checked = Boolean(ctx?.esLider);
+  document.getElementById('tarea-equipo').innerHTML = '';
   document.getElementById('tarea-info').textContent = ctx?.kind === 'mueble'
-    ? 'Módulo/mueble del proyecto. Puedes cambiar el carpintero y la descripción; la fase se controla con los botones de la tarjeta.'
-    : 'Tarea independiente. Puedes reasignarla a otro carpintero o eliminarla.';
+    ? 'Mueble del proyecto: puedes cambiar la persona, la actividad y el detalle. La fase del mueble se controla en la ficha del proyecto.'
+    : 'Escoge qué está haciendo la persona y describe el detalle (ej. Escogiendo material → Material Ámbar).';
 
   const sel = document.getElementById('tarea-proyecto');
-  sel.innerHTML = '<option value="">Seleccionar proyecto...</option>';
-  state.proyectos.forEach((p) => {
-    const opt = document.createElement('option');
-    opt.value = p.id;
-    opt.textContent = `${p.name} - (${p.client})`;
-    sel.appendChild(opt);
-  });
+  sel.innerHTML = '<option value="">Seleccionar proyecto...</option>' + state.proyectos
+    .filter((p) => p.status !== EST_PRODUCCION.COMPLETADO || p.id === ctx?.projectId)
+    .map((p) => `<option value="${esc(p.id)}">${esc(p.id)} · ${esc(p.name)} (${esc(p.client)})</option>`).join('');
   sel.value = ctx?.projectId || '';
   sel.disabled = ctx?.kind === 'mueble';
 
-  const datalist = document.getElementById('carpinteros-list');
-  if (datalist) {
-    datalist.innerHTML = carpentersList().map((c) => `<option value="${esc(c)}"></option>`).join('');
-  }
-  document.getElementById('tarea-eliminar').classList.toggle('hidden', !carpenter);
+  document.getElementById('tarea-eliminar').classList.toggle('hidden', !(editando && ctx.kind === 'tarea'));
+  pintarModoTarea();
   document.getElementById('tarea-modal').classList.remove('is-hidden');
   setTimeout(() => document.getElementById('tarea-carpintero-input')?.focus(), 40);
 }
@@ -1961,52 +2144,186 @@ function cerrarModalTarea() {
 
 function guardarTarea() {
   if (!puedeAsignar()) { showToast('Tu rol no puede modificar asignaciones.'); return; }
-  const carpenter = document.getElementById('tarea-carpintero-input').value.trim();
-  const texto = document.getElementById('tarea-texto').value.trim();
+  const persona = document.getElementById('tarea-carpintero-input').value.trim();
+  const actividad = document.getElementById('tarea-actividad').value;
+  const detalle = document.getElementById('tarea-detalle').value.trim();
   const projectId = document.getElementById('tarea-proyecto').value;
+  const texto = document.getElementById('tarea-texto').value.trim() || actividad;
   const ctx = state.tareaCtx;
-  if (!carpenter || !texto) { showToast('Completa el carpintero y la descripción.'); return; }
+  if (!persona) { showToast('Selecciona el personal.'); return; }
+  if (!ACTIVIDAD_POR_NOMBRE[actividad]) { showToast('Selecciona la actividad.'); return; }
+
+  const agregar = (nombre, tarea) => {
+    if (!state.tareas[nombre]) state.tareas[nombre] = [];
+    state.tareas[nombre].push(tarea);
+  };
 
   if (!ctx) {
     if (!projectId) { showToast('Selecciona un proyecto para la tarea.'); return; }
-    if (!state.tareas[carpenter]) state.tareas[carpenter] = [];
-    state.tareas[carpenter].push({ id: uid('t'), text: texto, projectId, phase: 'Asignación' });
+    if (actividad === 'Instalación') {
+      const apoyo = Array.from(document.querySelectorAll('#tarea-equipo input:checked')).map((i) => i.value).filter((n) => n !== persona);
+      const grupoId = nuevoUUID();
+      agregar(persona, { id: uid(), text: texto, projectId, phase: 'Asignación', actividad, detalle, grupoId, esLider: true });
+      apoyo.forEach((n) => agregar(n, { id: uid(), text: texto, projectId, phase: 'Asignación', actividad, detalle, grupoId, esLider: false }));
+      commit();
+      cerrarModalTarea();
+      showToast(`Instalación asignada: ${persona} (líder)${apoyo.length ? ` + ${apoyo.length} persona${apoyo.length === 1 ? '' : 's'}` : ''}.`);
+      return;
+    }
+    agregar(persona, { id: uid(), text: texto, projectId, phase: 'Asignación', actividad, detalle, grupoId: null, esLider: false });
   } else if (ctx.kind === 'mueble') {
     const p = state.proyectos.find((x) => x.id === ctx.projectId);
     const m = (p?.muebles || []).find((x) => x.id === ctx.muebleId);
     if (!m) return;
-    m.carpenter = carpenter;
-    m.name = texto;
+    m.carpenter = persona;
+    m.name = document.getElementById('tarea-texto').value.trim() || m.name;
+    m.actividad = actividad;
+    m.detalle = detalle;
   } else {
     const lista = state.tareas[ctx.carpenter] || [];
     const idx = lista.findIndex((t) => t.id === ctx.taskId);
     if (idx < 0) return;
     const [t] = lista.splice(idx, 1);
+    if (!lista.length) delete state.tareas[ctx.carpenter];
     t.text = texto;
     t.projectId = projectId || t.projectId;
-    if (!state.tareas[carpenter]) state.tareas[carpenter] = [];
-    state.tareas[carpenter].push(t);
+    t.actividad = actividad;
+    t.detalle = detalle;
+    if (actividad === 'Instalación') {
+      t.grupoId = t.grupoId || nuevoUUID();
+      t.esLider = document.getElementById('tarea-es-lider').checked;
+      /* Solo un líder por instalación */
+      if (t.esLider) {
+        Object.values(state.tareas).forEach((ls) => (ls || []).forEach((x) => { if (x.grupoId === t.grupoId) x.esLider = false; }));
+      }
+    } else {
+      t.grupoId = null;
+      t.esLider = false;
+    }
+    agregar(persona, t);
   }
   commit();
   cerrarModalTarea();
-  showToast('Tarea actualizada y sincronizada.');
+  showToast('Tarea guardada y sincronizada.');
 }
 
 function eliminarTarea(carpenter, ctx) {
   if (!puedeAsignar()) { showToast('Tu rol no puede eliminar asignaciones.'); return; }
+  if (ctx.kind === 'mueble') { showToast('Los muebles se gestionan desde la ficha del proyecto.'); return; }
   if (!window.confirm('¿Eliminar esta tarea asignada?')) return;
-  if (ctx.kind === 'mueble') {
-    const p = state.proyectos.find((x) => x.id === ctx.projectId);
-    if (!p) return;
-    p.muebles = (p.muebles || []).filter((m) => m.id !== ctx.muebleId);
-  } else {
-    const owner = ctx.carpenter || carpenter;
-    state.tareas[owner] = (state.tareas[owner] || []).filter((t) => t.id !== ctx.taskId);
-    if (state.tareas[owner].length === 0) delete state.tareas[owner];
-  }
+  const owner = ctx.carpenter || carpenter;
+  state.tareas[owner] = (state.tareas[owner] || []).filter((t) => t.id !== ctx.taskId);
+  if (state.tareas[owner].length === 0) delete state.tareas[owner];
   commit();
   cerrarModalTarea();
   showToast('Tarea eliminada.');
+}
+
+/* ---- Personal de planta (solo Gerencia) ---- */
+
+function abrirPersonal() {
+  if (!puedeGestionarPersonal()) { showToast('Solo Gerencia registra el personal.'); return; }
+  document.getElementById('personal-nombre').value = '';
+  document.getElementById('personal-cargo').innerHTML = CARGOS_PERSONAL.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  renderPersonal();
+  document.getElementById('personal-modal').classList.remove('is-hidden');
+  setTimeout(() => document.getElementById('personal-nombre')?.focus(), 40);
+}
+
+function cerrarPersonal() {
+  document.getElementById('personal-modal')?.classList.add('is-hidden');
+}
+
+function renderPersonal() {
+  const box = document.getElementById('personal-lista');
+  if (!box) return;
+  const lista = (state.carpinteros || []).slice()
+    .sort((a, b) => (Number(b.activo !== false) - Number(a.activo !== false)) || a.nombre.localeCompare(b.nombre));
+  if (!lista.length) {
+    box.innerHTML = '<p class="text-xs text-slate-400 text-center py-4">Aún no hay personal registrado.</p>';
+    return;
+  }
+  box.innerHTML = lista.map((c) => {
+    const activo = c.activo !== false;
+    const tareas = (state.tareas[c.nombre] || []).length;
+    return `
+      <div class="flex flex-wrap items-center gap-2 p-3 rounded-xl border ${activo ? 'bg-white border-slate-200' : 'bg-slate-50 border-slate-200 opacity-70'}" data-personal-row="${esc(c.id)}">
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-bold text-slate-900 truncate">${esc(c.nombre)}</p>
+          <p class="text-[10px] text-slate-500">${tareas} tarea${tareas === 1 ? '' : 's'} · ${activo ? 'Activo' : 'Inactivo'}</p>
+        </div>
+        <select class="bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-900" data-personal-cargo="${esc(c.id)}" aria-label="Cargo de ${esc(c.nombre)}">
+          ${CARGOS_PERSONAL.map((x) => `<option value="${esc(x)}" ${x === c.cargo ? 'selected' : ''}>${esc(x)}</option>`).join('')}
+        </select>
+        <button type="button" class="text-xs font-bold px-3 py-1.5 rounded-lg border ${activo ? 'border-slate-300 text-slate-700 hover:bg-slate-100' : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'}" data-personal-toggle="${esc(c.id)}">${activo ? 'Desactivar' : 'Reactivar'}</button>
+      </div>`;
+  }).join('');
+}
+
+async function recargarDesdeBase() {
+  if (!sbListo || !state.user) return;
+  await encolarSync(async () => {
+    const data = await leerSupabase();
+    if (!state.user) return;
+    aplicarDatos(data);
+    reconstruirSnapshot();
+    guardarCacheLocal();
+    renderAll();
+  });
+}
+
+async function agregarPersonal() {
+  if (!puedeGestionarPersonal()) return;
+  const nombre = document.getElementById('personal-nombre').value.trim().replace(/\s+/g, ' ');
+  const cargo = document.getElementById('personal-cargo').value;
+  if (!nombre) { showToast('Escribe el nombre de la persona.'); return; }
+  if ((state.carpinteros || []).some((c) => c.nombre.toLowerCase() === nombre.toLowerCase())) {
+    showToast('Ya existe una persona con ese nombre.');
+    return;
+  }
+  const btn = document.getElementById('personal-agregar');
+  btn.disabled = true;
+  const { data, error } = await supabaseClient.from('carpinteros').insert({ nombre, cargo, activo: true }).select('*');
+  btn.disabled = false;
+  if (error || !data?.length) { showToast(`No se pudo registrar: ${error?.message || 'sin permiso'}`); return; }
+  state.carpinteros.push({ id: data[0].id, nombre: data[0].nombre, cargo: data[0].cargo, activo: true });
+  document.getElementById('personal-nombre').value = '';
+  renderPersonal();
+  renderEquipo();
+  showToast(`${nombre} registrado como ${cargo}.`);
+}
+
+async function actualizarPersonal(id, cambios) {
+  if (!puedeGestionarPersonal()) return;
+  const c = (state.carpinteros || []).find((x) => x.id === id);
+  if (!c) return;
+  const { data, error } = await supabaseClient.from('carpinteros').update(cambios).eq('id', id).select('*');
+  if (error || !data?.length) { showToast(`No se pudo actualizar: ${error?.message || 'sin permiso'}`); renderPersonal(); return; }
+  Object.assign(c, { cargo: data[0].cargo, activo: data[0].activo !== false });
+  renderPersonal();
+  renderEquipo();
+  showToast(`${c.nombre}: ${'activo' in cambios ? (c.activo ? 'reactivado' : 'desactivado') : `ahora es ${c.cargo}`}.`);
+}
+
+function bindEquipoEvents() {
+  document.getElementById('equipo-personal')?.addEventListener('click', abrirPersonal);
+  document.getElementById('personal-close')?.addEventListener('click', cerrarPersonal);
+  document.getElementById('personal-agregar')?.addEventListener('click', agregarPersonal);
+  document.getElementById('personal-nombre')?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); agregarPersonal(); } });
+  document.getElementById('personal-lista')?.addEventListener('change', (e) => {
+    const sel = e.target.closest('[data-personal-cargo]');
+    if (sel) actualizarPersonal(sel.dataset.personalCargo, { cargo: sel.value });
+  });
+  document.getElementById('personal-lista')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-personal-toggle]');
+    if (!btn) return;
+    const c = state.carpinteros.find((x) => x.id === btn.dataset.personalToggle);
+    if (c) actualizarPersonal(c.id, { activo: c.activo === false });
+  });
+  document.getElementById('tarea-actividad')?.addEventListener('change', pintarModoTarea);
+  document.getElementById('tarea-carpintero-input')?.addEventListener('change', () => {
+    if (!state.tareaCtx && document.getElementById('tarea-actividad').value === 'Instalación') pintarEquipoInstalacion();
+  });
 }
 
 /* ==========================================================================
@@ -2362,7 +2679,7 @@ function tareasAgrupadas() {
       const p = state.proyectos.find((x) => x.id === t.projectId);
       if (p?.status === EST_PRODUCCION.COMPLETADO) return;
       if (!mapa[carpenter]) mapa[carpenter] = [];
-      mapa[carpenter].push({ text: t.text, projectId: t.projectId, projectName: p?.name || 'Sin proyecto', phase: t.phase || 'Asignación' });
+      mapa[carpenter].push({ text: t.text, projectId: t.projectId, projectName: p?.name || 'Sin proyecto', phase: t.actividad || 'Otra' });
     });
   });
   return mapa;
@@ -2844,11 +3161,14 @@ function abrirProyectoModal(id, focus) {
   set('proyecto-direccion', p?.address || '');
   set('proyecto-telefono', p?.phone || '');
   set('proyecto-arquitecto', p?.arquitecto || state.user?.nombre || 'Felipe Mora');
-  set('proyecto-carpintero', p?.leadCarpenter || '');
+  document.getElementById('proyecto-carpintero').innerHTML = opcionesPersonal(p?.leadCarpenter || '', 'Sin asignar');
   set('proyecto-operador', p?.logisticOperator || 'Wilyer');
   set('proyecto-fecha-inicio', p?.dateStart || formatFechaLarga(new Date()));
   set('proyecto-fecha-entrega', p?.dateExpected || '');
-  set('proyecto-imagen', p?.image || '');
+  set('proyecto-imagen', p?.image && p.image !== DEFAULT_IMAGE ? p.image : '');
+  const fileImg = document.getElementById('proyecto-imagen-file');
+  if (fileImg) fileImg.value = '';
+  pintarPreviewImagen(p?.image || DEFAULT_IMAGE);
   set('proyecto-detalle', p?.commercialDetail || '');
 
   const citySel = document.getElementById('proyecto-ciudad');
@@ -2877,12 +3197,75 @@ function abrirProyectoModal(id, focus) {
   nota.classList.toggle('hidden', puedeProduccion);
   nota.textContent = 'Secretaría: puedes registrar clientes, documentación, imagen y prospectos, pero las asignaciones y fases de producción requieren autorización de Gerencia u Operaciones.';
 
-  const datalist = document.getElementById('carpinteros-list');
-  if (datalist) datalist.innerHTML = carpentersList().map((c) => `<option value="${esc(c)}"></option>`).join('');
-
   document.getElementById('proyecto-modal').classList.remove('is-hidden');
-  const foco = focus === 'imagen' ? 'proyecto-imagen' : 'proyecto-nombre';
+  const foco = focus === 'imagen' ? 'proyecto-imagen-file' : 'proyecto-nombre';
   setTimeout(() => document.getElementById(foco)?.focus(), 50);
+}
+
+/* --------------------------------------------------------------------------
+   IMÁGENES DE PROYECTO · Supabase Storage (bucket proyectos-imagenes)
+   La foto se reduce a máx. 1600 px y se guarda como JPG antes de subir.
+   -------------------------------------------------------------------------- */
+
+const TIPOS_IMAGEN = ['image/jpeg', 'image/png', 'image/webp'];
+
+function pintarPreviewImagen(url) {
+  const img = document.getElementById('proyecto-imagen-preview');
+  if (img) img.src = url || DEFAULT_IMAGE;
+}
+
+async function comprimirImagen(file, maxLado = 1600, calidad = 0.82) {
+  try {
+    const bitmap = await createImageBitmap(file);
+    const escala = Math.min(1, maxLado / Math.max(bitmap.width, bitmap.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(bitmap.width * escala);
+    canvas.height = Math.round(bitmap.height * escala);
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+    bitmap.close?.();
+    const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', calidad));
+    return blob || file;
+  } catch (e) {
+    return file;
+  }
+}
+
+async function subirImagenProyecto(file, codigo) {
+  if (!file) throw new Error('No se escogió ninguna imagen.');
+  if (!TIPOS_IMAGEN.includes(file.type)) throw new Error('La imagen debe ser JPG, PNG o WEBP.');
+  if (!sbListo) throw new Error('Sin conexión con la base de datos: no se puede subir la imagen.');
+  const blob = await comprimirImagen(file);
+  if (blob.size > 5 * 1024 * 1024) throw new Error('La imagen supera 5 MB incluso optimizada.');
+  const ext = blob.type === 'image/png' ? 'png' : blob.type === 'image/webp' ? 'webp' : 'jpg';
+  const ruta = `${String(codigo || 'sin-codigo').replace(/[^A-Za-z0-9_-]/g, '')}/${Date.now()}-${nuevoUUID().slice(0, 8)}.${ext}`;
+  const { error } = await supabaseClient.storage.from(BUCKET_IMAGENES).upload(ruta, blob, {
+    contentType: blob.type || 'image/jpeg',
+    cacheControl: '31536000',
+    upsert: false,
+  });
+  if (error) throw new Error(`No se pudo subir la imagen: ${error.message}`);
+  return supabaseClient.storage.from(BUCKET_IMAGENES).getPublicUrl(ruta).data.publicUrl;
+}
+
+async function cambiarImagenDesdeFicha(file) {
+  const p = state.proyectos.find((x) => x.id === state.fichaId);
+  if (!p || !file) return;
+  if (!puedeEditarFicha()) { showToast('Tu rol no puede cambiar la imagen.'); return; }
+  const btn = document.getElementById('ficha-cambiar-imagen');
+  const texto = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1" aria-hidden="true"></i>Subiendo imagen...';
+  try {
+    p.image = await subirImagenProyecto(file, p.id);
+    commit();
+    openFicha(p.id);
+    showToast('Imagen actualizada.');
+  } catch (err) {
+    showToast(err.message || 'No se pudo subir la imagen.');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = texto;
+  }
 }
 
 function cerrarProyectoModal() {
@@ -2892,12 +3275,32 @@ function cerrarProyectoModal() {
   state.proyectoModalFocus = null;
 }
 
-function guardarProyecto(e) {
+async function guardarProyecto(e) {
   e.preventDefault();
   if (!puedeCrearProyecto() && !puedeEditarFicha()) { showToast('Tu rol no puede guardar proyectos.'); return; }
   const nombre = document.getElementById('proyecto-nombre').value.trim();
   const cliente = document.getElementById('proyecto-cliente').value.trim();
   if (!nombre || !cliente) { showToast('Nombre y cliente son obligatorios.'); return; }
+
+  /* Imagen: si se escogió un archivo, se sube a Supabase Storage primero */
+  const editando = state.proyectoModalMode === 'editar' && state.proyectoModalId;
+  const codigo = editando ? state.proyectoModalId : generarIdProyecto();
+  const archivo = document.getElementById('proyecto-imagen-file')?.files?.[0];
+  if (archivo) {
+    const btn = document.getElementById('proyecto-guardar');
+    const texto = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2" aria-hidden="true"></i>Subiendo imagen...';
+    try {
+      document.getElementById('proyecto-imagen').value = await subirImagenProyecto(archivo, codigo);
+    } catch (err) {
+      showToast(err.message || 'No se pudo subir la imagen.');
+      return;
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = texto;
+    }
+  }
 
   const fase = document.getElementById('proyecto-fase').value;
   const datos = {
@@ -2943,7 +3346,7 @@ function guardarProyecto(e) {
 
   const nuevo = normalizarProyecto({
     ...datos,
-    id: generarIdProyecto(),
+    id: codigo,
     pendientes: [],
     muebles: [],
     pedidos: [],
@@ -3039,6 +3442,8 @@ function bindLoginEvents() {
     camposRegistro.forEach((el) => el.classList.toggle('hidden', esLogin));
     const nombre = document.getElementById('login-nombre');
     if (nombre) nombre.required = !esLogin;
+    const pass2 = document.getElementById('login-password2');
+    if (pass2) pass2.required = !esLogin;
     document.getElementById('login-password')?.setAttribute('autocomplete', esLogin ? 'current-password' : 'new-password');
     document.getElementById('login-error')?.classList.add('hidden');
   };
@@ -3064,7 +3469,7 @@ function bindLoginEvents() {
     try {
       res = modoLogin.value === 'login'
         ? await iniciarSesion(email, password)
-        : await registrar(email, password, cargo, nombre);
+        : await registrar(email, password, cargo, nombre, document.getElementById('login-password2')?.value || '');
     } catch (err) {
       res = { ok: false, msg: traducirErrorAuth(err) };
     } finally {
@@ -3077,6 +3482,8 @@ function bindLoginEvents() {
       return;
     }
     document.getElementById('login-password').value = '';
+    const pass2 = document.getElementById('login-password2');
+    if (pass2) pass2.value = '';
     if (res.pendienteConfirmacion) {
       modoLogin.value = 'login';
       pintarModo();
@@ -3099,7 +3506,7 @@ function bindLoginEvents() {
     const btn = document.getElementById('forgot-reset');
     btn.disabled = true;
     const res = modo === 'nueva'
-      ? await cambiarContrasena(document.getElementById('forgot-pass').value)
+      ? await cambiarContrasena(document.getElementById('forgot-pass').value, document.getElementById('forgot-pass2').value)
       : await enviarRecuperacion(document.getElementById('forgot-email').value);
     btn.disabled = false;
     if (!res.ok) {
@@ -3130,6 +3537,7 @@ function abrirRecuperacion(modo, email = '') {
   document.getElementById('forgot-pass-wrap').classList.toggle('hidden', !esNueva);
   document.getElementById('forgot-email').value = email;
   document.getElementById('forgot-pass').value = '';
+  document.getElementById('forgot-pass2').value = '';
   document.getElementById('forgot-reset').textContent = esNueva ? 'Guardar contraseña' : 'Enviar enlace';
   const msgEl = document.getElementById('forgot-msg');
   msgEl.textContent = '';
@@ -3161,13 +3569,33 @@ function bindTabsEvents() {
   });
 }
 
+function pintarChipsProduccion() {
+  document.querySelectorAll('#filtros-produccion [data-filtro]').forEach((b) => {
+    const activo = b.dataset.filtro === state.fProduccion;
+    b.classList.toggle('active', activo);
+    b.setAttribute('aria-pressed', String(activo));
+  });
+}
+
 function bindProduccionEvents() {
   document.getElementById('filtros-produccion')?.addEventListener('click', (e) => {
     const btn = e.target.closest('[data-filtro]');
     if (!btn) return;
     state.fProduccion = btn.dataset.filtro;
-    document.querySelectorAll('#filtros-produccion [data-filtro]').forEach((b) => b.classList.toggle('active', b.dataset.filtro === state.fProduccion));
+    pintarChipsProduccion();
     renderProduccion();
+  });
+
+  document.querySelectorAll('[data-vista-para]').forEach((grupo) => {
+    grupo.addEventListener('click', (e) => {
+      const btn = e.target.closest('[data-vista]');
+      if (!btn) return;
+      const clave = grupo.dataset.vistaPara;
+      state.vistas[clave] = btn.dataset.vista === 'lista' ? 'lista' : 'tarjetas';
+      try { localStorage.setItem(VISTAS_KEY, JSON.stringify(state.vistas)); } catch (err) { /* noop */ }
+      if (clave === 'produccion') renderProduccion();
+      else renderProyectos();
+    });
   });
 
   document.getElementById('filtro-year')?.addEventListener('change', (e) => { state.year = e.target.value; renderProduccion(); });
@@ -3212,7 +3640,23 @@ function bindFichaEvents() {
     if (state.fichaId) abrirProyectoModal(state.fichaId);
   });
   document.getElementById('ficha-cambiar-imagen')?.addEventListener('click', () => {
-    if (state.fichaId) abrirProyectoModal(state.fichaId, 'imagen');
+    if (state.fichaId) document.getElementById('ficha-imagen-file')?.click();
+  });
+  document.getElementById('ficha-imagen-file')?.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (file) cambiarImagenDesdeFicha(file);
+  });
+  document.getElementById('proyecto-imagen-file')?.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!TIPOS_IMAGEN.includes(file.type)) { showToast('La imagen debe ser JPG, PNG o WEBP.'); e.target.value = ''; return; }
+    pintarPreviewImagen(URL.createObjectURL(file));
+  });
+  document.getElementById('proyecto-imagen-quitar')?.addEventListener('click', () => {
+    document.getElementById('proyecto-imagen').value = '';
+    document.getElementById('proyecto-imagen-file').value = '';
+    pintarPreviewImagen(DEFAULT_IMAGE);
   });
 
   document.getElementById('ficha-estado-select')?.addEventListener('change', (e) => {
@@ -3316,8 +3760,7 @@ function bindModalsEvents() {
   document.getElementById('tarea-guardar')?.addEventListener('click', guardarTarea);
   document.getElementById('tarea-eliminar')?.addEventListener('click', () => {
     const ctx = state.tareaCtx;
-    const carpenter = document.getElementById('tarea-carpintero-input').value.trim();
-    if (ctx && carpenter) eliminarTarea(carpenter, ctx);
+    if (ctx) eliminarTarea(ctx.carpenter, ctx);
   });
 
   document.getElementById('pedido-form')?.addEventListener('submit', onPedidoGuardar);
@@ -3337,11 +3780,11 @@ function contextoDesdeDataset(el) {
     const p = state.proyectos.find((x) => x.id === projectId);
     const m = (p?.muebles || []).find((x) => x.id === muebleId);
     if (!m) return null;
-    return { kind, projectId, muebleId, taskId: null, carpenter: m.carpenter || carpenter, text: m.name };
+    return { kind, projectId, muebleId, taskId: null, carpenter: m.carpenter || carpenter, text: m.name, actividad: m.actividad || 'Armando', detalle: m.detalle || '' };
   }
   const t = (state.tareas[carpenter] || []).find((x) => x.id === taskId);
   if (!t) return null;
-  return { kind: 'tarea', projectId: t.projectId, muebleId: null, taskId: t.id, carpenter, text: t.text };
+  return { kind: 'tarea', projectId: t.projectId, muebleId: null, taskId: t.id, carpenter, text: t.text, actividad: t.actividad || 'Otra', detalle: t.detalle || '', esLider: Boolean(t.esLider), grupoId: t.grupoId || null };
 }
 
 function bindGlobalDelegation() {
@@ -3767,6 +4210,7 @@ async function init() {
   bindDragAndDrop();
   bindChatEvents();
   bindUsuariosEvents();
+  bindEquipoEvents();
   bindFinanzasEvents();
 
   /* Sin sesión no se muestra ni se consulta ningún dato */
