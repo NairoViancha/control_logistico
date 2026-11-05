@@ -38,52 +38,58 @@
       <p class="text-xs text-slate-500 mb-6">Inicia sesión o crea tu cuenta corporativa</p>
 
       <form id="login-form" class="space-y-4">
+        <div data-solo-registro class="hidden">
+          <label for="login-nombre" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Nombre completo</label>
+          <input id="login-nombre" type="text" autocomplete="name" placeholder="Nombre y apellido" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+        </div>
         <div>
           <label for="login-email" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Correo electrónico</label>
-          <input id="login-email" type="email" placeholder="correo@empresa.com" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" required />
+          <input id="login-email" type="email" autocomplete="email" placeholder="correo@empresa.com" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" required />
         </div>
         <div>
           <label for="login-password" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Contraseña</label>
-          <input id="login-password" type="password" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" required />
+          <input id="login-password" type="password" autocomplete="current-password" minlength="6" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" required />
         </div>
-        <div>
-          <label for="login-cargo" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Cargo</label>
+        <div data-solo-registro class="hidden">
+          <label for="login-cargo" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Cargo solicitado</label>
           <select id="login-cargo" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white">
             <option value="administrativo">Gerencia / Administrativo</option>
             <option value="operativo">Logística / Operativo</option>
             <option value="secretaria">Secretaría</option>
             <option value="arquitecto">Arquitecto</option>
           </select>
+          <p class="text-[10px] text-slate-400 mt-1">Entrarás con acceso de consulta hasta que Gerencia apruebe tu cargo.</p>
         </div>
         <button type="submit" id="login-submit" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-3.5 rounded-xl shadow-md text-sm mt-2 transition-all">
           <i class="fas fa-lock mr-2" aria-hidden="true"></i> Iniciar Sesión
         </button>
-        <p id="login-error" class="text-red-600 text-xs font-bold hidden"></p>
+        <p id="login-error" class="text-red-600 text-xs font-bold hidden" role="alert"></p>
+        <button type="button" id="login-forgot" class="w-full text-xs font-bold text-slate-500 hover:text-red-600 transition-colors">¿Olvidaste tu contraseña?</button>
         <button type="button" id="login-toggle" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition-colors">
           Crear cuenta
         </button>
       </form>
-      <p class="text-[10px] text-slate-400 mt-4 leading-relaxed">Demo: gerencia@modugal.com · operativo@modugal.com · secretaria@modugal.com · arquitecto@modugal.com — contraseña <strong class="text-slate-500">demo1234</strong></p>
     </div>
   </div>
 
   <!-- Modal: Olvidé mi contraseña -->
   <div id="login-forgot-modal" class="is-hidden fixed inset-0 z-[80] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
     <div class="bg-white border border-slate-200 w-full max-w-md rounded-2xl shadow-2xl p-6">
-      <h3 class="text-xl font-black text-slate-900 mb-1">Restablecer contraseña</h3>
-      <p class="text-xs text-slate-500 mb-4">Ingresa tu correo y la nueva contraseña para recuperar el acceso.</p>
+      <h3 id="forgot-title" class="text-xl font-black text-slate-900 mb-1">Recuperar contraseña</h3>
+      <p id="forgot-sub" class="text-xs text-slate-500 mb-4">Te enviaremos un enlace a tu correo para crear una nueva contraseña.</p>
       <div class="space-y-3">
-        <div>
+        <div id="forgot-email-wrap">
           <label for="forgot-email" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Correo electrónico</label>
           <input id="forgot-email" type="email" placeholder="correo@empresa.com" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
         </div>
-        <div>
+        <div id="forgot-pass-wrap" class="hidden">
           <label for="forgot-pass" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Nueva contraseña</label>
-          <input id="forgot-pass" type="password" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+          <input id="forgot-pass" type="password" autocomplete="new-password" minlength="6" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
         </div>
       </div>
+      <p id="forgot-msg" class="hidden" role="status"></p>
       <div class="flex space-x-2 mt-5">
-        <button type="button" id="forgot-reset" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">Restablecer</button>
+        <button type="button" id="forgot-reset" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">Enviar enlace</button>
         <button type="button" id="forgot-close" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm">Cancelar</button>
       </div>
     </div>
@@ -115,15 +121,10 @@
       </div>
 
       <div class="flex items-center space-x-3">
-        <div id="mg-role-selector" class="flex items-center bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 shadow-inner" role="tablist" aria-label="Rol del usuario">
+        <div id="mg-role-selector" class="flex items-center bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 shadow-inner" aria-label="Rol del usuario">
           <i class="fas fa-shield-alt text-red-600 mr-2 w-4 h-4" aria-hidden="true"></i>
           <span class="text-xs text-slate-500 font-medium mr-2 hidden lg:inline">Perfil:</span>
-          <select id="mg-rol-select" class="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer" data-rol-select>
-            <option value="administrativo">Gerencia / Administrativo</option>
-            <option value="operativo">Logística / Operativo</option>
-            <option value="secretaria">Secretaría</option>
-            <option value="arquitecto">Arquitecto</option>
-          </select>
+          <span id="mg-rol-label" class="text-xs font-bold text-slate-800"></span>
         </div>
 
         <div id="mg-user" class="hidden flex items-center bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 shadow-inner">

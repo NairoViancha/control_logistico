@@ -52,11 +52,17 @@ const TIPO_PENDIENTE_LABEL = {
   otro: 'Otro',
 };
 
-const STORAGE_KEY = 'modugal_estado_v1';
-const ROL_KEY = 'modugal_rol';
-const USUARIOS_KEY = 'modugal_usuarios';
-const SESION_KEY = 'modugal_sesion';
+/* Cache local por usuario (se borra al cerrar sesión) */
+const STORAGE_PREFIX = 'modugal_estado_v2_';
 const TEMA_KEY = 'modugal_tema';
+/* Claves del login simulado anterior: se eliminan del navegador al iniciar
+   (guardaban usuarios y contraseñas en texto plano). */
+const CLAVES_LEGADAS = ['modugal_estado_v1', 'modugal_rol', 'modugal_usuarios', 'modugal_sesion'];
+const ROLES_VALIDOS = ['administrativo', 'operativo', 'secretaria', 'arquitecto'];
+
+function storageKey() {
+  return state.user?.id ? STORAGE_PREFIX + state.user.id : null;
+}
 
 const DEFAULT_IMAGE = 'https://images.unsplash.com/photo-1556910103-1c02745a872e?auto=format&fit=crop&w=1200&q=80';
 
@@ -75,13 +81,6 @@ const MG_PREFIX = 'MGJSON:';
 const MESES_CORTOS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const MESES_TITULO = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
-const DEMO_USERS = [
-  { email: 'gerencia@modugal.com', password: 'demo1234', cargo: 'administrativo', nombre: 'Gerencia General' },
-  { email: 'arquitecto@modugal.com', password: 'demo1234', cargo: 'arquitecto', nombre: 'Felipe Mora' },
-  { email: 'operativo@modugal.com', password: 'demo1234', cargo: 'operativo', nombre: 'Wilyer Operaciones' },
-  { email: 'secretaria@modugal.com', password: 'demo1234', cargo: 'secretaria', nombre: 'Secretaría Comercial' },
-];
-
 /* ==========================================================================
    2. ESTADO GLOBAL
    ========================================================================== */
@@ -91,7 +90,9 @@ const state = {
   comercial: [],
   tareas: {},
   carpinteros: [],
-  rol: 'administrativo',
+  /* Rol efectivo: viene SIEMPRE de public.usuarios (nunca del navegador).
+     Sin sesión se usa el rol de menor privilegio. */
+  rol: 'arquitecto',
   tab: 'produccion',
   fProduccion: 'todos',
   search: '',
@@ -118,250 +119,11 @@ const state = {
 };
 
 /* ==========================================================================
-   3. DATOS SEMILLA
+   3. DATOS
+   Los datos viven en Supabase. No hay datos semilla: los registros demo y
+   de prueba (QA) se retiraron al activar la autenticación real.
    ========================================================================== */
 
-function seed() {
-  return {
-    proyectos: [
-      {
-        id: 'PRJ-001',
-        name: 'Martha Pinos',
-        client: 'Martha Pinos',
-        city: 'Floridablanca',
-        neighborhood: 'Ruitoque Condominio',
-        address: 'Calle de los Caracoles, Casa 14',
-        phone: '+57 315 890 1234',
-        phase: 'Armado',
-        manufacturingPhase: 'Armado',
-        status: 'Detenido',
-        commercialStage: 'En Fabricación',
-        trimester: 'Q4 - 2026',
-        commercialDetail: 'Martha Pinos: COCINA INTEGRAL - MUEBLE BAJO E ISLA + ALACENA Y MUEBLE ALTO + MUEBLE DE BAÑO PRINCIPAL. Acabado madera natural, herrajes Blum y mesón de cuarzo.',
-        leadCarpenter: 'Edwin San Gil',
-        logisticOperator: 'Wilyer',
-        dateStart: '15 Oct 2026',
-        dateExpected: '20 Nov 2026',
-        image: 'https://images.unsplash.com/photo-1556910103-1c02745a872e?auto=format&fit=crop&w=1200&q=80',
-        arquitecto: 'Felipe Mora',
-        pendientes: [
-          { id: 'pd-001-1', text: 'Falta herrajes Blum (correderas integradas)', tipo: 'material', prioridad: 'alta', createdAt: '2026-11-01' },
-          { id: 'pd-001-2', text: 'Falta mesón de cuarzo Quarztone', tipo: 'material', prioridad: 'alta', createdAt: '2026-11-02' },
-          { id: 'pd-001-3', text: 'Confirmar fecha de instalación con el cliente', tipo: 'requerimiento', prioridad: 'media', createdAt: '2026-11-03' },
-        ],
-        muebles: [
-          { id: 'm1', name: 'Cocina - Mueble Bajo e Isla', carpenter: 'Edwin San Gil', status: 'Armado', manufacturingPhase: 'Armado' },
-          { id: 'm2', name: 'Cocina - Alacena y Mueble Alto', carpenter: 'Faber Contreras', status: 'Recepción', manufacturingPhase: 'Recepción' },
-          { id: 'm3', name: 'Mueble de Baño Principal', carpenter: 'Carlos Martinez', status: 'Presentación', manufacturingPhase: 'Presentación' },
-        ],
-        pedidos: [
-          { id: 'p1', category: 'Herrajes', item: 'Sistema de correderas integradas Blum', supplier: 'Serviherrajes', guide: 'GUI-88912', expected: '05 Nov 2026', status: 'En tránsito', qc: 'Pendiente' },
-          { id: 'p2', category: 'Mesón', item: 'Cuarzo Blanco Estelar 2cm', supplier: 'Marmolería del Norte', guide: 'GUI-99210', expected: '02 Nov 2026', status: 'Solicitado', qc: 'Pendiente' },
-          { id: 'p3', category: 'Madecor', item: 'Madecor Roble Cava 15mm 10 tableros', supplier: 'Pelíkano / Primadera', guide: 'GUI-44120', expected: '28 Oct 2026', status: 'Bodega', qc: 'Aprobado' },
-        ],
-        bloqueos: [
-          { id: 'b1', reason: 'Retraso en importación de herrajes Blum por el proveedor', responsible: 'Serviherrajes', date: '01 Nov 2026', solved: false, action: 'Se contactó a proveedor secundario para préstamo de stock' },
-        ],
-        archivos: [],
-        dropboxFiles: {
-          publicFiles: [
-            { name: 'Render_Cocina_MarthaPinos_v3.jpg', type: 'image', size: '4.2 MB', date: '16 Oct 2026' },
-            { name: 'Plano_Arquitectonico_Despieces_v2.pdf', type: 'pdf', size: '12.8 MB', date: '18 Oct 2026' },
-            { name: 'Presentacion_Cliente_Acabados.pdf', type: 'pdf', size: '8.1 MB', date: '15 Oct 2026' },
-          ],
-          privateFiles: [
-            { name: 'Cotizacion_Final_Aprobada_Precios.pdf', type: 'pdf', size: '1.2 MB', date: '14 Oct 2026' },
-            { name: 'Margen_Rentabilidad_y_Costos_Materiales.xlsx', type: 'excel', size: '540 KB', date: '15 Oct 2026' },
-            { name: 'Comprobantes_Pago_Nomina_Carpinteros.pdf', type: 'pdf', size: '2.4 MB', date: '30 Oct 2026' },
-          ],
-        },
-      },
-      {
-        id: 'PRJ-002',
-        name: 'Familia San Gil',
-        client: 'Familia San Gil',
-        city: 'San Gil',
-        neighborhood: 'Zona Centro',
-        address: 'Carrera 9 #11-45',
-        phone: '+57 318 456 7890',
-        phase: 'Asignación',
-        manufacturingPhase: 'Asignación',
-        status: 'En proceso',
-        commercialStage: 'En Fabricación',
-        trimester: 'Q4 - 2026',
-        commercialDetail: 'Familia San Gil: COCINA INTEGRAL LINEAL - MUEBLES BAJOS, ALACENA Y TORRE DE HORNOS. Madecor gris nube y mesón en cuarzo.',
-        leadCarpenter: 'Faber Contreras',
-        logisticOperator: 'Wilyer',
-        dateStart: '25 Oct 2026',
-        dateExpected: '10 Dec 2026',
-        image: 'https://images.unsplash.com/photo-1556909212-d5b604d0c14d?auto=format&fit=crop&w=1200&q=80',
-        arquitecto: 'Felipe Mora',
-        pendientes: [
-          { id: 'pd-002-1', text: 'Revisar planos de trazos y despieces', tipo: 'requerimiento', prioridad: 'baja', createdAt: '2026-10-27' },
-        ],
-        muebles: [
-          { id: 'm4', name: 'Cocina Integral Lineal', carpenter: 'Faber Contreras', status: 'Asignación', manufacturingPhase: 'Asignación' },
-        ],
-        pedidos: [
-          { id: 'p4', category: 'Madecor', item: 'Madecor Gris Nube 18mm', supplier: 'Districondor', guide: 'GUI-11029', expected: '08 Nov 2026', status: 'Bodega', qc: 'Aprobado' },
-        ],
-        bloqueos: [],
-        archivos: [],
-        dropboxFiles: {
-          publicFiles: [
-            { name: 'Render_Cocina_SanGil.jpg', type: 'image', size: '3.8 MB', date: '26 Oct 2026' },
-            { name: 'Planimetria_Trazos.pdf', type: 'pdf', size: '9.4 MB', date: '27 Oct 2026' },
-          ],
-          privateFiles: [
-            { name: 'Presupuesto_Interno_SanGil.xlsx', type: 'excel', size: '410 KB', date: '25 Oct 2026' },
-          ],
-        },
-      },
-      {
-        id: 'PRJ-003',
-        name: 'Silvia Carrara',
-        client: 'Silvia Carrara',
-        city: 'Bucaramanga',
-        neighborhood: 'Cabecera del Llano',
-        address: 'Calle 48 #34-12, Apto 802',
-        phone: '+57 300 123 4567',
-        phase: 'Embalaje',
-        manufacturingPhase: 'Embalaje',
-        status: 'En proceso',
-        commercialStage: 'En Fabricación',
-        trimester: 'Q4 - 2026',
-        commercialDetail: 'Silvia Carrara: MUEBLE DE TELEVISIÓN PARA SALA + JUEGO DE PUERTAS ENTAMBADAS (6 UNIDADES) + ESPEJOS BRONCE PARA BAÑOS.',
-        leadCarpenter: 'Edwin San Gil',
-        logisticOperator: 'Wilyer',
-        dateStart: '01 Oct 2026',
-        dateExpected: '08 Nov 2026',
-        image: 'https://images.unsplash.com/photo-1556911220-e15b29be8c8f?auto=format&fit=crop&w=1200&q=80',
-        arquitecto: 'Felipe Mora',
-        pendientes: [
-          { id: 'pd-003-1', text: 'Coordinar flete especial para espejos y puertas', tipo: 'requerimiento', prioridad: 'media', createdAt: '2026-11-01' },
-        ],
-        muebles: [
-          { id: 'm5', name: 'Mueble de Televisión Sala', carpenter: 'Edwin San Gil', status: 'Embalaje', manufacturingPhase: 'Embalaje' },
-          { id: 'm6', name: 'Juego de Puertas Entambadas (6 un)', carpenter: 'Carlos Martinez', status: 'Despacho', manufacturingPhase: 'Despacho' },
-        ],
-        pedidos: [
-          { id: 'p5', category: 'Vidrios', item: 'Espejos bronce 4mm con bisel', supplier: 'Vidrios Santander', guide: 'GUI-77123', expected: '30 Oct 2026', status: 'Entregado', qc: 'Aprobado' },
-        ],
-        bloqueos: [],
-        archivos: [],
-        dropboxFiles: {
-          publicFiles: [
-            { name: 'Diseño_Mobiliario_SilviaCarrara.pdf', type: 'pdf', size: '15.1 MB', date: '02 Oct 2026' },
-          ],
-          privateFiles: [
-            { name: 'Facturacion_y_Pagos_Recibidos.pdf', type: 'pdf', size: '2.1 MB', date: '01 Oct 2026' },
-          ],
-        },
-      },
-      {
-        id: 'PRJ-004',
-        name: 'Cocina Claudia',
-        client: 'Claudia Ruitoque',
-        city: 'Floridablanca',
-        neighborhood: 'Ruitoque Country Club',
-        address: 'Condominio El Roble, Lote 45',
-        phone: '+57 316 777 8899',
-        phase: 'Despacho',
-        manufacturingPhase: 'Despacho',
-        status: 'Completado',
-        commercialStage: 'Instalaciones',
-        trimester: 'Q3 - 2026',
-        commercialDetail: 'Claudia Ruitoque: COCINA INTEGRAL PREMIUM + TORRE DE CALORES. Proyecto instalado y entregado; en periodo de garantía.',
-        leadCarpenter: 'Carlos Martinez',
-        logisticOperator: 'Wilyer',
-        dateStart: '10 Sep 2026',
-        dateExpected: '30 Oct 2026',
-        image: 'https://images.unsplash.com/photo-1556912172-45b73e51f847?auto=format&fit=crop&w=1200&q=80',
-        arquitecto: 'Felipe Mora',
-        pendientes: [],
-        muebles: [
-          { id: 'm7', name: 'Cocina Integral Premium + Torre de Calores', carpenter: 'Carlos Martinez', status: 'Despacho', manufacturingPhase: 'Despacho' },
-        ],
-        pedidos: [],
-        bloqueos: [],
-        archivos: [],
-        dropboxFiles: {
-          publicFiles: [
-            { name: 'Fotos_Finales_Instalacion.pdf', type: 'pdf', size: '22.4 MB', date: '30 Oct 2026' },
-          ],
-          privateFiles: [
-            { name: 'Liquidacion_Proyecto_Claudia.pdf', type: 'pdf', size: '1.8 MB', date: '30 Oct 2026' },
-          ],
-        },
-      },
-      {
-        id: 'PRJ-005',
-        name: 'Andrés Mejía',
-        client: 'Andrés Mejía',
-        city: 'Bucaramanga',
-        neighborhood: 'Cañaveral',
-        address: 'Carrera 33 #56-20, Casa 7',
-        phone: '+57 310 442 1188',
-        phase: 'Embalaje',
-        manufacturingPhase: 'Embalaje',
-        status: 'En proceso',
-        commercialStage: 'Instalaciones',
-        trimester: 'Q4 - 2026',
-        commercialDetail: 'Andrés Mejía: CLÓSET VESTIER - HABITACIÓN PRINCIPAL + MUEBLE DE BAÑO MÁSTER. Entrega programada para hoy.',
-        leadCarpenter: 'Carlos Martinez',
-        logisticOperator: 'Wilyer',
-        dateStart: formatFechaLarga(new Date()),
-        dateExpected: formatFechaLarga(new Date()),
-        image: 'https://images.unsplash.com/photo-1558997519-83ea9252edf8?auto=format&fit=crop&w=1200&q=80',
-        arquitecto: 'Felipe Mora',
-        pendientes: [
-          { id: 'pd-005-1', text: 'Confirmar disponibilidad de parqueadero para el despacho', tipo: 'requerimiento', prioridad: 'alta', createdAt: hoyISO() },
-        ],
-        muebles: [
-          { id: 'm8', name: 'Clóset Vestier Habitación Principal', carpenter: 'Carlos Martinez', status: 'Embalaje', manufacturingPhase: 'Embalaje' },
-        ],
-        pedidos: [],
-        bloqueos: [],
-        archivos: [],
-        dropboxFiles: {
-          publicFiles: [
-            { name: 'Render_Closet_AndresMejia.jpg', type: 'image', size: '5.1 MB', date: hoyISO() },
-          ],
-          privateFiles: [],
-        },
-      },
-    ],
-    comercial: [
-      {
-        id: 'COM-005',
-        cliente: 'Dr. Fernando López',
-        etapa: 'Cotizaciones',
-        trimester: 'Q4 - 2026',
-        status: 'En proceso',
-        dateExpected: 'Por definir',
-        proyectoId: null,
-        alert: 'Esperando aprobación de diseño 3D',
-        detalle: 'Dr. Fernando López: CLÓSET - HABITACIÓN PRINCIPAL + MUEBLE BAÑO MÁSTER. Acabado nogal, herrajes Blum e iluminación LED interior.',
-        rechazado: false,
-        motivo: '',
-      },
-      {
-        id: 'COM-006',
-        cliente: 'Camila Reyes',
-        etapa: 'Prospectos',
-        trimester: 'Q1 - 2027',
-        status: 'En proceso',
-        dateExpected: 'Por definir',
-        proyectoId: null,
-        alert: 'Visita técnica programada para el viernes',
-        detalle: 'Camila Reyes: COCINA INTEGRAL - ISLA CENTRAL + DESPENSERO + MUEBLE DE LAVANDERÍA. Diseño preliminar 3D en revisión con la cliente.',
-        rechazado: false,
-        motivo: '',
-      },
-    ],
-    tareas: {},
-  };
-}
 /* ==========================================================================
    4. PERSISTENCIA, MIGRACIÓN Y UTILIDADES
    ========================================================================== */
@@ -817,7 +579,7 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas) {
   return { proyectos: proyectosApp, comercial, tareas: tareasApp, carpinteros: carpinterosApp };
 }
 
-async function leerSupabase(permitirSeed = true) {
+async function leerSupabase() {
   const [prj, pen, car, tar] = await Promise.all([
     supabaseClient.from('proyectos').select('*').order('created_at', { ascending: true }),
     supabaseClient.from('pendientes').select('*').order('created_at', { ascending: true }),
@@ -826,76 +588,7 @@ async function leerSupabase(permitirSeed = true) {
   ]);
   const error = [prj, pen, car, tar].find((r) => r.error);
   if (error) throw error.error;
-
-  if (permitirSeed && (!prj.data || prj.data.length === 0)) {
-    return sembrarSupabase();
-  }
   return construirEstado(prj.data || [], pen.data || [], car.data || [], tar.data || []);
-}
-
-async function sembrarSupabase() {
-  console.info('[MODUGAL] Supabase vacío: insertando datos semilla.');
-  const base = seed();
-  const proyectosBase = base.proyectos.map(normalizarProyecto);
-  const comercialBase = base.comercial.map(normalizarComercial);
-
-  const filas = [
-    ...proyectosBase.map(filaDesdeProyecto),
-    ...comercialBase.map(filaDesdeProspecto),
-  ];
-  const insPrj = await supabaseClient.from('proyectos').upsert(filas, { onConflict: 'codigo_prj' }).select('*');
-  if (insPrj.error) throw insPrj.error;
-  const dbIdPorCodigo = new Map((insPrj.data || []).map((r) => [r.codigo_prj, r.id]));
-
-  const nombres = new Set();
-  proyectosBase.forEach((p) => (p.muebles || []).forEach((m) => { if (m.carpenter) nombres.add(m.carpenter); }));
-  Object.keys(base.tareas || {}).forEach((n) => { if (n) nombres.add(n); });
-
-  let carpinterosData = [];
-  if (nombres.size) {
-    const insCar = await supabaseClient.from('carpinteros').insert(
-      [...nombres].map((nombre) => ({ nombre, cargo: 'OPERARIO DE PLANTA' }))
-    ).select('*');
-    if (insCar.error) throw insCar.error;
-    carpinterosData = insCar.data || [];
-  }
-
-  const pendientesInsert = [];
-  proyectosBase.forEach((p) => {
-    (p.pendientes || []).forEach((x) => {
-      pendientesInsert.push({
-        id: x.id,
-        proyecto_id: dbIdPorCodigo.get(p.id) || null,
-        descripcion: descripcionPendiente(x),
-        estado: x.estado === 'Resuelto' ? 'Resuelto' : 'Pendiente',
-      });
-    });
-  });
-  if (pendientesInsert.length) {
-    const insPen = await supabaseClient.from('pendientes').insert(pendientesInsert);
-    if (insPen.error) throw insPen.error;
-  }
-
-  const idCarpintero = new Map((carpinterosData || []).map((c) => [String(c.nombre || '').toLowerCase(), c.id]));
-  const tareasInsert = [];
-  Object.entries(base.tareas || {}).forEach(([carpintero, lista]) => {
-    (lista || []).forEach((t) => {
-      tareasInsert.push({
-        id: t.id,
-        carpintero_id: idCarpintero.get(carpintero.toLowerCase()) || null,
-        proyecto_id: dbIdPorCodigo.get(t.projectId) || null,
-        nombre_mueble: t.text,
-        fase_manual: PRODUCTION_PHASES.includes(t.phase) ? t.phase : 'Asignación',
-        estado_tarea: t.estado || 'En proceso',
-      });
-    });
-  });
-  if (tareasInsert.length) {
-    const insTar = await supabaseClient.from('tareas_carpintero').insert(tareasInsert);
-    if (insTar.error) throw insTar.error;
-  }
-
-  return leerSupabase(false);
 }
 
 function reconstruirSnapshot() {
@@ -1083,6 +776,7 @@ function encolarSync(fn) {
 const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero'];
 let rtCanal = null;
 let rtTimer = null;
+let rtVisibilidadLista = false;
 
 function usuarioEditando() {
   const el = document.activeElement;
@@ -1096,8 +790,10 @@ function programarRecargaRemota() {
   rtTimer = setTimeout(() => {
     /* No pisar lo que el usuario está escribiendo: reintentar luego */
     if (usuarioEditando()) return programarRecargaRemota();
+    if (!sbListo || !state.user) return;
     encolarSync(async () => {
-      const data = await leerSupabase(false);
+      const data = await leerSupabase();
+      if (!state.user) return; /* la sesión se cerró mientras se leía */
       state.proyectos = data.proyectos || [];
       state.comercial = data.comercial || [];
       state.tareas = data.tareas || {};
@@ -1123,9 +819,20 @@ function iniciarTiempoReal() {
   });
 
   /* Al volver a la pestaña (p. ej. celular que estuvo bloqueado) se refresca */
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') programarRecargaRemota();
-  });
+  if (!rtVisibilidadLista) {
+    rtVisibilidadLista = true;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && sbListo && state.user) programarRecargaRemota();
+    });
+  }
+}
+
+function detenerTiempoReal() {
+  clearTimeout(rtTimer);
+  if (rtCanal) {
+    supabaseClient.removeChannel(rtCanal);
+    rtCanal = null;
+  }
 }
 
 async function refrescarPendientesProyecto(projectId) {
@@ -1154,9 +861,15 @@ async function refrescarPendientesProyecto(projectId) {
    CARGA INICIAL · CACHE LOCAL DE RESPALDO
    -------------------------------------------------------------------------- */
 
+function estadoVacio() {
+  return { proyectos: [], comercial: [], tareas: {}, carpinteros: [] };
+}
+
 function cargarEstadoLocal() {
+  const key = storageKey();
+  if (!key) return estadoVacio();
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(key);
     if (raw) {
       const data = JSON.parse(raw);
       if (data && Array.isArray(data.proyectos) && Array.isArray(data.comercial)) {
@@ -1169,22 +882,15 @@ function cargarEstadoLocal() {
       }
     }
   } catch (e) {
-    console.warn('[MODUGAL] Error leyendo el cache local, se usan datos semilla.', e);
+    console.warn('[MODUGAL] Error leyendo el cache local.', e);
   }
-  const base = seed();
-  return {
-    proyectos: base.proyectos.map(normalizarProyecto),
-    comercial: base.comercial.map(normalizarComercial),
-    tareas: base.tareas,
-    carpinteros: [],
-  };
+  return estadoVacio();
 }
 
 async function cargarEstado() {
   try {
     const data = await leerSupabase();
     sbListo = true;
-    guardarCacheLocal();
     return data;
   } catch (e) {
     console.error('[MODUGAL] Supabase no disponible; se usa el cache local.', e);
@@ -1194,8 +900,10 @@ async function cargarEstado() {
 }
 
 function guardarCacheLocal() {
+  const key = storageKey();
+  if (!key) return;
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+    localStorage.setItem(key, JSON.stringify({
       proyectos: state.proyectos,
       comercial: state.comercial,
       tareas: state.tareas,
@@ -1283,81 +991,207 @@ function showToast(mensaje) {
    5. AUTENTICACIÓN · SESIÓN · TEMA · PERMISOS
    ========================================================================== */
 
-function getUsuarios() {
-  let usuarios = [];
-  try {
-    const raw = localStorage.getItem(USUARIOS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) usuarios = parsed;
-    }
-  } catch (e) { /* se reconstruyen los demo */ }
+/* --------------------------------------------------------------------------
+   Supabase Auth
+   - La sesión la guarda y renueva el SDK (no localStorage propio).
+   - El rol se lee de public.usuarios (fila creada por un trigger al
+     registrarse). El cargo elegido al registrarse queda como
+     `cargo_solicitado`; Gerencia lo aprueba asignando `rol`.
+   - Las políticas RLS de la base son las que realmente protegen los datos;
+     los permisos de la UI solo ocultan lo que el rol no puede hacer.
+   -------------------------------------------------------------------------- */
 
-  let cambiado = false;
-  DEMO_USERS.forEach((demo) => {
-    if (!usuarios.some((u) => String(u.email || '').toLowerCase() === demo.email)) {
-      usuarios.push({ ...demo });
-      cambiado = true;
-    }
-  });
-  if (cambiado || !localStorage.getItem(USUARIOS_KEY)) {
-    try { localStorage.setItem(USUARIOS_KEY, JSON.stringify(usuarios)); } catch (e) { /* noop */ }
-  }
-  return usuarios;
+let sesionUserId = null;      /* usuario cuyo estado está cargado */
+let entrandoSesion = null;    /* evita cargas dobles (getSession + onAuthStateChange) */
+
+const MENSAJES_AUTH = {
+  'Invalid login credentials': 'Correo o contraseña incorrectos.',
+  'Email not confirmed': 'Debes confirmar tu correo antes de ingresar. Revisa tu bandeja de entrada.',
+  'User already registered': 'Ese correo ya tiene una cuenta. Inicia sesión.',
+  'Password should be at least 6 characters.': 'La contraseña debe tener mínimo 6 caracteres.',
+};
+
+function traducirErrorAuth(error) {
+  const msg = String(error?.message || error || 'Error desconocido');
+  if (MENSAJES_AUTH[msg]) return MENSAJES_AUTH[msg];
+  if (/rate limit/i.test(msg)) return 'Demasiados intentos. Espera un momento e inténtalo de nuevo.';
+  if (/password/i.test(msg) && /characters/i.test(msg)) return 'La contraseña es muy corta (mínimo 6 caracteres).';
+  if (/fetch|network/i.test(msg)) return 'Sin conexión con el servidor. Revisa tu internet.';
+  return msg;
 }
 
-function guardarUsuarios(usuarios) {
-  localStorage.setItem(USUARIOS_KEY, JSON.stringify(usuarios));
+function urlRetorno() {
+  return window.location.origin + window.location.pathname;
 }
 
-function getSesion() {
-  try { return JSON.parse(localStorage.getItem(SESION_KEY) || 'null'); } catch (e) { return null; }
-}
-
-function setSesion(user) {
-  state.user = user;
-  localStorage.setItem(SESION_KEY, JSON.stringify(user));
-}
-
-function clearSesion() {
-  localStorage.removeItem(SESION_KEY);
-  state.user = null;
-}
-
-function iniciarSesion(email, password, cargo) {
-  const usuarios = getUsuarios();
-  const u = usuarios.find((x) => String(x.email || '').toLowerCase() === String(email || '').toLowerCase());
-  if (!u || u.password !== password) return { ok: false, msg: 'Credenciales inválidas. Verifica correo y contraseña.' };
-  if (u.cargo !== cargo) return { ok: false, msg: 'El cargo seleccionado no corresponde a la cuenta.' };
-  setSesion({ email: u.email, cargo: u.cargo, nombre: u.nombre });
-  state.rol = u.cargo;
-  localStorage.setItem(ROL_KEY, u.cargo);
+async function iniciarSesion(email, password) {
+  const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
+  if (error) return { ok: false, msg: traducirErrorAuth(error) };
+  /* onAuthStateChange(SIGNED_IN) se encarga de cargar perfil y datos */
   return { ok: true };
 }
 
-function registrar(email, password, cargo, nombre) {
-  const usuarios = getUsuarios();
-  const mail = String(email || '').toLowerCase();
+async function registrar(email, password, cargo, nombre) {
+  const mail = String(email || '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) return { ok: false, msg: 'Correo electrónico inválido.' };
-  if (String(password).length < 4) return { ok: false, msg: 'La contraseña debe tener mínimo 4 caracteres.' };
-  if (usuarios.some((x) => String(x.email || '').toLowerCase() === mail)) return { ok: false, msg: 'El correo ya se encuentra registrado.' };
-  const nuevo = { email: mail, password, cargo, nombre: nombre || labelCargo(cargo) };
-  usuarios.push(nuevo);
-  guardarUsuarios(usuarios);
-  setSesion({ email: nuevo.email, cargo: nuevo.cargo, nombre: nuevo.nombre });
-  state.rol = nuevo.cargo;
-  localStorage.setItem(ROL_KEY, nuevo.cargo);
+  if (String(password).length < 6) return { ok: false, msg: 'La contraseña debe tener mínimo 6 caracteres.' };
+  if (!String(nombre || '').trim()) return { ok: false, msg: 'Escribe tu nombre completo.' };
+  const { data, error } = await supabaseClient.auth.signUp({
+    email: mail,
+    password,
+    options: {
+      data: { nombre: String(nombre).trim(), cargo: ROLES_VALIDOS.includes(cargo) ? cargo : 'arquitecto' },
+      emailRedirectTo: urlRetorno(),
+    },
+  });
+  if (error) return { ok: false, msg: traducirErrorAuth(error) };
+  /* Supabase no devuelve error si el correo ya existe (protección contra
+     enumeración); en ese caso `identities` llega vacío. */
+  if (data?.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+    return { ok: false, msg: 'Ese correo ya tiene una cuenta. Inicia sesión o recupera tu contraseña.' };
+  }
+  if (!data?.session) {
+    return { ok: true, pendienteConfirmacion: true, msg: `Te enviamos un correo a ${mail}. Confírmalo y luego inicia sesión.` };
+  }
   return { ok: true };
 }
 
-function cerrarSesion() {
-  clearSesion();
-  state.rol = 'administrativo';
-  localStorage.setItem(ROL_KEY, state.rol);
-  ocultarLogin();
-  updateUserChip();
+async function cargarPerfil(authUser) {
+  const { data, error } = await supabaseClient
+    .from('usuarios')
+    .select('id,email,nombre,rol,cargo_solicitado,activo')
+    .eq('id', authUser.id)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function entrarConSesion(authUser) {
+  if (!authUser) return;
+  if (sesionUserId === authUser.id) return;
+  if (entrandoSesion) return entrandoSesion;
+
+  entrandoSesion = (async () => {
+    let perfil = null;
+    try {
+      perfil = await cargarPerfil(authUser);
+    } catch (e) {
+      console.error('[MODUGAL] No se pudo leer el perfil.', e);
+    }
+    if (!perfil) {
+      mostrarErrorLogin('Tu cuenta no tiene perfil en MODUGAL. Pide a Gerencia que revise la tabla de usuarios.');
+      await supabaseClient.auth.signOut();
+      return;
+    }
+    if (perfil.activo === false) {
+      mostrarErrorLogin('Tu cuenta está desactivada. Comunícate con Gerencia.');
+      await supabaseClient.auth.signOut();
+      return;
+    }
+
+    sesionUserId = authUser.id;
+    state.user = {
+      id: authUser.id,
+      email: perfil.email || authUser.email,
+      nombre: perfil.nombre || authUser.email,
+      cargo: perfil.rol,
+      cargoSolicitado: perfil.cargo_solicitado,
+    };
+    state.rol = ROLES_VALIDOS.includes(perfil.rol) ? perfil.rol : 'arquitecto';
+
+    ocultarLogin();
+    aplicarPermisosUI();
+    updateUserChip();
+    switchTab(tabsPermitidos().includes(state.tab) ? state.tab : 'produccion');
+
+    const cargado = await cargarEstado();
+    state.proyectos = cargado.proyectos || [];
+    state.comercial = cargado.comercial || [];
+    state.tareas = cargado.tareas || {};
+    state.carpinteros = cargado.carpinteros || [];
+    reconstruirSnapshot();
+    guardarCacheLocal();
+    renderAll();
+
+    if (sbListo) iniciarTiempoReal();
+    else showToast('Sin conexión con la base de datos: mostrando la última copia guardada.');
+
+    if (perfil.cargo_solicitado && perfil.cargo_solicitado !== state.rol) {
+      showToast(`Acceso de ${labelCargo(state.rol)}. Tu cargo de ${labelCargo(perfil.cargo_solicitado)} está pendiente de aprobación por Gerencia.`);
+    } else {
+      showToast(`Bienvenido, ${state.user.nombre} · ${labelCargo(state.rol)}`);
+    }
+  })();
+
+  try {
+    await entrandoSesion;
+  } finally {
+    entrandoSesion = null;
+  }
+}
+
+function salirDeSesion() {
+  detenerTiempoReal();
+  const key = storageKey();
+  if (key) { try { localStorage.removeItem(key); } catch (e) { /* noop */ } }
+  sesionUserId = null;
+  sbListo = false;
+  state.user = null;
+  state.rol = 'arquitecto';
+  state.fichaId = null;
+  Object.assign(state, estadoVacio());
+  reconstruirSnapshot();
   aplicarPermisosUI();
-  switchTab('produccion');
+  updateUserChip();
+  renderAll();
+  mostrarLogin();
+}
+
+async function cerrarSesion() {
+  /* Se espera a que terminen los guardados pendientes antes de salir */
+  try { await syncQueue; } catch (e) { /* noop */ }
+  const { error } = await supabaseClient.auth.signOut();
+  if (error) console.warn('[MODUGAL] signOut:', error);
+  salirDeSesion();
+}
+
+async function enviarRecuperacion(email) {
+  const mail = String(email || '').trim().toLowerCase();
+  if (!mail) return { ok: false, msg: 'Escribe tu correo.' };
+  const { error } = await supabaseClient.auth.resetPasswordForEmail(mail, { redirectTo: urlRetorno() });
+  if (error) return { ok: false, msg: traducirErrorAuth(error) };
+  return { ok: true };
+}
+
+async function cambiarContrasena(nueva) {
+  if (String(nueva || '').length < 6) return { ok: false, msg: 'La contraseña debe tener mínimo 6 caracteres.' };
+  const { error } = await supabaseClient.auth.updateUser({ password: nueva });
+  if (error) return { ok: false, msg: traducirErrorAuth(error) };
+  return { ok: true };
+}
+
+function escucharAuth() {
+  supabaseClient.auth.onAuthStateChange((event, session) => {
+    /* No se llama al SDK con await dentro del callback (puede bloquearse);
+       el trabajo se difiere al siguiente ciclo. */
+    setTimeout(() => {
+      if (event === 'PASSWORD_RECOVERY') {
+        abrirRecuperacion('nueva');
+        return;
+      }
+      if (event === 'SIGNED_OUT') {
+        if (sesionUserId) salirDeSesion();
+        return;
+      }
+      if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
+        entrarConSesion(session.user);
+      }
+    }, 0);
+  });
+}
+
+function limpiarClavesLegadas() {
+  CLAVES_LEGADAS.forEach((k) => { try { localStorage.removeItem(k); } catch (e) { /* noop */ } });
 }
 
 function updateUserChip() {
@@ -1393,7 +1227,16 @@ function ocultarLogin() {
   document.getElementById('login-screen')?.classList.add('is-hidden');
 }
 
-/* ---- Matriz de permisos (simulada; preparada para backend) ---- */
+function mostrarErrorLogin(msg, tipo = 'error') {
+  const el = document.getElementById('login-error');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.toggle('text-red-600', tipo === 'error');
+  el.classList.toggle('text-emerald-700', tipo === 'ok');
+  el.classList.remove('hidden');
+}
+
+/* ---- Matriz de permisos de la UI (espejo de las políticas RLS) ---- */
 
 function esGerencia() {
   return state.rol === 'administrativo';
@@ -1454,8 +1297,9 @@ function aplicarPermisosUI() {
   document.querySelectorAll('#mg-tabs [data-tab]').forEach((btn) => {
     btn.classList.toggle('hidden', !permitidos.includes(btn.dataset.tab));
   });
-  const rolSelect = document.getElementById('mg-rol-select');
-  if (rolSelect) rolSelect.value = state.rol;
+  const rolLabel = document.getElementById('mg-rol-label');
+  if (rolLabel) rolLabel.textContent = labelCargo(state.rol);
+  document.getElementById('mg-role-selector')?.classList.toggle('hidden', !state.user);
 
   document.querySelectorAll('[data-accion="nuevo-proyecto"]').forEach((btn) => {
     const permitido = puedeCrearProyecto();
@@ -3036,77 +2880,121 @@ function bindLoginEvents() {
   const btnSubmit = document.getElementById('login-submit');
   if (!form || !btnToggle || !btnSubmit) return;
 
-  btnToggle.addEventListener('click', () => {
-    modoLogin.value = modoLogin.value === 'login' ? 'registro' : 'login';
-    btnSubmit.innerHTML = modoLogin.value === 'login'
+  const camposRegistro = document.querySelectorAll('[data-solo-registro]');
+  const pintarModo = () => {
+    const esLogin = modoLogin.value === 'login';
+    btnSubmit.innerHTML = esLogin
       ? '<i class="fas fa-lock mr-2" aria-hidden="true"></i> Iniciar Sesión'
       : '<i class="fas fa-user-plus mr-2" aria-hidden="true"></i> Crear Cuenta';
-    btnToggle.textContent = modoLogin.value === 'login' ? 'Crear cuenta' : 'Ya tengo cuenta · Iniciar Sesión';
+    btnToggle.textContent = esLogin ? 'Crear cuenta' : 'Ya tengo cuenta · Iniciar Sesión';
+    camposRegistro.forEach((el) => el.classList.toggle('hidden', esLogin));
+    const nombre = document.getElementById('login-nombre');
+    if (nombre) nombre.required = !esLogin;
+    document.getElementById('login-password')?.setAttribute('autocomplete', esLogin ? 'current-password' : 'new-password');
+    document.getElementById('login-error')?.classList.add('hidden');
+  };
+  pintarModo();
+
+  btnToggle.addEventListener('click', () => {
+    modoLogin.value = modoLogin.value === 'login' ? 'registro' : 'login';
+    pintarModo();
   });
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = document.getElementById('login-email').value.trim();
     const password = document.getElementById('login-password').value;
-    const cargo = document.getElementById('login-cargo').value;
-    const errorEl = document.getElementById('login-error');
-    errorEl.classList.add('hidden');
+    const cargo = document.getElementById('login-cargo')?.value || 'arquitecto';
+    const nombre = document.getElementById('login-nombre')?.value || '';
+    document.getElementById('login-error')?.classList.add('hidden');
 
-    const res = modoLogin.value === 'login'
-      ? iniciarSesion(email, password, cargo)
-      : registrar(email, password, cargo, labelCargo(cargo));
+    const textoBoton = btnSubmit.innerHTML;
+    btnSubmit.disabled = true;
+    btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin mr-2" aria-hidden="true"></i> Procesando...';
+    let res;
+    try {
+      res = modoLogin.value === 'login'
+        ? await iniciarSesion(email, password)
+        : await registrar(email, password, cargo, nombre);
+    } catch (err) {
+      res = { ok: false, msg: traducirErrorAuth(err) };
+    } finally {
+      btnSubmit.disabled = false;
+      btnSubmit.innerHTML = textoBoton;
+    }
 
     if (!res.ok) {
-      errorEl.textContent = res.msg;
-      errorEl.classList.remove('hidden');
+      mostrarErrorLogin(res.msg);
       return;
     }
-    ocultarLogin();
-    updateUserChip();
-    aplicarPermisosUI();
-    switchTab('produccion');
-    showToast(`Bienvenido · ${labelCargo(state.rol)}`);
-  });
-
-  document.getElementById('forgot-close')?.addEventListener('click', () => {
-    document.getElementById('login-forgot-modal').classList.add('is-hidden');
-  });
-
-  document.getElementById('forgot-reset')?.addEventListener('click', () => {
-    const email = document.getElementById('forgot-email').value.trim().toLowerCase();
-    const pass = document.getElementById('forgot-pass').value;
-    if (!email || !pass) return;
-    const usuarios = getUsuarios();
-    const u = usuarios.find((x) => String(x.email || '').toLowerCase() === email);
-    if (u) {
-      u.password = pass;
-      guardarUsuarios(usuarios);
+    document.getElementById('login-password').value = '';
+    if (res.pendienteConfirmacion) {
+      modoLogin.value = 'login';
+      pintarModo();
+      mostrarErrorLogin(res.msg, 'ok');
     }
-    document.getElementById('login-forgot-modal').classList.add('is-hidden');
-    const errorEl = document.getElementById('login-error');
-    errorEl.textContent = 'Contraseña actualizada. Inicia sesión con tu nueva contraseña.';
-    errorEl.classList.remove('hidden');
+    /* Si hay sesión, onAuthStateChange(SIGNED_IN) carga perfil y datos */
   });
+
+  document.getElementById('login-forgot')?.addEventListener('click', () => {
+    const email = document.getElementById('login-email')?.value.trim() || '';
+    abrirRecuperacion('correo', email);
+  });
+
+  document.getElementById('forgot-close')?.addEventListener('click', cerrarRecuperacion);
+
+  document.getElementById('forgot-reset')?.addEventListener('click', async () => {
+    const modal = document.getElementById('login-forgot-modal');
+    const modo = modal?.dataset.modo || 'correo';
+    const msgEl = document.getElementById('forgot-msg');
+    const btn = document.getElementById('forgot-reset');
+    btn.disabled = true;
+    const res = modo === 'nueva'
+      ? await cambiarContrasena(document.getElementById('forgot-pass').value)
+      : await enviarRecuperacion(document.getElementById('forgot-email').value);
+    btn.disabled = false;
+    if (!res.ok) {
+      msgEl.textContent = res.msg;
+      msgEl.className = 'text-xs font-bold text-red-600 mt-3';
+      return;
+    }
+    if (modo === 'nueva') {
+      cerrarRecuperacion();
+      showToast('Contraseña actualizada.');
+    } else {
+      msgEl.textContent = 'Si el correo está registrado, recibirás un enlace para crear una nueva contraseña.';
+      msgEl.className = 'text-xs font-bold text-emerald-700 mt-3';
+    }
+  });
+}
+
+function abrirRecuperacion(modo, email = '') {
+  const modal = document.getElementById('login-forgot-modal');
+  if (!modal) return;
+  modal.dataset.modo = modo;
+  const esNueva = modo === 'nueva';
+  document.getElementById('forgot-title').textContent = esNueva ? 'Crea tu nueva contraseña' : 'Recuperar contraseña';
+  document.getElementById('forgot-sub').textContent = esNueva
+    ? 'Escribe la nueva contraseña para tu cuenta (mínimo 6 caracteres).'
+    : 'Te enviaremos un enlace a tu correo para crear una nueva contraseña.';
+  document.getElementById('forgot-email-wrap').classList.toggle('hidden', esNueva);
+  document.getElementById('forgot-pass-wrap').classList.toggle('hidden', !esNueva);
+  document.getElementById('forgot-email').value = email;
+  document.getElementById('forgot-pass').value = '';
+  document.getElementById('forgot-reset').textContent = esNueva ? 'Guardar contraseña' : 'Enviar enlace';
+  const msgEl = document.getElementById('forgot-msg');
+  msgEl.textContent = '';
+  msgEl.className = 'hidden';
+  modal.classList.remove('is-hidden');
+}
+
+function cerrarRecuperacion() {
+  document.getElementById('login-forgot-modal')?.classList.add('is-hidden');
 }
 
 function bindHeaderEvents() {
   document.getElementById('btn-tema')?.addEventListener('click', toggleTema);
   document.getElementById('btn-logout')?.addEventListener('click', cerrarSesion);
-
-  const rolSelect = document.getElementById('mg-rol-select');
-  rolSelect?.addEventListener('change', (e) => {
-    state.rol = e.target.value;
-    localStorage.setItem(ROL_KEY, state.rol);
-    if (state.user) {
-      state.user = { ...state.user, cargo: state.rol };
-      localStorage.setItem(SESION_KEY, JSON.stringify(state.user));
-    }
-    aplicarPermisosUI();
-    updateUserChip();
-    switchTab(state.tab);
-    if (state.fichaId) openFicha(state.fichaId);
-    showToast(`Perfil activo: ${labelCargo(state.rol)}`);
-  });
 
   document.getElementById('mg-search-input')?.addEventListener('input', (e) => {
     state.search = e.target.value.trim();
@@ -3461,12 +3349,8 @@ function bindChatEvents() {
    ========================================================================== */
 
 async function init() {
-  state.rol = localStorage.getItem(ROL_KEY) || 'administrativo';
-  if (!ROLE_LABELS[state.rol]) state.rol = 'administrativo';
-  state.user = getSesion();
+  limpiarClavesLegadas();
   state.tema = localStorage.getItem(TEMA_KEY) || 'claro';
-
-  getUsuarios();
   aplicarTema();
 
   bindLoginEvents();
@@ -3482,33 +3366,19 @@ async function init() {
   bindDragAndDrop();
   bindChatEvents();
 
+  /* Sin sesión no se muestra ni se consulta ningún dato */
   aplicarPermisosUI();
   updateUserChip();
   renderAll();
   switchTab('produccion');
+  mostrarLogin();
 
-  if (state.user) {
-    ocultarLogin();
-  } else {
-    mostrarLogin();
-  }
+  escucharAuth();
 
-  /* Carga remota: select('*') sobre proyectos, pendientes, carpinteros y
-     tareas_carpintero. Si las tablas están vacías se siembran los datos demo. */
-  const cargado = await cargarEstado();
-  state.proyectos = cargado.proyectos || [];
-  state.comercial = cargado.comercial || [];
-  state.tareas = cargado.tareas || {};
-  state.carpinteros = cargado.carpinteros || [];
-
-  reconstruirSnapshot();
-  guardarCacheLocal();
-  aplicarPermisosUI();
-  updateUserChip();
-  renderAll();
-
-  if (sbListo) iniciarTiempoReal();
-  else showToast('Sin conexión con la base de datos: trabajando con datos locales.');
+  /* Sesión activa (el SDK la guarda y la renueva sola) */
+  const { data, error } = await supabaseClient.auth.getSession();
+  if (error) console.warn('[MODUGAL] getSession:', error);
+  if (data?.session?.user) await entrarConSesion(data.session.user);
 }
 
 document.addEventListener('DOMContentLoaded', init);
