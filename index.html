@@ -168,33 +168,24 @@
        ============================================================ -->
   <nav id="mg-tabs" class="bg-white border-t border-slate-100 sticky top-20 z-40" aria-label="Módulos MODUGAL">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-      <div class="flex overflow-x-auto scrollbar-hide">
-        <button type="button" class="mg-tab active" data-tab="produccion">
-          <i class="fas fa-layout-dashboard mr-2" aria-hidden="true"></i>Producción
+      <div class="mg-tabs-fila flex overflow-x-auto scrollbar-hide">
+        <button type="button" class="mg-tab active" data-tab="produccion">Producción
         </button>
-        <button type="button" class="mg-tab" data-tab="equipo">
-          <i class="fas fa-users mr-2" aria-hidden="true"></i>Equipo
+        <button type="button" class="mg-tab" data-tab="equipo">Equipo
         </button>
-        <button type="button" class="mg-tab" data-tab="comercial">
-          <i class="fas fa-briefcase mr-2" aria-hidden="true"></i>Comercial
+        <button type="button" class="mg-tab" data-tab="comercial">Comercial
         </button>
-        <button type="button" class="mg-tab" data-tab="tabla">
-          <i class="fas fa-table mr-2" aria-hidden="true"></i>Tabla General
+        <button type="button" class="mg-tab" data-tab="tabla">Tabla General
         </button>
-        <button type="button" class="mg-tab" data-tab="proyectos">
-          <i class="fas fa-calendar-alt mr-2" aria-hidden="true"></i>Proyectos
+        <button type="button" class="mg-tab" data-tab="proyectos">Proyectos
         </button>
-        <button type="button" class="mg-tab" data-tab="centro">
-          <i class="fas fa-tower-broadcast mr-2" aria-hidden="true"></i>Control
+        <button type="button" class="mg-tab" data-tab="centro">Control
         </button>
-        <button type="button" class="mg-tab" data-tab="stats">
-          <i class="fas fa-chart-bar mr-2" aria-hidden="true"></i>Estadísticas
+        <button type="button" class="mg-tab" data-tab="stats">Estadísticas
         </button>
-        <button type="button" class="mg-tab hidden" data-tab="usuarios">
-          <i class="fas fa-user-shield mr-2" aria-hidden="true"></i>Usuarios
+        <button type="button" class="mg-tab hidden" data-tab="usuarios">Usuarios
         </button>
-        <button type="button" class="mg-tab" data-tab="new-order">
-          <i class="fas fa-cart-plus mr-2" aria-hidden="true"></i>Compras
+        <button type="button" class="mg-tab" data-tab="new-order">Compras
         </button>
       </div>
     </div>
@@ -590,8 +581,8 @@
         <button type="button" class="f-subtab" data-sub="pedidos">Pedidos/Compras</button>
         <button type="button" class="f-subtab" data-sub="incidentes">Incidentes <span id="ficha-incidentes-badge" class="hidden ml-1 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5"></span></button>
         <button type="button" class="f-subtab" data-sub="dropbox">Documentos</button>
-        <button type="button" class="f-subtab hidden" data-sub="historial"><i class="fas fa-clock-rotate-left mr-1" aria-hidden="true"></i>Historial</button>
-        <button type="button" class="f-subtab hidden" data-sub="finanzas"><i class="fas fa-lock mr-1 text-red-600" aria-hidden="true"></i>Finanzas</button>
+        <button type="button" class="f-subtab hidden" data-sub="historial">Historial</button>
+        <button type="button" class="f-subtab hidden" data-sub="finanzas">Finanzas</button>
       </div>
 
       <div id="ficha-cuerpo" class="p-6 space-y-6">
@@ -707,7 +698,7 @@
           <div id="docs-v8" class="space-y-4 hidden">
             <div class="bg-slate-50 border border-slate-200 p-3 rounded-xl flex items-start gap-2">
               <i class="fas fa-shield-halved text-slate-600 mt-0.5" aria-hidden="true"></i>
-              <p class="text-slate-700">Los archivos se guardan en la nube de forma privada y se abren con enlaces temporales. La carpeta financiera solo la ve Gerencia.</p>
+              <p class="text-slate-700">Los archivos se guardan en la nube de forma privada y se abren con enlaces temporales. Gerencia, Logística, Secretaría y Arquitecto pueden subir planimetría, renders, presentaciones y trazos.</p>
             </div>
 
             <div id="docs-subir-box" class="bg-white border border-slate-200 p-4 rounded-xl space-y-3">
@@ -928,7 +919,7 @@
               <option value="Armado">Armado</option>
               <option value="Presentación">Presentación</option>
               <option value="Embalaje">Embalaje</option>
-              <option value="Despacho">Despacho</option>
+              <option value="Instalación">Instalación</option>
             </select>
           </div>
           <div>

@@ -613,3 +613,15 @@ html.tema-oscuro .btn-eliminar-proyecto { background: transparent; border-color:
 body:has(#login-screen:not(.is-hidden)) .chat-fab,
 body:has(#modal-ficha:not(.is-hidden)) .chat-fab,
 body:has([id$="-modal"].fixed:not(.is-hidden)) .chat-fab { display: none; }
+
+/* Pestañas principales: sin íconos, más aire y repartidas a lo ancho */
+.mg-tabs-fila { gap: 1.25rem; }
+.mg-tab { font-size: 0.8rem; padding: 0.85rem 0.35rem; letter-spacing: 0.01em; transition: color 0.15s, border-color 0.15s; }
+.mg-tab:hover { color: var(--text); }
+.mg-tab.active { font-weight: 800; }
+@media (min-width: 1024px) {
+  /* Cada pestaña crece por igual: quedan repartidas sin cortarse si no caben */
+  .mg-tabs-fila { gap: 0.25rem; }
+  .mg-tab { flex: 1 0 auto; text-align: center; font-size: 0.85rem; padding-left: 0.75rem; padding-right: 0.75rem; }
+}
+.mg-tab.hidden { display: none; }

@@ -25,7 +25,18 @@
    1. CONSTANTES DE NEGOCIO
    ========================================================================== */
 
-const PRODUCTION_PHASES = ['Recepción', 'Asignación', 'Armado', 'Presentación', 'Embalaje', 'Despacho'];
+const PRODUCTION_PHASES = ['Recepción', 'Asignación', 'Armado', 'Presentación', 'Embalaje', 'Instalación'];
+/* MÓDULO CONTABLE (finanzas del proyecto + carpeta financiera de documentos).
+   Apagado por decisión de Gerencia (nov 2026): no se muestra, no se consulta y
+   no se suscribe a cambios. Los datos y las tablas siguen intactos en la base;
+   para volver a activarlo basta con poner true. */
+const MODULO_CONTABLE = false;
+
+/* "Despacho" se renombró a "Instalación" (v10). Los datos viejos se traducen al leer. */
+function faseValida(fase, porDefecto) {
+  const f = fase === 'Despacho' ? 'Instalación' : fase;
+  return PRODUCTION_PHASES.includes(f) ? f : porDefecto;
+}
 
 const EST_PRODUCCION = { EN_PROCESO: 'En proceso', DETENIDO: 'Detenido', COMPLETADO: 'Completado' };
 
@@ -39,7 +50,7 @@ const STAGES_STATS = [
 ];
 
 /* Personal de planta y actividades que puede estar haciendo cada persona.
-   (Las fases Recepción/Asignación/Despacho son del proyecto, no del operario.) */
+   (Las fases Recepción/Asignación/Instalación son del proyecto, no del operario.) */
 const CARGOS_PERSONAL = ['Carpintero', 'Auxiliar de carpintería', 'Eléctrico'];
 /* Estado del trabajo de cada tarea o mueble asignado (solo estos 3) */
 const ESTADOS_TRABAJO = ['En proceso', 'Detenido', 'Completado'];
@@ -66,7 +77,8 @@ const BUCKET_IMAGENES = 'proyectos-imagenes';
 /* Documentos (v8): buckets PRIVADOS, se abren solo con enlaces firmados */
 const BUCKET_DOCS = { proyecto: 'documentos-proyecto', financiera: 'documentos-financieros' };
 const CATEGORIAS_DOC = {
-  proyecto: ['Plano 2D', 'Render 3D', 'Contrato', 'Foto de avance', 'Acta de entrega', 'Otro'],
+  /* Lo que sube el arquitecto (y el resto del equipo) */
+  proyecto: ['Planimetría', 'Renders', 'Presentación', 'Trazos'],
   financiera: ['Cotización', 'Factura', 'Contrato', 'Otro'],
 };
 const MAX_DOC_MB = 25;
@@ -404,7 +416,7 @@ function incidenteVencido(x) {
 
 function normalizarMueble(m, index) {
   const item = m || {};
-  const fase = PRODUCTION_PHASES.includes(item.manufacturingPhase) ? item.manufacturingPhase : 'Recepción';
+  const fase = faseValida(item.manufacturingPhase, 'Recepción');
   return {
     id: item.id || `m-mig-${index}`,
     name: item.name || `Mueble ${index + 1}`,
@@ -428,7 +440,7 @@ function normalizarProyecto(p) {
   p.neighborhood = p.neighborhood || '';
   p.address = p.address || 'Por definir';
   p.phone = p.phone || '';
-  p.manufacturingPhase = PRODUCTION_PHASES.includes(p.manufacturingPhase) ? p.manufacturingPhase : 'Recepción';
+  p.manufacturingPhase = faseValida(p.manufacturingPhase, 'Recepción');
   p.phase = p.manufacturingPhase;
   p.status = [EST_PRODUCCION.EN_PROCESO, EST_PRODUCCION.DETENIDO, EST_PRODUCCION.COMPLETADO].includes(p.status) ? p.status : EST_PRODUCCION.EN_PROCESO;
   p.commercialStage = ETAPAS_COMERCIAL.includes(p.commercialStage) ? p.commercialStage : (p.status === EST_PRODUCCION.COMPLETADO ? 'Garantías' : 'En Fabricación');
@@ -604,7 +616,7 @@ function filaDesdeProyecto(p) {
     cliente: p.client || p.name || 'Cliente sin nombre',
     ciudad: p.city || 'Por definir',
     descripcion_venta: MG_PREFIX + JSON.stringify(payload),
-    fase_actual: PRODUCTION_PHASES.includes(p.manufacturingPhase) ? p.manufacturingPhase : 'Recepción',
+    fase_actual: faseValida(p.manufacturingPhase, 'Recepción'),
     etapa_comercial: etapaAppADb(p.commercialStage || 'En Fabricación'),
     motivo_rechazo: p.motivo || null,
     imagen_url: p.image || null,
@@ -656,7 +668,7 @@ function proyectoDesdeFila(row) {
     client: row.cliente || ext.client || 'Cliente sin nombre',
     city: row.ciudad || ext.city || 'Por definir',
     image: row.imagen_url || ext.image || DEFAULT_IMAGE,
-    manufacturingPhase: PRODUCTION_PHASES.includes(row.fase_actual) ? row.fase_actual : (ext.manufacturingPhase || 'Recepción'),
+    manufacturingPhase: faseValida(row.fase_actual, faseValida(ext.manufacturingPhase, 'Recepción')),
     commercialStage: etapaDbAApp(row.etapa_comercial) || ext.commercialStage || 'En Fabricación',
     /* La columna fecha_entrega (tipo fecha) manda sobre el texto del JSON */
     dateExpected: row.fecha_entrega ? formatFechaLarga(parseFecha(row.fecha_entrega)) : (ext.dateExpected || 'Por definir'),
@@ -713,7 +725,7 @@ function filaDesdeTarea(t, carpintero) {
     carpintero_id: idCarpinteroPorNombre(carpintero),
     proyecto_id: dbIdProyecto(t.projectId),
     nombre_mueble: t.text,
-    fase_manual: PRODUCTION_PHASES.includes(t.phase) ? t.phase : 'Asignación',
+    fase_manual: faseValida(t.phase, 'Asignación'),
     estado_tarea: estadoTrabajoValido(t.estado),
     actividad: ACTIVIDAD_POR_NOMBRE[t.actividad] ? t.actividad : 'Otra',
     detalle: t.detalle || null,
@@ -837,7 +849,7 @@ function filaDesdeMueble(m, p, orden) {
     id: m.id,
     proyecto_id: p.dbId || null,
     nombre: String(m.name || '').trim() || 'Mueble sin nombre',
-    fase: PRODUCTION_PHASES.includes(m.manufacturingPhase) ? m.manufacturingPhase : 'Recepción',
+    fase: faseValida(m.manufacturingPhase, 'Recepción'),
     responsable_id: m.carpenter ? idCarpinteroPorNombre(m.carpenter) : null,
     responsable_nombre: m.carpenter || null,
     actividad: ACTIVIDAD_POR_NOMBRE[m.actividad] ? m.actividad : 'Armando',
@@ -969,7 +981,7 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRow
       id: esUUID(t.id) ? t.id : nuevoUUID(),
       text: t.nombre_mueble || 'Tarea sin descripción',
       projectId: codigoPorDbId.get(t.proyecto_id) || null,
-      phase: PRODUCTION_PHASES.includes(t.fase_manual) ? t.fase_manual : 'Asignación',
+      phase: faseValida(t.fase_manual, 'Asignación'),
       actividad: ACTIVIDAD_POR_NOMBRE[t.actividad] ? t.actividad : 'Otra',
       detalle: t.detalle || '',
       grupoId: t.grupo_id || null,
@@ -1091,7 +1103,7 @@ async function leerSupabase() {
   /* Las finanzas solo se piden si el rol es Gerencia (la RLS igual las
      bloquea para los demás). */
   let finanzasRows = [];
-  if (esGerencia()) {
+  if (puedeVerFinanzas()) {
     const fin = await supabaseClient.from('proyectos_finanzas').select('*');
     if (fin.error) console.warn('[MODUGAL] No se pudieron leer las finanzas.', fin.error);
     else finanzasRows = fin.data || [];
@@ -1110,6 +1122,7 @@ async function leerSupabase() {
     (doc.data || []).forEach((d) => {
       const codigo = codigoPorDbId.get(d.proyecto_id);
       if (!codigo) return;
+      if (d.carpeta === 'financiera' && !puedeVerFinanzas()) return;
       (estado.documentos[codigo] = estado.documentos[codigo] || []).push(d);
     });
   }
@@ -1408,7 +1421,7 @@ async function sincronizarEstado() {
   }
 
   /* 6. Finanzas (solo Gerencia; la RLS rechaza a cualquier otro rol) */
-  if (esGerencia()) {
+  if (puedeVerFinanzas()) {
     for (const [codigo, f] of Object.entries(state.finanzas || {})) {
       const dbId = dbIdProyecto(codigo);
       if (!dbId) continue;
@@ -1582,7 +1595,8 @@ function recargarTrasConflicto() {
    Requiere que las tablas estén en la publicación `supabase_realtime`.
    -------------------------------------------------------------------------- */
 
-const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero', 'proyectos_finanzas', 'proyecto_muebles', 'compras', 'incidentes', 'documentos'];
+const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero', 'proyecto_muebles', 'compras', 'incidentes', 'documentos']
+  .concat(MODULO_CONTABLE ? ['proyectos_finanzas'] : []);
 let rtCanal = null;
 let rtTimer = null;
 let rtVisibilidadLista = false;
@@ -1687,7 +1701,7 @@ function aplicarDatos(data) {
   state.comercial = data.comercial || [];
   state.tareas = data.tareas || {};
   state.carpinteros = data.carpinteros || [];
-  state.finanzas = esGerencia() ? (data.finanzas || {}) : {};
+  state.finanzas = puedeVerFinanzas() ? (data.finanzas || {}) : {};
   if (data.documentos) state.documentos = data.documentos;
 }
 
@@ -1735,7 +1749,7 @@ function guardarCacheLocal() {
       comercial: state.comercial,
       tareas: state.tareas,
       carpinteros: state.carpinteros,
-      finanzas: esGerencia() ? state.finanzas : {},
+      finanzas: puedeVerFinanzas() ? state.finanzas : {},
       savedAt: new Date().toISOString(),
     }));
   } catch (e) {
@@ -2182,7 +2196,7 @@ function puedeGestionarCompras() {
 }
 
 function puedeVerFinanzas() {
-  return esGerencia();
+  return MODULO_CONTABLE && esGerencia();
 }
 
 function tabsPermitidos() {
@@ -2467,10 +2481,7 @@ function crearTarjetaProduccion(p) {
     <div class="relative h-52 w-full bg-slate-100 overflow-hidden border-b border-slate-100">
       <img src="${esc(p.image || DEFAULT_IMAGE)}" alt="${esc(p.name)}" class="w-full h-full object-cover hover:scale-105 transition-all duration-500" />
       <div class="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-950/10 to-transparent"></div>
-      <div class="absolute top-3 left-3 flex items-center gap-1.5">
-        <span class="bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-200 text-[11px] font-mono font-bold text-slate-800 shadow-sm">${esc(p.id)}</span>
-        ${badgeNuevo(p)}
-      </div>
+      <div class="absolute top-3 left-3 flex items-center gap-1.5">${badgeNuevo(p)}</div>
       <div class="absolute top-3 right-3">${badgeStatus}</div>
       <div class="absolute bottom-3 left-4 right-4 text-white">
         <h3 class="text-xl font-black drop-shadow-md">${esc(p.name)}</h3>
@@ -2485,7 +2496,7 @@ function crearTarjetaProduccion(p) {
           ${controlesFaseProyecto(p)}
         </div>
         <div class="flex items-center w-full space-x-1">${stepperBarras(p.manufacturingPhase)}</div>
-        <div class="flex justify-between text-[9px] font-bold text-slate-400 mt-1.5 uppercase"><span>Recepción</span><span>Despacho</span></div>
+        <div class="flex justify-between text-[9px] font-bold text-slate-400 mt-1.5 uppercase"><span>Recepción</span><span>Instalación</span></div>
       </div>
       <div class="grid grid-cols-2 gap-2 text-xs border-t border-slate-100 pt-3">
         <div><span class="text-slate-400 block">Trazador Responsable</span><span class="font-bold text-slate-800 mt-0.5 block">${esc(p.leadCarpenter || 'Por asignar')}</span></div>
@@ -2580,7 +2591,7 @@ function crearFilaProyecto(p) {
     <img src="${esc(p.image || DEFAULT_IMAGE)}" alt="" class="w-16 h-12 sm:w-20 sm:h-14 object-cover rounded-lg border border-slate-200 bg-slate-100 shrink-0" />
     <div class="min-w-0 flex-1 grid grid-cols-1 md:grid-cols-12 gap-x-4 gap-y-1 items-center text-xs">
       <div class="md:col-span-4 min-w-0">
-        <p class="font-black text-slate-900 truncate"><span class="font-mono text-[10px] text-red-600 mr-1">${esc(p.id)}</span>${badgeNuevo(p, 'mr-1')}${esc(p.name)}</p>
+        <p class="font-black text-slate-900 truncate">${badgeNuevo(p, 'mr-1')}${esc(p.name)}</p>
         <p class="text-slate-500 truncate">${esc(p.client)} · ${esc(p.city)}</p>
       </div>
       <div class="md:col-span-3 min-w-0">
@@ -2745,7 +2756,6 @@ function tarjetaTareaHTML(task) {
     <div class="p-3 rounded-xl border text-xs ${task.estado === 'Completado' ? 'bg-emerald-50/60 border-emerald-200 opacity-80' : (task.detenido || task.estado === 'Detenido') ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200 shadow-sm'}">
       <div class="flex justify-between items-start gap-2 mb-2">
         <div class="flex flex-wrap items-center gap-1.5">
-          <span class="text-[10px] font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded uppercase">${esc(task.projectId || 'SIN-PRY')}</span>
           ${badgeActividad(task.actividad)}
           <span class="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black ${ESTILO_ESTADO_TRABAJO[task.estado] || ESTILO_ESTADO_TRABAJO['En proceso']}">${esc(task.estado || 'En proceso')}</span>
           ${task.esLider ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-black"><i class="fas fa-crown" aria-hidden="true"></i>Líder</span>' : ''}
@@ -4256,7 +4266,8 @@ function documentosDe(codigo) {
 }
 
 function puedeSubirDocumento(carpeta) {
-  return carpeta === 'financiera' ? esGerencia() : puedeEditarFicha();
+  /* El arquitecto también sube planos, renders, presentaciones y trazos */
+  return carpeta === 'financiera' ? puedeVerFinanzas() : (puedeEditarFicha() || state.rol === 'arquitecto');
 }
 
 function puedeEliminarDocumento() {
@@ -4275,8 +4286,9 @@ function iconoDocumento(d) {
   const nombre = (d.nombre || '').toLowerCase();
   if (mime.startsWith('image/')) return 'fa-file-image';
   if (mime === 'application/pdf' || nombre.endsWith('.pdf')) return 'fa-file-pdf';
-  if (/\.(dwg|dxf)$/.test(nombre) || d.categoria === 'Plano 2D') return 'fa-ruler-combined';
-  if (/\.(glb|gltf|skp|3ds|obj)$/.test(nombre) || d.categoria === 'Render 3D') return 'fa-cube';
+  if (/\.(dwg|dxf)$/.test(nombre) || ['Plano 2D', 'Planimetría', 'Trazos'].includes(d.categoria)) return 'fa-ruler-combined';
+  if (/\.(glb|gltf|skp|3ds|obj)$/.test(nombre) || ['Render 3D', 'Renders'].includes(d.categoria)) return 'fa-cube';
+  if (/\.(pptx?|key)$/.test(nombre) || d.categoria === 'Presentación') return 'fa-person-chalkboard';
   if (/\.(xlsx?|csv)$/.test(nombre)) return 'fa-file-excel';
   if (/\.(docx?)$/.test(nombre)) return 'fa-file-word';
   if (/\.(zip|rar|7z)$/.test(nombre)) return 'fa-file-zipper';
@@ -4323,8 +4335,8 @@ function renderDocumentos(p) {
   document.getElementById('docs-proyecto-count').textContent = delProyecto.length;
 
   const finBox = document.getElementById('docs-financiera-box');
-  finBox.classList.toggle('hidden', !esGerencia());
-  if (esGerencia()) {
+  finBox.classList.toggle('hidden', !puedeVerFinanzas());
+  if (puedeVerFinanzas()) {
     document.getElementById('docs-financiera-list').innerHTML = financieros.map(documentoHTML).join('')
       || '<p class="text-xs text-slate-400 p-3 text-center border border-dashed border-emerald-200 rounded-xl">Sin documentos financieros.</p>';
     document.getElementById('docs-financiera-count').textContent = financieros.length;
@@ -4510,7 +4522,7 @@ function puedeEliminarProyecto() {
 
 function botonEliminarProyecto(p, clases = '') {
   if (!puedeEliminarProyecto()) return '';
-  return `<button type="button" class="btn-eliminar-proyecto ${clases}" data-eliminar-proyecto="${esc(p.id)}" title="Eliminar proyecto" aria-label="Eliminar el proyecto ${esc(p.id)}"><i class="fas fa-trash" aria-hidden="true"></i></button>`;
+  return `<button type="button" class="btn-eliminar-proyecto ${clases}" data-eliminar-proyecto="${esc(p.id)}" title="Eliminar proyecto" aria-label="Eliminar el proyecto ${esc(p.name)}"><i class="fas fa-trash" aria-hidden="true"></i></button>`;
 }
 
 async function eliminarProyecto(id) {
@@ -4527,7 +4539,7 @@ async function eliminarProyecto(id) {
     `${tareas} tareas`,
     `${docs.length} documentos`,
   ].join(', ');
-  const ok = window.confirm(`¿Eliminar definitivamente ${p.id} · ${p.name} (${p.client})?\n\nTambién se borran: ${resumen} y sus datos financieros.\nEsta acción no se puede deshacer.`);
+  const ok = window.confirm(`¿Eliminar definitivamente el proyecto "${p.name}" (${p.client})?\n\nTambién se borran: ${resumen} y sus datos financieros.\nEsta acción no se puede deshacer.`);
   if (!ok) return;
 
   /* 1. Archivos de documentos en Storage (la fila se borra en cascada) */
@@ -4554,7 +4566,7 @@ async function eliminarProyecto(id) {
   if (state.documentos) delete state.documentos[id];
   if (state.fichaId === id) closeFicha();
   commit();
-  showToast(`${p.id} eliminado.`);
+  showToast(`Proyecto "${p.name}" eliminado.`);
 }
 
 /* ==========================================================================
@@ -4748,8 +4760,8 @@ async function guardarProyecto(e) {
     leadCarpenter: document.getElementById('proyecto-carpintero').value.trim(),
     logisticOperator: document.getElementById('proyecto-operador').value.trim() || 'Por asignar',
     trimester: document.getElementById('proyecto-trimestre').value,
-    manufacturingPhase: PRODUCTION_PHASES.includes(fase) ? fase : 'Recepción',
-    phase: PRODUCTION_PHASES.includes(fase) ? fase : 'Recepción',
+    manufacturingPhase: faseValida(fase, 'Recepción'),
+    phase: faseValida(fase, 'Recepción'),
     status: document.getElementById('proyecto-estado').value,
     commercialStage: document.getElementById('proyecto-etapa-comercial').value,
     dateStart: fechaInicio,
@@ -4808,7 +4820,7 @@ async function guardarProyecto(e) {
     document.querySelector(`.tab-panel:not(.is-hidden) [data-proyecto-id="${CSS.escape(nuevo.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
   setTimeout(() => { if (state.recienCreado === nuevo.id) { state.recienCreado = null; document.querySelectorAll('.tarjeta-recien-creada').forEach((el) => el.classList.remove('tarjeta-recien-creada')); } }, 6000);
-  showToast(`${nuevo.id} creado: aparece de primero en Producción y Proyectos.`);
+  showToast(`"${nuevo.name}" creado: aparece de primero en Producción y Proyectos.`);
 }
 
 /* ==========================================================================
@@ -5948,7 +5960,10 @@ async function cargarHistorial(codigo) {
     return;
   }
   const eventos = (data || []).map((ev) => ({ ...ev, lineas: lineasCambio(ev) }))
-    .filter((ev) => ev.accion !== 'modificar' || ev.lineas.length || ev.motivo);
+    .filter((ev) => ev.accion !== 'modificar' || ev.lineas.length || ev.motivo)
+    /* Con el módulo contable apagado no se muestran sus movimientos */
+    .filter((ev) => MODULO_CONTABLE || (ev.tabla !== 'proyectos_finanzas'
+      && !(ev.tabla === 'documentos' && [ev.cambios?.carpeta?.antes, ev.cambios?.carpeta?.despues].includes('financiera'))));
   if (!eventos.length) {
     lista.innerHTML = '<li class="text-slate-400 p-6 text-center border border-dashed border-slate-300 rounded-xl">Aún no hay cambios registrados para este proyecto.</li>';
     return;
