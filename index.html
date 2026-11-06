@@ -585,7 +585,7 @@
         <button type="button" class="f-subtab" data-sub="pendientes">Pendientes</button>
         <button type="button" class="f-subtab" data-sub="pedidos">Pedidos/Compras</button>
         <button type="button" class="f-subtab" data-sub="incidentes">Incidentes <span id="ficha-incidentes-badge" class="hidden ml-1 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5"></span></button>
-        <button type="button" class="f-subtab" data-sub="dropbox">Archivos Dropbox (Proxy)</button>
+        <button type="button" class="f-subtab" data-sub="dropbox">Documentos</button>
         <button type="button" class="f-subtab hidden" data-sub="historial"><i class="fas fa-clock-rotate-left mr-1" aria-hidden="true"></i>Historial</button>
         <button type="button" class="f-subtab hidden" data-sub="finanzas"><i class="fas fa-lock mr-1 text-red-600" aria-hidden="true"></i>Finanzas</button>
       </div>
@@ -699,6 +699,51 @@
 
         <!-- Archivos Dropbox (Proxy) -->
         <div id="ficha-dropbox" class="space-y-4 text-xs">
+          <!-- v8: documentos reales en Supabase Storage (buckets privados) -->
+          <div id="docs-v8" class="space-y-4 hidden">
+            <div class="bg-slate-50 border border-slate-200 p-3 rounded-xl flex items-start gap-2">
+              <i class="fas fa-shield-halved text-slate-600 mt-0.5" aria-hidden="true"></i>
+              <p class="text-slate-700">Los archivos se guardan en la nube de forma privada y se abren con enlaces temporales. La carpeta financiera solo la ve Gerencia.</p>
+            </div>
+
+            <div id="docs-subir-box" class="bg-white border border-slate-200 p-4 rounded-xl space-y-3">
+              <h5 class="font-bold text-slate-900">Subir documentos</h5>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label for="doc-carpeta" class="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Carpeta</label>
+                  <select id="doc-carpeta" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-900"></select>
+                </div>
+                <div>
+                  <label for="doc-categoria" class="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Tipo de documento</label>
+                  <select id="doc-categoria" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-900"></select>
+                </div>
+              </div>
+              <div>
+                <label for="doc-archivo" class="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Archivos (máx. 25 MB cada uno)</label>
+                <input id="doc-archivo" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,.skp,.glb,.gltf,.obj,.zip,.rar,.doc,.docx,.xls,.xlsx,.csv,image/*,application/pdf" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 file:mr-2 file:rounded-lg file:border-0 file:bg-red-600 file:text-white file:px-3 file:py-1" />
+              </div>
+              <div>
+                <label for="doc-notas" class="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Nota (opcional)</label>
+                <input id="doc-notas" type="text" maxlength="200" placeholder="Ej: versión aprobada por el cliente" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs text-slate-900" />
+              </div>
+              <button type="button" id="doc-subir" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2.5 rounded-xl text-xs"><i class="fas fa-cloud-arrow-up mr-1" aria-hidden="true"></i>Subir</button>
+            </div>
+
+            <div id="docs-visor" class="hidden bg-white border border-slate-200 p-3 rounded-xl"></div>
+
+            <div>
+              <h5 class="font-bold text-slate-900 mb-2 flex items-center gap-2"><i class="fas fa-folder-open text-slate-500" aria-hidden="true"></i>Documentos del proyecto <span id="docs-proyecto-count" class="doc-contador">0</span></h5>
+              <div id="docs-proyecto-list" class="space-y-2"></div>
+            </div>
+
+            <div id="docs-financiera-box" class="border-t border-slate-200 pt-4 hidden">
+              <h5 class="font-bold text-slate-900 mb-2 flex items-center gap-2"><i class="fas fa-lock text-red-600" aria-hidden="true"></i>Carpeta financiera · solo Gerencia <span id="docs-financiera-count" class="doc-contador">0</span></h5>
+              <div id="docs-financiera-list" class="space-y-2"></div>
+            </div>
+          </div>
+
+          <!-- Modo anterior (mientras no exista la tabla documentos) -->
+          <div id="docs-legacy" class="space-y-4">
           <div class="bg-blue-50 border border-blue-200 p-4 rounded-xl flex items-start space-x-3">
             <i class="fas fa-shield-alt w-5 h-5 text-blue-600 flex-shrink-0" aria-hidden="true"></i>
             <p class="text-blue-900">Sistema Proxy: los accesos están filtrados según el rol activo (<strong class="text-blue-950" id="ficha-proxy-rol">Gerencia</strong>).</p>
@@ -728,6 +773,7 @@
 
           <div id="dropbox-archivos-list" class="space-y-2"></div>
           <div id="dropbox-visual" class="hidden dropbox-visual"></div>
+          </div>
         </div>
 
         <!-- Historial: cronología de cambios (historial_eventos, escrito por la base) -->

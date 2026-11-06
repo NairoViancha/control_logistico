@@ -52,6 +52,13 @@ const ACTIVIDADES = [
 ];
 const ACTIVIDAD_POR_NOMBRE = Object.fromEntries(ACTIVIDADES.map((a) => [a.v, a]));
 const BUCKET_IMAGENES = 'proyectos-imagenes';
+/* Documentos (v8): buckets PRIVADOS, se abren solo con enlaces firmados */
+const BUCKET_DOCS = { proyecto: 'documentos-proyecto', financiera: 'documentos-financieros' };
+const CATEGORIAS_DOC = {
+  proyecto: ['Plano 2D', 'Render 3D', 'Contrato', 'Foto de avance', 'Acta de entrega', 'Otro'],
+  financiera: ['Cotización', 'Factura', 'Contrato', 'Otro'],
+};
+const MAX_DOC_MB = 25;
 
 /* Compras de material (tabla compras, v6) */
 const ESTADOS_COMPRA = ['Solicitado', 'Confirmado', 'En tránsito', 'Recibido parcial', 'Recibido', 'Cancelado'];
@@ -701,6 +708,8 @@ let mueblesEnTabla = false;
 let comprasEnTabla = false;
 /* Fase 2 (parte 3): incidentes en public.incidentes (v7); si no existe, JSON. */
 let incidentesEnTabla = false;
+/* Fase 2 (parte 4): documentos reales en Storage + public.documentos (v8). */
+let documentosEnTabla = false;
 
 let syncSnapshot = {
   proyectos: new Map(),
@@ -1046,7 +1055,24 @@ async function leerSupabase() {
     if (fin.error) console.warn('[MODUGAL] No se pudieron leer las finanzas.', fin.error);
     else finanzasRows = fin.data || [];
   }
-  return construirEstado(prj.data || [], pen.data || [], car.data || [], tar.data || [], finanzasRows, mueblesRows, comprasRows, incidentesRows);
+  const estado = construirEstado(prj.data || [], pen.data || [], car.data || [], tar.data || [], finanzasRows, mueblesRows, comprasRows, incidentesRows);
+
+  /* Documentos (v8). La RLS ya oculta la carpeta financiera a quien no es Gerencia. */
+  const doc = await supabaseClient.from('documentos').select('*').order('created_at', { ascending: false });
+  if (doc.error) {
+    if (!esTablaInexistente(doc.error)) console.warn('[MODUGAL] No se pudieron leer los documentos.', doc.error);
+    documentosEnTabla = false;
+  } else {
+    documentosEnTabla = true;
+    const codigoPorDbId = new Map((prj.data || []).map((r) => [r.id, r.codigo_prj]));
+    estado.documentos = {};
+    (doc.data || []).forEach((d) => {
+      const codigo = codigoPorDbId.get(d.proyecto_id);
+      if (!codigo) return;
+      (estado.documentos[codigo] = estado.documentos[codigo] || []).push(d);
+    });
+  }
+  return estado;
 }
 
 function esTablaInexistente(error) {
@@ -1510,7 +1536,7 @@ function recargarTrasConflicto() {
    Requiere que las tablas estén en la publicación `supabase_realtime`.
    -------------------------------------------------------------------------- */
 
-const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero', 'proyectos_finanzas', 'proyecto_muebles', 'compras', 'incidentes'];
+const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero', 'proyectos_finanzas', 'proyecto_muebles', 'compras', 'incidentes', 'documentos'];
 let rtCanal = null;
 let rtTimer = null;
 let rtVisibilidadLista = false;
@@ -1616,6 +1642,7 @@ function aplicarDatos(data) {
   state.tareas = data.tareas || {};
   state.carpinteros = data.carpinteros || [];
   state.finanzas = esGerencia() ? (data.finanzas || {}) : {};
+  if (data.documentos) state.documentos = data.documentos;
 }
 
 function cargarEstadoLocal() {
@@ -3991,6 +4018,10 @@ function openFicha(id) {
 
   renderIncidentesFicha(p);
 
+  document.getElementById('docs-v8')?.classList.toggle('hidden', !documentosEnTabla);
+  document.getElementById('docs-legacy')?.classList.toggle('hidden', documentosEnTabla);
+  if (documentosEnTabla) renderDocumentos(p);
+
   document.getElementById('dropbox-publico-list').innerHTML = (p.dropboxFiles?.publicFiles || []).map((f) => `
     <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center gap-2">
       <span class="text-slate-800 font-bold break-all">${esc(f.name)}</span>
@@ -4052,6 +4083,254 @@ function verDocumento(id) {
     visual.classList.remove('hidden');
     visual.innerHTML = `<iframe src="${esc(f.url || '')}" title="${esc(f.name)}"></iframe>`;
   }
+}
+
+/* ==========================================================================
+   21g. DOCUMENTOS (v8) · archivos reales en Supabase Storage
+   --------------------------------------------------------------------------
+   - Dos buckets privados: documentos-proyecto y documentos-financieros.
+   - Los archivos se abren con enlaces firmados de 10 minutos (nunca públicos).
+   - La carpeta financiera solo existe para Gerencia (RLS en tabla y Storage).
+   - Subir/eliminar es una operación directa (no pasa por la cola de guardado).
+   ========================================================================== */
+
+function documentosDe(codigo) {
+  return (state.documentos && state.documentos[codigo]) || [];
+}
+
+function puedeSubirDocumento(carpeta) {
+  return carpeta === 'financiera' ? esGerencia() : puedeEditarFicha();
+}
+
+function puedeEliminarDocumento() {
+  return esGerencia();
+}
+
+function tamanoLegible(bytes) {
+  if (bytes === null || bytes === undefined) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function iconoDocumento(d) {
+  const mime = d.tipo_mime || '';
+  const nombre = (d.nombre || '').toLowerCase();
+  if (mime.startsWith('image/')) return 'fa-file-image';
+  if (mime === 'application/pdf' || nombre.endsWith('.pdf')) return 'fa-file-pdf';
+  if (/\.(dwg|dxf)$/.test(nombre) || d.categoria === 'Plano 2D') return 'fa-ruler-combined';
+  if (/\.(glb|gltf|skp|3ds|obj)$/.test(nombre) || d.categoria === 'Render 3D') return 'fa-cube';
+  if (/\.(xlsx?|csv)$/.test(nombre)) return 'fa-file-excel';
+  if (/\.(docx?)$/.test(nombre)) return 'fa-file-word';
+  if (/\.(zip|rar|7z)$/.test(nombre)) return 'fa-file-zipper';
+  return 'fa-file';
+}
+
+function sePuedePrevisualizar(d) {
+  const mime = d.tipo_mime || '';
+  return mime.startsWith('image/') || mime === 'application/pdf';
+}
+
+function documentoHTML(d) {
+  const sinArchivo = !d.ruta;
+  const fecha = d.created_at ? formatFechaLarga(new Date(d.created_at)) : '';
+  const meta = [d.categoria, tamanoLegible(d.tamano_bytes), fecha].filter(Boolean).join(' · ');
+  const acciones = sinArchivo ? '' : `
+      ${sePuedePrevisualizar(d) ? `<button type="button" class="doc-btn doc-btn--dark" data-doc-ver="${esc(d.id)}">Ver</button>` : ''}
+      <button type="button" class="doc-btn" data-doc-descargar="${esc(d.id)}" aria-label="Descargar ${esc(d.nombre)}"><i class="fas fa-download" aria-hidden="true"></i></button>`;
+  return `
+    <div class="doc-item ${sinArchivo ? 'doc-item--sin-archivo' : ''}" data-doc-id="${esc(d.id)}">
+      <i class="fas ${iconoDocumento(d)} doc-icono" aria-hidden="true"></i>
+      <div class="min-w-0 flex-1">
+        <p class="font-bold text-slate-900 break-all">${esc(d.nombre)}</p>
+        <p class="text-[10px] text-slate-500">${esc(meta)}</p>
+        ${sinArchivo ? '<p class="text-[10px] font-bold text-amber-700 mt-0.5"><i class="fas fa-triangle-exclamation mr-1" aria-hidden="true"></i>Referencia antigua sin archivo: súbelo de nuevo.</p>' : ''}
+        ${d.notas && !sinArchivo ? `<p class="text-[10px] text-slate-500 mt-0.5">${esc(d.notas)}</p>` : ''}
+      </div>
+      <div class="flex items-center gap-1 shrink-0">
+        ${acciones}
+        ${puedeEliminarDocumento() ? `<button type="button" class="doc-btn doc-btn--peligro" data-doc-eliminar="${esc(d.id)}" aria-label="Eliminar ${esc(d.nombre)}" title="Eliminar"><i class="fas fa-trash" aria-hidden="true"></i></button>` : ''}
+      </div>
+    </div>`;
+}
+
+function renderDocumentos(p) {
+  const visor = document.getElementById('docs-visor');
+  if (visor && visor.dataset.proyecto !== p.id) cerrarVisorDocumento();
+  const docs = documentosDe(p.id);
+  const delProyecto = docs.filter((d) => d.carpeta === 'proyecto');
+  const financieros = docs.filter((d) => d.carpeta === 'financiera');
+
+  document.getElementById('docs-proyecto-list').innerHTML = delProyecto.map(documentoHTML).join('')
+    || '<p class="text-xs text-slate-400 p-3 text-center border border-dashed border-slate-300 rounded-xl">Aún no hay documentos del proyecto.</p>';
+  document.getElementById('docs-proyecto-count').textContent = delProyecto.length;
+
+  const finBox = document.getElementById('docs-financiera-box');
+  finBox.classList.toggle('hidden', !esGerencia());
+  if (esGerencia()) {
+    document.getElementById('docs-financiera-list').innerHTML = financieros.map(documentoHTML).join('')
+      || '<p class="text-xs text-slate-400 p-3 text-center border border-dashed border-emerald-200 rounded-xl">Sin documentos financieros.</p>';
+    document.getElementById('docs-financiera-count').textContent = financieros.length;
+  }
+
+  /* Formulario de subida: solo con los permisos y carpetas del rol */
+  const form = document.getElementById('docs-subir-box');
+  const puede = puedeSubirDocumento('proyecto') || puedeSubirDocumento('financiera');
+  form.classList.toggle('hidden', !puede);
+  const selCarpeta = document.getElementById('doc-carpeta');
+  const actual = selCarpeta.value;
+  selCarpeta.innerHTML = ['proyecto', 'financiera'].filter(puedeSubirDocumento)
+    .map((c) => `<option value="${c}">${c === 'proyecto' ? 'Documentos del proyecto' : 'Carpeta financiera (solo Gerencia)'}</option>`).join('');
+  if ([...selCarpeta.options].some((o) => o.value === actual)) selCarpeta.value = actual;
+  llenarCategoriasDoc();
+}
+
+function llenarCategoriasDoc() {
+  const carpeta = document.getElementById('doc-carpeta')?.value || 'proyecto';
+  const sel = document.getElementById('doc-categoria');
+  if (!sel) return;
+  const actual = sel.value;
+  sel.innerHTML = (CATEGORIAS_DOC[carpeta] || CATEGORIAS_DOC.proyecto).map((c) => `<option>${esc(c)}</option>`).join('');
+  if ([...sel.options].some((o) => o.value === actual)) sel.value = actual;
+}
+
+function nombreSeguroArchivo(nombre) {
+  const limpio = String(nombre || 'archivo').normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^A-Za-z0-9._-]+/g, '_').replace(/_+/g, '_').slice(-80);
+  return limpio || 'archivo';
+}
+
+function separarRuta(ruta) {
+  const i = String(ruta || '').indexOf('/');
+  return i < 0 ? null : { bucket: ruta.slice(0, i), path: ruta.slice(i + 1) };
+}
+
+async function subirDocumentos() {
+  const p = state.proyectos.find((x) => x.id === state.fichaId);
+  const input = document.getElementById('doc-archivo');
+  const carpeta = document.getElementById('doc-carpeta').value;
+  const categoria = document.getElementById('doc-categoria').value;
+  const notas = document.getElementById('doc-notas').value.trim();
+  const archivos = Array.from(input?.files || []);
+  if (!p) return;
+  if (!archivos.length) { showToast('Escoge uno o varios archivos para subir.'); return; }
+  if (!puedeSubirDocumento(carpeta)) { showToast('Tu rol no puede subir documentos a esa carpeta.'); return; }
+  if (!sbListo || !documentosEnTabla) { showToast('Sin conexión con la base de datos: no se pueden subir documentos.'); return; }
+  if (!p.dbId) { showToast('El proyecto aún se está guardando. Intenta de nuevo en unos segundos.'); return; }
+  const grandes = archivos.filter((f) => f.size > MAX_DOC_MB * 1024 * 1024);
+  if (grandes.length) { showToast(`${grandes.map((f) => f.name).join(', ')} supera ${MAX_DOC_MB} MB.`); return; }
+
+  const btn = document.getElementById('doc-subir');
+  const textoBtn = btn.innerHTML;
+  btn.disabled = true;
+  const bucket = BUCKET_DOCS[carpeta];
+  const nuevos = [];
+  const fallos = [];
+  for (let i = 0; i < archivos.length; i += 1) {
+    const f = archivos[i];
+    btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-1" aria-hidden="true"></i>Subiendo ${i + 1} de ${archivos.length}…`;
+    const path = `${p.dbId}/${Date.now()}-${nuevoUUID().slice(0, 8)}-${nombreSeguroArchivo(f.name)}`;
+    const subida = await supabaseClient.storage.from(bucket).upload(path, f, {
+      contentType: f.type || 'application/octet-stream',
+      upsert: false,
+    });
+    if (subida.error) { fallos.push(`${f.name}: ${subida.error.message}`); continue; }
+    const { data, error } = await supabaseClient.from('documentos').insert({
+      proyecto_id: p.dbId,
+      carpeta,
+      categoria,
+      nombre: f.name,
+      ruta: `${bucket}/${path}`,
+      tipo_mime: f.type || null,
+      tamano_bytes: f.size,
+      notas: notas || null,
+    }).select().single();
+    if (error) {
+      /* Sin registro el archivo quedaría huérfano: se retira del bucket */
+      await supabaseClient.storage.from(bucket).remove([path]);
+      fallos.push(`${f.name}: ${error.message}`);
+      continue;
+    }
+    nuevos.push(data);
+  }
+  btn.disabled = false;
+  btn.innerHTML = textoBtn;
+
+  if (nuevos.length) {
+    if (!state.documentos) state.documentos = {};
+    state.documentos[p.id] = [...nuevos.reverse(), ...documentosDe(p.id)];
+    input.value = '';
+    document.getElementById('doc-notas').value = '';
+    renderDocumentos(p);
+    const destino = carpeta === 'financiera' ? 'la carpeta financiera' : 'los documentos del proyecto';
+    showToast(nuevos.length === 1 ? `"${nuevos[0].nombre}" se subió a ${destino}.` : `${nuevos.length} archivos subidos a ${destino}.`);
+  }
+  if (fallos.length) showToast(`No se pudo subir: ${fallos.join(' · ')}`);
+}
+
+async function abrirDocumento(id, descargar) {
+  const p = state.proyectos.find((x) => x.id === state.fichaId);
+  const d = documentosDe(p?.id).find((x) => x.id === id);
+  const partes = separarRuta(d?.ruta);
+  if (!d || !partes) { showToast('Este documento no tiene archivo asociado.'); return; }
+  const opciones = descargar ? { download: d.nombre } : undefined;
+  const { data, error } = await supabaseClient.storage.from(partes.bucket).createSignedUrl(partes.path, 600, opciones);
+  if (error || !data?.signedUrl) { showToast(`No se pudo abrir el documento: ${error?.message || 'sin enlace'}`); return; }
+  if (descargar) {
+    const a = document.createElement('a');
+    a.href = data.signedUrl;
+    a.download = d.nombre;
+    a.rel = 'noopener';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    return;
+  }
+  const visor = document.getElementById('docs-visor');
+  const cuerpo = (d.tipo_mime || '').startsWith('image/')
+    ? `<img src="${esc(data.signedUrl)}" alt="${esc(d.nombre)}" />`
+    : `<iframe src="${esc(data.signedUrl)}" title="${esc(d.nombre)}"></iframe>`;
+  visor.innerHTML = `
+    <div class="flex items-center justify-between gap-2 mb-2">
+      <p class="font-bold text-slate-900 truncate">${esc(d.nombre)}</p>
+      <div class="flex gap-1 shrink-0">
+        <a class="doc-btn" href="${esc(data.signedUrl)}" target="_blank" rel="noopener">Abrir aparte</a>
+        <button type="button" class="doc-btn" data-doc-cerrar-visor aria-label="Cerrar visor"><i class="fas fa-xmark" aria-hidden="true"></i></button>
+      </div>
+    </div>
+    <div class="dropbox-visual">${cuerpo}</div>`;
+  visor.dataset.proyecto = p.id;
+  visor.classList.remove('hidden');
+  visor.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function cerrarVisorDocumento() {
+  const visor = document.getElementById('docs-visor');
+  if (!visor) return;
+  visor.innerHTML = '';
+  visor.classList.add('hidden');
+}
+
+async function eliminarDocumento(id) {
+  const p = state.proyectos.find((x) => x.id === state.fichaId);
+  const d = documentosDe(p?.id).find((x) => x.id === id);
+  if (!d) return;
+  if (!puedeEliminarDocumento()) { showToast('Solo Gerencia puede eliminar documentos.'); return; }
+  const aviso = d.ruta
+    ? `¿Eliminar "${d.nombre}"? El archivo se borra del servidor y queda registrado en el historial.`
+    : `¿Quitar la referencia antigua "${d.nombre}"?`;
+  if (!window.confirm(aviso)) return;
+  const partes = separarRuta(d.ruta);
+  if (partes) {
+    const { error } = await supabaseClient.storage.from(partes.bucket).remove([partes.path]);
+    if (error) { showToast(`No se pudo eliminar el archivo: ${error.message}`); return; }
+  }
+  const { error } = await supabaseClient.from('documentos').delete().eq('id', d.id);
+  if (error) { showToast(`No se pudo eliminar el registro: ${error.message}`); return; }
+  state.documentos[p.id] = documentosDe(p.id).filter((x) => x.id !== d.id);
+  cerrarVisorDocumento();
+  renderDocumentos(p);
+  showToast(`"${d.nombre}" eliminado.`);
 }
 
 function closeFicha() {
@@ -4638,6 +4917,9 @@ function bindFichaEvents() {
     if (select) select.value = id;
   });
 
+  document.getElementById('doc-carpeta')?.addEventListener('change', llenarCategoriasDoc);
+  document.getElementById('doc-subir')?.addEventListener('click', subirDocumentos);
+
   document.getElementById('archivo-add')?.addEventListener('click', () => document.getElementById('archivo-input')?.click());
   document.getElementById('archivo-input')?.addEventListener('change', (e) => {
     const input = e.target;
@@ -4800,6 +5082,15 @@ function bindGlobalDelegation() {
 
     const verDoc = e.target.closest('[data-ver-doc]');
     if (verDoc) { verDocumento(verDoc.dataset.verDoc); return; }
+
+    const docVer = e.target.closest('[data-doc-ver]');
+    if (docVer) { abrirDocumento(docVer.dataset.docVer, false); return; }
+    const docBajar = e.target.closest('[data-doc-descargar]');
+    if (docBajar) { abrirDocumento(docBajar.dataset.docDescargar, true); return; }
+    const docBorrar = e.target.closest('[data-doc-eliminar]');
+    if (docBorrar) { eliminarDocumento(docBorrar.dataset.docEliminar); return; }
+    const docCerrar = e.target.closest('[data-doc-cerrar-visor]');
+    if (docCerrar) { cerrarVisorDocumento(); return; }
 
     const tabBtn = e.target.closest('[data-tab]');
     if (tabBtn && !tabBtn.closest('#mg-tabs')) { switchTab(tabBtn.dataset.tab); return; }
@@ -5147,11 +5438,12 @@ const ETIQUETAS_CAMPO = {
   'ficha.arquitecto': 'Arquitecto', 'ficha.logisticOperator': 'Operador logístico', 'ficha.neighborhood': 'Barrio',
   'ficha.address': 'Dirección', 'ficha.phone': 'Teléfono', 'ficha.trimester': 'Trimestre',
   'ficha.archivos': 'Archivos', 'ficha.dropboxFiles': 'Carpeta pública',
+  carpeta: 'Carpeta', tipo_mime: 'Formato', tamano_bytes: 'Tamaño',
 };
 /* Campos técnicos o duplicados que no aportan al lector */
 const CAMPOS_OCULTOS = new Set(['id', 'proyecto_id', 'grupo_id', 'fase_manual', 'estado_tarea', 'ficha.alert',
   'ficha.manufacturingPhase', 'ficha.commercialStage', 'ficha.client', 'ficha.image', 'ficha.city', 'archivos_privados',
-  'activo_desde', 'descripcion_venta', 'orden', 'legacy_id', 'responsable_nombre', 'pendiente_id', 'creado_por', 'compra_id', 'fecha_apertura']);
+  'activo_desde', 'descripcion_venta', 'orden', 'legacy_id', 'responsable_nombre', 'pendiente_id', 'creado_por', 'compra_id', 'fecha_apertura', 'ruta', 'subido_por']);
 const TABLAS_HIST = {
   proyectos: { label: 'Proyecto', icon: 'fa-folder-open', color: 'bg-slate-900' },
   pendientes: { label: 'Pendiente', icon: 'fa-clipboard-list', color: 'bg-amber-600' },
@@ -5161,6 +5453,7 @@ const TABLAS_HIST = {
   proyecto_muebles: { label: 'Mueble', icon: 'fa-couch', color: 'bg-orange-600' },
   compras: { label: 'Compra', icon: 'fa-truck', color: 'bg-teal-700' },
   incidentes: { label: 'Incidente', icon: 'fa-triangle-exclamation', color: 'bg-red-700' },
+  documentos: { label: 'Documento', icon: 'fa-file-lines', color: 'bg-indigo-700' },
   usuarios: { label: 'Usuario', icon: 'fa-user-shield', color: 'bg-emerald-700' },
 };
 
@@ -5169,6 +5462,7 @@ function valorHist(clave, v) {
   if (clave === 'carpintero_id' || clave === 'responsable_id') return (state.carpinteros || []).find((c) => c.id === v)?.nombre || 'Personal eliminado';
   if (clave === 'descripcion') return String(v).replace(/\s*\[[^\]]*\]\s*$/, '');
   if (typeof v === 'boolean') return v ? 'Sí' : 'No';
+  if (clave === 'tamano_bytes') return tamanoLegible(Number(v));
   if (typeof v === 'number' && ['valor_venta', 'costo_materiales', 'costo_mano_obra', 'otros_costos', 'anticipo', 'utilidad'].includes(clave)) return cop(v);
   if (Array.isArray(v)) return `${v.length} elemento${v.length === 1 ? '' : 's'}`;
   if (typeof v === 'object') return 'actualizado';

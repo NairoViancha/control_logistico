@@ -493,3 +493,19 @@ html.tema-oscuro .pendiente-tipo--bloqueo { background: #450a0a; color: #fca5a5;
 }
 .toast.show { opacity: 1; transform: translateY(0); }
 html.tema-oscuro .toast { background: var(--brand); }
+
+/* ============================================================
+   DOCUMENTOS (v8)
+   ============================================================ */
+.doc-item { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem; background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; }
+.doc-item--sin-archivo { border-style: dashed; border-color: #fcd34d; background: #fffbeb; }
+.doc-icono { width: 1.25rem; text-align: center; color: var(--brand); font-size: 1.05rem; flex-shrink: 0; }
+.doc-btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.25rem; min-width: 2rem; height: 2rem; padding: 0 0.6rem; border-radius: 0.5rem; border: 1px solid var(--border); background: var(--surface); color: var(--text); font-size: 0.68rem; font-weight: 800; cursor: pointer; text-decoration: none; }
+.doc-btn:hover { border-color: var(--brand); color: var(--brand); }
+.doc-btn--dark { background: #0f172a; border-color: #0f172a; color: #fff; }
+.doc-btn--dark:hover { background: #1e293b; color: #fff; }
+.doc-btn--peligro:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+.doc-contador { display: inline-flex; align-items: center; justify-content: center; min-width: 1.4rem; height: 1.4rem; padding: 0 0.35rem; border-radius: 999px; background: #e2e8f0; color: #334155; font-size: 0.65rem; font-weight: 800; }
+html.tema-oscuro .doc-item--sin-archivo { background: #422006; border-color: #a16207; }
+html.tema-oscuro .doc-contador { background: #334155; color: #e2e8f0; }
+html.tema-oscuro .doc-btn--dark { background: #e2e8f0; border-color: #e2e8f0; color: #0f172a; }
