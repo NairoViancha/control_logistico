@@ -41,6 +41,17 @@ const STAGES_STATS = [
 /* Personal de planta y actividades que puede estar haciendo cada persona.
    (Las fases Recepción/Asignación/Despacho son del proyecto, no del operario.) */
 const CARGOS_PERSONAL = ['Carpintero', 'Auxiliar de carpintería', 'Eléctrico'];
+/* Estado del trabajo de cada tarea o mueble asignado (solo estos 3) */
+const ESTADOS_TRABAJO = ['En proceso', 'Detenido', 'Completado'];
+const ESTILO_ESTADO_TRABAJO = {
+  'En proceso': 'bg-slate-100 text-slate-700 border-slate-200',
+  Detenido: 'bg-red-100 text-red-800 border-red-200',
+  Completado: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+};
+function estadoTrabajoValido(v) {
+  return ESTADOS_TRABAJO.includes(v) ? v : 'En proceso';
+}
+
 const ACTIVIDADES = [
   { v: 'Trazando', icon: 'fa-ruler-combined', cls: 'bg-sky-50 text-sky-800 border-sky-200' },
   { v: 'Escogiendo material', icon: 'fa-boxes-stacked', cls: 'bg-amber-50 text-amber-800 border-amber-200' },
@@ -128,6 +139,23 @@ const SUPABASE_URL = 'https://ekhifrcnoqsqlkibajff.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_xoprTlOTu9q3uPATkGRQlw_85ul4zbb';
 /* El SDK UMD ya expone `window.supabase`; usamos un alias local para no
    redeclarar el identificador global. */
+/* Enlace de "olvidé mi contraseña": el correo trae una sesión temporal.
+   Se detecta ANTES de crear el cliente (que limpia la URL) y se guarda en
+   sessionStorage: hasta crear la nueva contraseña no se entra a la app. */
+const CLAVE_RECUPERACION = 'mg-recuperacion-pendiente';
+if (/type=recovery/.test(`${window.location.hash}${window.location.search}`)) {
+  try { sessionStorage.setItem(CLAVE_RECUPERACION, '1'); } catch (e) { /* noop */ }
+}
+function enRecuperacion() {
+  try { return sessionStorage.getItem(CLAVE_RECUPERACION) === '1'; } catch (e) { return false; }
+}
+function marcarRecuperacion(activa) {
+  try {
+    if (activa) sessionStorage.setItem(CLAVE_RECUPERACION, '1');
+    else sessionStorage.removeItem(CLAVE_RECUPERACION);
+  } catch (e) { /* noop */ }
+}
+
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 /* Marcador para conservar los campos extendidos de la ficha dentro de la
@@ -386,6 +414,7 @@ function normalizarMueble(m, index) {
     /* Antes se descartaban al recargar: ahora se conservan */
     actividad: ACTIVIDAD_POR_NOMBRE[item.actividad] ? item.actividad : 'Armando',
     detalle: item.detalle || '',
+    estadoTrabajo: estadoTrabajoValido(item.estadoTrabajo),
     dbVersion: Number.isInteger(item.dbVersion) ? item.dbVersion : null,
   };
 }
@@ -629,10 +658,12 @@ function proyectoDesdeFila(row) {
     image: row.imagen_url || ext.image || DEFAULT_IMAGE,
     manufacturingPhase: PRODUCTION_PHASES.includes(row.fase_actual) ? row.fase_actual : (ext.manufacturingPhase || 'Recepción'),
     commercialStage: etapaDbAApp(row.etapa_comercial) || ext.commercialStage || 'En Fabricación',
-    dateExpected: ext.dateExpected || (row.fecha_entrega ? formatFechaLarga(parseFecha(row.fecha_entrega)) : 'Por definir'),
+    /* La columna fecha_entrega (tipo fecha) manda sobre el texto del JSON */
+    dateExpected: row.fecha_entrega ? formatFechaLarga(parseFecha(row.fecha_entrega)) : (ext.dateExpected || 'Por definir'),
     leadCarpenter: ext.leadCarpenter || row.trazador_responsable || '',
     motivo: row.motivo_rechazo || ext.motivo || '',
     commercialDetail: ext.detalle || ext.commercialDetail || '',
+    creadoEn: row.created_at || null,
   };
   if (!proyecto.commercialDetail) proyecto.commercialDetail = `${proyecto.client}: Pedido por definir.`;
   return normalizarProyecto(proyecto);
@@ -683,7 +714,7 @@ function filaDesdeTarea(t, carpintero) {
     proyecto_id: dbIdProyecto(t.projectId),
     nombre_mueble: t.text,
     fase_manual: PRODUCTION_PHASES.includes(t.phase) ? t.phase : 'Asignación',
-    estado_tarea: t.estado || 'En proceso',
+    estado_tarea: estadoTrabajoValido(t.estado),
     actividad: ACTIVIDAD_POR_NOMBRE[t.actividad] ? t.actividad : 'Otra',
     detalle: t.detalle || null,
     grupo_id: t.grupoId || null,
@@ -708,6 +739,8 @@ let mueblesEnTabla = false;
 let comprasEnTabla = false;
 /* Fase 2 (parte 3): incidentes en public.incidentes (v7); si no existe, JSON. */
 let incidentesEnTabla = false;
+/* v9: estado del trabajo también en los muebles (columna estado_trabajo) */
+let mueblesConEstado = false;
 /* Fase 2 (parte 4): documentos reales en Storage + public.documentos (v8). */
 let documentosEnTabla = false;
 
@@ -810,6 +843,7 @@ function filaDesdeMueble(m, p, orden) {
     actividad: ACTIVIDAD_POR_NOMBRE[m.actividad] ? m.actividad : 'Armando',
     detalle: m.detalle || null,
     orden,
+    ...(mueblesConEstado ? { estado_trabajo: estadoTrabajoValido(m.estadoTrabajo) } : {}),
   };
 }
 
@@ -921,6 +955,7 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRow
           manufacturingPhase: row.fase,
           actividad: row.actividad,
           detalle: row.detalle,
+          estadoTrabajo: row.estado_trabajo,
           dbVersion: row.version,
         }, i));
     });
@@ -939,7 +974,7 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRow
       detalle: t.detalle || '',
       grupoId: t.grupo_id || null,
       esLider: Boolean(t.es_lider),
-      estado: t.estado_tarea || 'En proceso',
+      estado: estadoTrabajoValido(t.estado_tarea),
     });
   });
 
@@ -1022,6 +1057,12 @@ async function leerSupabase() {
     mueblesEnTabla = false;
   } else {
     mueblesEnTabla = true;
+    if ((mue.data || []).length) {
+      mueblesConEstado = Object.prototype.hasOwnProperty.call(mue.data[0], 'estado_trabajo');
+    } else {
+      const sonda = await supabaseClient.from('proyecto_muebles').select('estado_trabajo').limit(1);
+      mueblesConEstado = !sonda.error;
+    }
     mueblesRows = mue.data || [];
   }
 
@@ -1198,9 +1239,14 @@ async function sincronizarEstado() {
   for (const [codigo, meta] of [...syncSnapshot.proyectos]) {
     if (codigosVistos.has(codigo)) continue;
     if (meta.dbId) {
-      await supabaseClient.from('pendientes').delete().eq('proyecto_id', meta.dbId);
-      await supabaseClient.from('tareas_carpintero').delete().eq('proyecto_id', meta.dbId);
-      await supabaseClient.from('proyectos').delete().eq('id', meta.dbId);
+      /* La base borra en cascada pendientes, tareas, muebles, compras, incidentes y documentos */
+      const res = await supabaseClient.from('proyectos').delete().eq('id', meta.dbId).select('id');
+      if (res.error || !(res.data || []).length) {
+        syncSnapshot.proyectos.delete(codigo);
+        showToast(`No se pudo eliminar ${codigo}: ${res.error?.message || 'sin permiso'}. Se recargan los datos.`);
+        setTimeout(() => recargarTrasConflicto(), 0);
+        continue;
+      }
     }
     syncSnapshot.proyectos.delete(codigo);
   }
@@ -1825,6 +1871,8 @@ function traducirErrorAuth(error) {
 }
 
 function urlRetorno() {
+  /* En la app nativa el origen es "localhost": los correos deben llevar a la web */
+  if (esAppNativa()) return URL_WEB_PUBLICA;
   return window.location.origin + window.location.pathname;
 }
 
@@ -1913,6 +1961,7 @@ async function refrescarPerfilPropio() {
 
 async function entrarConSesion(authUser) {
   if (!authUser) return;
+  if (enRecuperacion()) { exigirNuevaContrasena(); return; }
   if (sesionUserId === authUser.id) return;
   if (entrandoSesion) return entrandoSesion;
 
@@ -1943,6 +1992,8 @@ async function entrarConSesion(authUser) {
     };
     state.rol = ROLES_VALIDOS.includes(perfil.rol) ? perfil.rol : 'arquitecto';
 
+    /* Llegó el aviso de recuperación mientras se cargaba el perfil */
+    if (enRecuperacion()) { exigirNuevaContrasena(); return; }
     ocultarLogin();
     aplicarPermisosUI();
     updateUserChip();
@@ -2024,7 +2075,8 @@ function escucharAuth() {
        el trabajo se difiere al siguiente ciclo. */
     setTimeout(() => {
       if (event === 'PASSWORD_RECOVERY') {
-        abrirRecuperacion('nueva');
+        marcarRecuperacion(true);
+        exigirNuevaContrasena();
         return;
       }
       if (event === 'SIGNED_OUT') {
@@ -2032,6 +2084,8 @@ function escucharAuth() {
         return;
       }
       if ((event === 'SIGNED_IN' || event === 'INITIAL_SESSION') && session?.user) {
+        /* Con el enlace de recuperación NO se entra: primero la nueva contraseña */
+        if (enRecuperacion()) { exigirNuevaContrasena(); return; }
         entrarConSesion(session.user);
       }
     }, 0);
@@ -2400,7 +2454,8 @@ function controlesFaseProyecto(p) {
 function crearTarjetaProduccion(p) {
   const card = document.createElement('div');
   const detenido = p.status === EST_PRODUCCION.DETENIDO;
-  card.className = `bg-white rounded-2xl border transition-all duration-300 overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 flex flex-col ${detenido ? 'border-red-300 ring-2 ring-red-500/20' : 'border-slate-200/80 hover:border-slate-300'}`;
+  card.className = `bg-white rounded-2xl border transition-all duration-300 overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 flex flex-col ${detenido ? 'border-red-300 ring-2 ring-red-500/20' : 'border-slate-200/80 hover:border-slate-300'} ${state.recienCreado === p.id ? 'tarjeta-recien-creada' : ''}`;
+  card.dataset.proyectoId = p.id;
 
   const badgeStatus = detenido
     ? '<span class="bg-red-600 text-white px-2.5 py-1 rounded-lg text-xs font-black shadow-md flex items-center"><i class="fas fa-triangle-exclamation w-3.5 h-3.5 mr-1" aria-hidden="true"></i>DETENIDO</span>'
@@ -2412,7 +2467,10 @@ function crearTarjetaProduccion(p) {
     <div class="relative h-52 w-full bg-slate-100 overflow-hidden border-b border-slate-100">
       <img src="${esc(p.image || DEFAULT_IMAGE)}" alt="${esc(p.name)}" class="w-full h-full object-cover hover:scale-105 transition-all duration-500" />
       <div class="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-slate-950/10 to-transparent"></div>
-      <div class="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-200 text-[11px] font-mono font-bold text-slate-800 shadow-sm">${esc(p.id)}</div>
+      <div class="absolute top-3 left-3 flex items-center gap-1.5">
+        <span class="bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-lg border border-slate-200 text-[11px] font-mono font-bold text-slate-800 shadow-sm">${esc(p.id)}</span>
+        ${badgeNuevo(p)}
+      </div>
       <div class="absolute top-3 right-3">${badgeStatus}</div>
       <div class="absolute bottom-3 left-4 right-4 text-white">
         <h3 class="text-xl font-black drop-shadow-md">${esc(p.name)}</h3>
@@ -2441,12 +2499,38 @@ function crearTarjetaProduccion(p) {
           <i class="fas fa-folder w-4 h-4 text-blue-600" aria-hidden="true"></i>
         </button>
         ${puedeEditarFicha() ? `<button type="button" class="bg-slate-100 hover:bg-slate-200 text-slate-700 p-2.5 rounded-xl border border-slate-200 transition-colors" data-edit-proyecto="${esc(p.id)}" title="Editar ficha" aria-label="Editar ficha"><i class="fas fa-pen w-4 h-4" aria-hidden="true"></i></button>` : ''}
+        ${botonEliminarProyecto(p, 'p-2.5 rounded-xl')}
       </div>
     </div>`;
 
   const img = card.querySelector('img');
   if (img) img.addEventListener('error', () => { img.src = DEFAULT_IMAGE; }, { once: true });
   return card;
+}
+
+/* Los proyectos más recientes van primero; los creados hace menos de 3 días
+   llevan la etiqueta NUEVO. */
+const HORAS_NUEVO = 72;
+
+function numeroCodigo(p) {
+  return parseInt(String(p.id || '').replace(/\D/g, ''), 10) || 0;
+}
+
+function ordenarRecientes(lista) {
+  return lista.sort((a, b) => {
+    const ta = a.creadoEn ? Date.parse(a.creadoEn) : 0;
+    const tb = b.creadoEn ? Date.parse(b.creadoEn) : 0;
+    return (tb - ta) || (numeroCodigo(b) - numeroCodigo(a));
+  });
+}
+
+function esProyectoNuevo(p) {
+  if (!p?.creadoEn) return false;
+  return Date.now() - Date.parse(p.creadoEn) < HORAS_NUEVO * 3600 * 1000;
+}
+
+function badgeNuevo(p, clases = '') {
+  return esProyectoNuevo(p) ? `<span class="badge-nuevo ${clases}">NUEVO</span>` : '';
 }
 
 function filtrarProduccion() {
@@ -2459,7 +2543,7 @@ function filtrarProduccion() {
   if (state.year !== 'Todos') lista = lista.filter((p) => String(p.trimester || '').includes(state.year));
   if (state.quarter !== 'Todos los Trimestres') lista = lista.filter((p) => p.trimester === state.quarter);
   if (state.city !== 'Todos') lista = lista.filter((p) => p.city === state.city);
-  return lista;
+  return ordenarRecientes(lista);
 }
 
 /* ---- Vista en lista (alternativa a las tarjetas) ---- */
@@ -2490,12 +2574,13 @@ function crearFilaProyecto(p) {
     : completado
       ? '<span class="bg-emerald-600 text-white px-2 py-0.5 rounded-md text-[10px] font-black">ENTREGADO</span>'
       : '<span class="bg-slate-900 text-white px-2 py-0.5 rounded-md text-[10px] font-black">EN PROCESO</span>';
-  fila.className = `bg-white border rounded-xl p-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow ${detenido ? 'border-red-300' : 'border-slate-200'}`;
+  fila.className = `bg-white border rounded-xl p-3 flex items-center gap-3 shadow-sm hover:shadow-md transition-shadow ${detenido ? 'border-red-300' : 'border-slate-200'} ${state.recienCreado === p.id ? 'tarjeta-recien-creada' : ''}`;
+  fila.dataset.proyectoId = p.id;
   fila.innerHTML = `
     <img src="${esc(p.image || DEFAULT_IMAGE)}" alt="" class="w-16 h-12 sm:w-20 sm:h-14 object-cover rounded-lg border border-slate-200 bg-slate-100 shrink-0" />
     <div class="min-w-0 flex-1 grid grid-cols-1 md:grid-cols-12 gap-x-4 gap-y-1 items-center text-xs">
       <div class="md:col-span-4 min-w-0">
-        <p class="font-black text-slate-900 truncate"><span class="font-mono text-[10px] text-red-600 mr-1">${esc(p.id)}</span>${esc(p.name)}</p>
+        <p class="font-black text-slate-900 truncate"><span class="font-mono text-[10px] text-red-600 mr-1">${esc(p.id)}</span>${badgeNuevo(p, 'mr-1')}${esc(p.name)}</p>
         <p class="text-slate-500 truncate">${esc(p.client)} · ${esc(p.city)}</p>
       </div>
       <div class="md:col-span-3 min-w-0">
@@ -2512,6 +2597,7 @@ function crearFilaProyecto(p) {
       </div>
       <div class="md:col-span-2 flex md:justify-end">${estado}</div>
     </div>
+    ${botonEliminarProyecto(p, 'w-9 h-9 rounded-lg shrink-0')}
     <button type="button" class="bg-slate-900 hover:bg-slate-800 text-white w-9 h-9 rounded-lg shrink-0" data-open-ficha="${esc(p.id)}" title="Ficha del proyecto" aria-label="Abrir ficha de ${esc(p.name)}">
       <i class="fas fa-chevron-right" aria-hidden="true"></i>
     </button>`;
@@ -2548,6 +2634,7 @@ function renderProyectos() {
     const q = state.search.toLowerCase();
     lista = lista.filter((p) => `${p.id} ${p.client} ${p.name} ${p.city}`.toLowerCase().includes(q));
   }
+  ordenarRecientes(lista);
   const vista = prepararContenedorVista(grid, 'proyectos');
   const count = document.getElementById('proyectos-count');
   if (count) count.textContent = `${lista.length} proyecto${lista.length === 1 ? '' : 's'}`;
@@ -2616,6 +2703,7 @@ function asignacionesPorPersona() {
         text: m.name,
         actividad: m.actividad || 'Armando',
         detalle: m.detalle || '',
+        estado: estadoTrabajoValido(m.estadoTrabajo),
         projectId: p.id,
         projectName: p.name,
         carpenter: m.carpenter,
@@ -2640,6 +2728,7 @@ function asignacionesPorPersona() {
         projectId: t.projectId,
         projectName: p?.name || 'Sin proyecto',
         carpenter,
+        estado: estadoTrabajoValido(t.estado),
         detenido: p?.status === EST_PRODUCCION.DETENIDO,
       });
     });
@@ -2653,17 +2742,18 @@ function tarjetaTareaHTML(task) {
   const companeros = instalacion ? equipoDeGrupo(task.grupoId).filter((n) => n !== task.carpenter && n !== lider) : [];
   const datos = `data-task-kind="${task.kind}" data-project="${esc(task.projectId || '')}" data-mueble="${esc(task.muebleId || '')}" data-task="${esc(task.taskId || '')}" data-carpenter="${esc(task.carpenter)}"`;
   return `
-    <div class="p-3 rounded-xl border text-xs ${task.detenido ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200 shadow-sm'}">
+    <div class="p-3 rounded-xl border text-xs ${task.estado === 'Completado' ? 'bg-emerald-50/60 border-emerald-200 opacity-80' : (task.detenido || task.estado === 'Detenido') ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200 shadow-sm'}">
       <div class="flex justify-between items-start gap-2 mb-2">
         <div class="flex flex-wrap items-center gap-1.5">
           <span class="text-[10px] font-black text-red-600 bg-red-50 px-1.5 py-0.5 rounded uppercase">${esc(task.projectId || 'SIN-PRY')}</span>
           ${badgeActividad(task.actividad)}
+          <span class="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black ${ESTILO_ESTADO_TRABAJO[task.estado] || ESTILO_ESTADO_TRABAJO['En proceso']}">${esc(task.estado || 'En proceso')}</span>
           ${task.esLider ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-900 text-white text-[10px] font-black"><i class="fas fa-crown" aria-hidden="true"></i>Líder</span>' : ''}
         </div>
         ${puedeAsignar() ? `
           <div class="flex items-center gap-1 shrink-0">
             <button type="button" class="task-icon-btn" data-task-edit ${datos} title="Editar tarea" aria-label="Editar tarea"><i class="fas fa-pen" aria-hidden="true"></i></button>
-            ${task.kind === 'tarea' ? `<button type="button" class="task-icon-btn task-icon-btn--danger" data-task-del ${datos} title="Eliminar tarea" aria-label="Eliminar tarea"><i class="fas fa-trash" aria-hidden="true"></i></button>` : ''}
+            <button type="button" class="task-icon-btn task-icon-btn--danger" data-task-del ${datos} title="${task.kind === 'tarea' ? 'Eliminar tarea' : 'Quitar a esta persona del mueble'}" aria-label="${task.kind === 'tarea' ? 'Eliminar tarea' : 'Quitar asignación del mueble'}"><i class="fas ${task.kind === 'tarea' ? 'fa-trash' : 'fa-user-minus'}" aria-hidden="true"></i></button>
           </div>` : ''}
       </div>
       <p class="font-bold text-slate-900 leading-tight">${esc(task.text)}</p>
@@ -2698,7 +2788,8 @@ function renderEquipo() {
 
   personas.sort((a, b) => (CARGOS_PERSONAL.indexOf(a.cargo) - CARGOS_PERSONAL.indexOf(b.cargo)) || a.nombre.localeCompare(b.nombre));
   personas.forEach(({ nombre, cargo, registrado }) => {
-    const tasks = assignments[nombre] || [];
+    const tasks = (assignments[nombre] || []).slice()
+      .sort((a, b) => Number(a.estado === 'Completado') - Number(b.estado === 'Completado'));
     const card = document.createElement('div');
     card.className = 'bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden flex flex-col';
     card.innerHTML = `
@@ -2767,6 +2858,11 @@ function abrirModalTarea(carpenter, ctx) {
   document.getElementById('tarea-actividad').innerHTML = ACTIVIDADES
     .map((a) => `<option value="${esc(a.v)}" ${a.v === (ctx?.actividad || 'Armando') ? 'selected' : ''}>${esc(a.v)}</option>`).join('');
   document.getElementById('tarea-es-lider').checked = Boolean(ctx?.esLider);
+  const selEstado = document.getElementById('tarea-estado');
+  selEstado.innerHTML = ESTADOS_TRABAJO.map((x) => `<option value="${esc(x)}">${esc(x)}</option>`).join('');
+  selEstado.value = estadoTrabajoValido(ctx?.estado);
+  /* En muebles el estado necesita la v9 de la base */
+  document.getElementById('tarea-estado-box').classList.toggle('hidden', ctx?.kind === 'mueble' && !mueblesConEstado);
   document.getElementById('tarea-equipo').innerHTML = '';
   document.getElementById('tarea-info').textContent = ctx?.kind === 'mueble'
     ? 'Mueble del proyecto: puedes cambiar la persona, la actividad y el detalle. La fase del mueble se controla en la ficha del proyecto.'
@@ -2779,7 +2875,9 @@ function abrirModalTarea(carpenter, ctx) {
   sel.value = ctx?.projectId || '';
   sel.disabled = ctx?.kind === 'mueble';
 
-  document.getElementById('tarea-eliminar').classList.toggle('hidden', !(editando && ctx.kind === 'tarea'));
+  const btnEliminar = document.getElementById('tarea-eliminar');
+  btnEliminar.classList.toggle('hidden', !editando);
+  btnEliminar.textContent = ctx?.kind === 'mueble' ? 'Quitar asignación' : 'Eliminar tarea';
   pintarModoTarea();
   document.getElementById('tarea-modal').classList.remove('is-hidden');
   setTimeout(() => document.getElementById('tarea-carpintero-input')?.focus(), 40);
@@ -2797,6 +2895,7 @@ function guardarTarea() {
   const detalle = document.getElementById('tarea-detalle').value.trim();
   const projectId = document.getElementById('tarea-proyecto').value;
   const texto = document.getElementById('tarea-texto').value.trim() || actividad;
+  const estado = estadoTrabajoValido(document.getElementById('tarea-estado')?.value);
   const ctx = state.tareaCtx;
   if (!persona) { showToast('Selecciona el personal.'); return; }
   if (!ACTIVIDAD_POR_NOMBRE[actividad]) { showToast('Selecciona la actividad.'); return; }
@@ -2811,14 +2910,14 @@ function guardarTarea() {
     if (actividad === 'Instalación') {
       const apoyo = Array.from(document.querySelectorAll('#tarea-equipo input:checked')).map((i) => i.value).filter((n) => n !== persona);
       const grupoId = nuevoUUID();
-      agregar(persona, { id: uid(), text: texto, projectId, phase: 'Asignación', actividad, detalle, grupoId, esLider: true });
-      apoyo.forEach((n) => agregar(n, { id: uid(), text: texto, projectId, phase: 'Asignación', actividad, detalle, grupoId, esLider: false }));
+      agregar(persona, { id: uid(), text: texto, projectId, phase: 'Asignación', actividad, detalle, grupoId, esLider: true, estado });
+      apoyo.forEach((n) => agregar(n, { id: uid(), text: texto, projectId, phase: 'Asignación', actividad, detalle, grupoId, esLider: false, estado }));
       commit();
       cerrarModalTarea();
       showToast(`Instalación asignada: ${persona} (líder)${apoyo.length ? ` + ${apoyo.length} persona${apoyo.length === 1 ? '' : 's'}` : ''}.`);
       return;
     }
-    agregar(persona, { id: uid(), text: texto, projectId, phase: 'Asignación', actividad, detalle, grupoId: null, esLider: false });
+    agregar(persona, { id: uid(), text: texto, projectId, phase: 'Asignación', actividad, detalle, grupoId: null, esLider: false, estado });
   } else if (ctx.kind === 'mueble') {
     const p = state.proyectos.find((x) => x.id === ctx.projectId);
     const m = (p?.muebles || []).find((x) => x.id === ctx.muebleId);
@@ -2827,6 +2926,7 @@ function guardarTarea() {
     m.name = document.getElementById('tarea-texto').value.trim() || m.name;
     m.actividad = actividad;
     m.detalle = detalle;
+    if (mueblesConEstado) m.estadoTrabajo = estado;
   } else {
     const lista = state.tareas[ctx.carpenter] || [];
     const idx = lista.findIndex((t) => t.id === ctx.taskId);
@@ -2837,6 +2937,7 @@ function guardarTarea() {
     t.projectId = projectId || t.projectId;
     t.actividad = actividad;
     t.detalle = detalle;
+    t.estado = estado;
     if (actividad === 'Instalación') {
       t.grupoId = t.grupoId || nuevoUUID();
       t.esLider = document.getElementById('tarea-es-lider').checked;
@@ -2857,8 +2958,18 @@ function guardarTarea() {
 
 function eliminarTarea(carpenter, ctx) {
   if (!puedeAsignar()) { showToast('Tu rol no puede eliminar asignaciones.'); return; }
-  if (ctx.kind === 'mueble') { showToast('Los muebles se gestionan desde la ficha del proyecto.'); return; }
-  if (!window.confirm('¿Eliminar esta tarea asignada?')) return;
+  if (ctx.kind === 'mueble') {
+    const p = state.proyectos.find((x) => x.id === ctx.projectId);
+    const m = (p?.muebles || []).find((x) => x.id === ctx.muebleId);
+    if (!m) return;
+    if (!window.confirm(`¿Quitar a ${m.carpenter || 'esta persona'} del mueble "${m.name}"?\nEl mueble sigue en el proyecto ${p.id}, sin responsable.`)) return;
+    m.carpenter = '';
+    commit();
+    cerrarModalTarea();
+    showToast('Asignación quitada. El mueble quedó sin responsable.');
+    return;
+  }
+  if (!window.confirm(`¿Eliminar la tarea "${ctx.text || 'asignada'}" de ${ctx.carpenter || carpenter}?`)) return;
   const owner = ctx.carpenter || carpenter;
   state.tareas[owner] = (state.tareas[owner] || []).filter((t) => t.id !== ctx.taskId);
   if (state.tareas[owner].length === 0) delete state.tareas[owner];
@@ -2904,6 +3015,7 @@ function renderPersonal() {
           ${CARGOS_PERSONAL.map((x) => `<option value="${esc(x)}" ${x === c.cargo ? 'selected' : ''}>${esc(x)}</option>`).join('')}
         </select>
         <button type="button" class="text-xs font-bold px-3 py-1.5 rounded-lg border ${activo ? 'border-slate-300 text-slate-700 hover:bg-slate-100' : 'border-emerald-300 text-emerald-700 hover:bg-emerald-50'}" data-personal-toggle="${esc(c.id)}">${activo ? 'Desactivar' : 'Reactivar'}</button>
+        <button type="button" class="task-icon-btn task-icon-btn--danger" data-personal-eliminar="${esc(c.id)}" title="Eliminar a ${esc(c.nombre)}" aria-label="Eliminar a ${esc(c.nombre)}"><i class="fas fa-trash" aria-hidden="true"></i></button>
       </div>`;
   }).join('');
 }
@@ -2953,6 +3065,46 @@ async function actualizarPersonal(id, cambios) {
   showToast(`${c.nombre}: ${'activo' in cambios ? (c.activo ? 'reactivado' : 'desactivado') : `ahora es ${c.cargo}`}.`);
 }
 
+/* Eliminar a una persona: se borran sus tareas y los muebles que tenía
+   quedan sin responsable. (Desactivar la conserva en el historial.) */
+async function eliminarPersonal(id) {
+  if (!puedeGestionarPersonal()) return;
+  const c = (state.carpinteros || []).find((x) => x.id === id);
+  if (!c) return;
+  const tareas = (state.tareas[c.nombre] || []).length;
+  const muebles = state.proyectos.reduce((n, p) => n + (p.muebles || []).filter((m) => m.carpenter === c.nombre).length, 0);
+  const aviso = `¿Eliminar a ${c.nombre} (${c.cargo})?\n\n`
+    + `${tareas ? `Se borrarán sus ${tareas} tarea${tareas === 1 ? '' : 's'}. ` : ''}`
+    + `${muebles ? `${muebles} mueble${muebles === 1 ? '' : 's'} quedará${muebles === 1 ? '' : 'n'} sin responsable. ` : ''}`
+    + 'Si solo dejó de trabajar temporalmente, usa "Desactivar".';
+  if (!window.confirm(aviso)) return;
+  if (!sbListo) { showToast('Sin conexión con la base de datos.'); return; }
+
+  /* Se quita del estado local antes de borrar, para que el guardado no lo recree */
+  delete state.tareas[c.nombre];
+  state.proyectos.forEach((p) => (p.muebles || []).forEach((m) => { if (m.carpenter === c.nombre) m.carpenter = ''; }));
+  let fallo = null;
+  await encolarSync(async () => {
+    const t = await supabaseClient.from('tareas_carpintero').delete().eq('carpintero_id', id);
+    if (t.error) { fallo = t.error; return; }
+    if (mueblesEnTabla) {
+      const m1 = await supabaseClient.from('proyecto_muebles').update({ responsable_id: null, responsable_nombre: null }).eq('responsable_id', id);
+      const m2 = await supabaseClient.from('proyecto_muebles').update({ responsable_id: null, responsable_nombre: null }).eq('responsable_nombre', c.nombre);
+      if (m1.error || m2.error) { fallo = m1.error || m2.error; return; }
+    }
+    const r = await supabaseClient.from('carpinteros').delete().eq('id', id).select('id');
+    if (r.error || !(r.data || []).length) fallo = r.error || { message: 'sin permiso' };
+  });
+  if (fallo) {
+    showToast(`No se pudo eliminar a ${c.nombre}: ${fallo.message}`);
+  } else {
+    state.carpinteros = state.carpinteros.filter((x) => x.id !== id);
+    showToast(`${c.nombre} eliminado del personal.`);
+  }
+  await recargarDesdeBase();
+  renderPersonal();
+}
+
 function bindEquipoEvents() {
   document.getElementById('equipo-personal')?.addEventListener('click', abrirPersonal);
   document.getElementById('personal-close')?.addEventListener('click', cerrarPersonal);
@@ -2963,6 +3115,8 @@ function bindEquipoEvents() {
     if (sel) actualizarPersonal(sel.dataset.personalCargo, { cargo: sel.value });
   });
   document.getElementById('personal-lista')?.addEventListener('click', (e) => {
+    const borrar = e.target.closest('[data-personal-eliminar]');
+    if (borrar) { eliminarPersonal(borrar.dataset.personalEliminar); return; }
     const btn = e.target.closest('[data-personal-toggle]');
     if (!btn) return;
     const c = state.carpinteros.find((x) => x.id === btn.dataset.personalToggle);
@@ -3942,6 +4096,9 @@ function openFicha(id) {
 
   const btnEditar = document.getElementById('ficha-editar');
   btnEditar.classList.toggle('hidden', !puedeEditarFicha());
+  const btnEliminar = document.getElementById('ficha-eliminar');
+  btnEliminar.classList.toggle('hidden', !puedeEliminarProyecto());
+  btnEliminar.dataset.eliminarProyecto = p.id;
   document.getElementById('ficha-cambiar-imagen').classList.toggle('hidden', !puedeEditarFicha());
   document.getElementById('ficha-pedido-add').classList.toggle('hidden', !puedeGestionarCompras());
   document.getElementById('ficha-adjuntar-box').classList.toggle('hidden', !puedeEditarFicha());
@@ -4276,6 +4433,8 @@ async function abrirDocumento(id, descargar) {
   const opciones = descargar ? { download: d.nombre } : undefined;
   const { data, error } = await supabaseClient.storage.from(partes.bucket).createSignedUrl(partes.path, 600, opciones);
   if (error || !data?.signedUrl) { showToast(`No se pudo abrir el documento: ${error?.message || 'sin enlace'}`); return; }
+  const esPdf = !(d.tipo_mime || '').startsWith('image/');
+  if (esAppNativa() && (descargar || esPdf)) { abrirEnlaceExterno(data.signedUrl); return; }
   if (descargar) {
     const a = document.createElement('a');
     a.href = data.signedUrl;
@@ -4339,6 +4498,66 @@ function closeFicha() {
   state.fichaSub = 'resumen';
 }
 /* ==========================================================================
+   17b. ELIMINAR PROYECTO (solo Gerencia)
+   Borra el proyecto y, en cascada en la base, sus pendientes, tareas,
+   muebles, compras, incidentes, documentos y finanzas. Los archivos de
+   documentos se retiran también del almacenamiento.
+   ========================================================================== */
+
+function puedeEliminarProyecto() {
+  return esGerencia();
+}
+
+function botonEliminarProyecto(p, clases = '') {
+  if (!puedeEliminarProyecto()) return '';
+  return `<button type="button" class="btn-eliminar-proyecto ${clases}" data-eliminar-proyecto="${esc(p.id)}" title="Eliminar proyecto" aria-label="Eliminar el proyecto ${esc(p.id)}"><i class="fas fa-trash" aria-hidden="true"></i></button>`;
+}
+
+async function eliminarProyecto(id) {
+  if (!puedeEliminarProyecto()) { showToast('Solo Gerencia puede eliminar proyectos.'); return; }
+  const p = state.proyectos.find((x) => x.id === id);
+  if (!p) return;
+  const tareas = Object.values(state.tareas || {}).flat().filter((t) => t.projectId === id).length;
+  const docs = documentosDe(id);
+  const resumen = [
+    `${(p.muebles || []).length} muebles`,
+    `${(p.pedidos || []).length} compras`,
+    `${(p.incidentes || []).length} incidentes`,
+    `${(p.pendientes || []).length} pendientes`,
+    `${tareas} tareas`,
+    `${docs.length} documentos`,
+  ].join(', ');
+  const ok = window.confirm(`¿Eliminar definitivamente ${p.id} · ${p.name} (${p.client})?\n\nTambién se borran: ${resumen} y sus datos financieros.\nEsta acción no se puede deshacer.`);
+  if (!ok) return;
+
+  /* 1. Archivos de documentos en Storage (la fila se borra en cascada) */
+  if (sbListo && documentosEnTabla && docs.length) {
+    const porBucket = {};
+    docs.forEach((d) => {
+      const partes = separarRuta(d.ruta);
+      if (partes) (porBucket[partes.bucket] = porBucket[partes.bucket] || []).push(partes.path);
+    });
+    for (const [bucket, rutas] of Object.entries(porBucket)) {
+      const { error } = await supabaseClient.storage.from(bucket).remove(rutas);
+      if (error) console.warn('[MODUGAL] No se pudieron borrar archivos del proyecto', bucket, error);
+    }
+  }
+
+  /* 2. Estado local: el guardado borra la fila en la base (cascada) */
+  state.proyectos = state.proyectos.filter((x) => x.id !== id);
+  Object.keys(state.tareas || {}).forEach((nombre) => {
+    state.tareas[nombre] = (state.tareas[nombre] || []).filter((t) => t.projectId !== id);
+    if (!state.tareas[nombre].length) delete state.tareas[nombre];
+  });
+  (state.comercial || []).forEach((c) => { if (c.proyectoId === id) c.proyectoId = null; });
+  if (state.finanzas) delete state.finanzas[id];
+  if (state.documentos) delete state.documentos[id];
+  if (state.fichaId === id) closeFicha();
+  commit();
+  showToast(`${p.id} eliminado.`);
+}
+
+/* ==========================================================================
    17. MODAL · CREAR / EDITAR PROYECTO
    ========================================================================== */
 
@@ -4363,9 +4582,10 @@ function abrirProyectoModal(id, focus) {
   set('proyecto-arquitecto', p?.arquitecto || state.user?.nombre || 'Felipe Mora');
   document.getElementById('proyecto-carpintero').innerHTML = opcionesPersonal(p?.leadCarpenter || '', 'Sin asignar');
   set('proyecto-operador', p?.logisticOperator || 'Wilyer');
-  set('proyecto-fecha-inicio', p?.dateStart || formatFechaLarga(new Date()));
-  set('proyecto-fecha-entrega', p?.dateExpected || '');
-  state.fechaEntregaOriginal = p ? (p.dateExpected || '') : null;
+  set('proyecto-fecha-inicio', p ? isoParaInput(p.dateStart) : fechaISODeTexto(formatFechaLarga(new Date())));
+  set('proyecto-fecha-entrega', isoParaInput(p?.dateExpected));
+  /* Se compara en el formato que se guarda ("16 Dic 2027") */
+  state.fechaEntregaOriginal = p ? textoDesdeInputFecha(isoParaInput(p.dateExpected)) : null;
   set('proyecto-motivo', '');
   document.getElementById('proyecto-motivo-wrap')?.classList.add('hidden');
   set('proyecto-imagen', p?.image && p.image !== DEFAULT_IMAGE ? p.image : '');
@@ -4374,15 +4594,7 @@ function abrirProyectoModal(id, focus) {
   pintarPreviewImagen(p?.image || DEFAULT_IMAGE);
   set('proyecto-detalle', p?.commercialDetail || '');
 
-  const citySel = document.getElementById('proyecto-ciudad');
-  citySel.value = p?.city || 'Floridablanca';
-  if (p?.city && !Array.from(citySel.options).some((o) => o.value === p.city)) {
-    const opt = document.createElement('option');
-    opt.value = p.city;
-    opt.textContent = p.city;
-    citySel.appendChild(opt);
-    citySel.value = p.city;
-  }
+  fijarCiudadProyecto(p?.city || 'Por definir');
   document.getElementById('proyecto-trimestre').value = p?.trimester || 'Q4 - 2026';
   document.getElementById('proyecto-fase').value = p?.manufacturingPhase || 'Recepción';
   document.getElementById('proyecto-estado').value = p?.status || EST_PRODUCCION.EN_PROCESO;
@@ -4487,8 +4699,16 @@ async function guardarProyecto(e) {
 
   /* Cambiar la fecha prometida exige un motivo (queda en el historial) */
   const editando = state.proyectoModalMode === 'editar' && state.proyectoModalId;
-  const nuevaFecha = document.getElementById('proyecto-fecha-entrega').value.trim() || 'Por definir';
-  const cambiaFecha = editando && state.fechaEntregaOriginal !== null && nuevaFecha !== (state.fechaEntregaOriginal || 'Por definir');
+  const nuevaFecha = textoDesdeInputFecha(document.getElementById('proyecto-fecha-entrega').value);
+  const fechaInicio = textoDesdeInputFecha(document.getElementById('proyecto-fecha-inicio').value);
+  const dIni = parseFecha(fechaInicio);
+  const dFin = parseFecha(nuevaFecha);
+  if (dIni && dFin && dFin < dIni) {
+    showToast('La fecha de entrega no puede ser anterior a la fecha de inicio.');
+    document.getElementById('proyecto-fecha-entrega')?.focus();
+    return;
+  }
+  const cambiaFecha = editando && state.fechaEntregaOriginal !== null && nuevaFecha !== state.fechaEntregaOriginal;
   const motivoFecha = document.getElementById('proyecto-motivo')?.value.trim() || '';
   if (cambiaFecha && !motivoFecha) {
     document.getElementById('proyecto-motivo-wrap')?.classList.remove('hidden');
@@ -4532,8 +4752,8 @@ async function guardarProyecto(e) {
     phase: PRODUCTION_PHASES.includes(fase) ? fase : 'Recepción',
     status: document.getElementById('proyecto-estado').value,
     commercialStage: document.getElementById('proyecto-etapa-comercial').value,
-    dateStart: document.getElementById('proyecto-fecha-inicio').value.trim() || 'Por definir',
-    dateExpected: document.getElementById('proyecto-fecha-entrega').value.trim() || 'Por definir',
+    dateStart: fechaInicio,
+    dateExpected: nuevaFecha,
     image: document.getElementById('proyecto-imagen').value.trim() || DEFAULT_IMAGE,
     commercialDetail: document.getElementById('proyecto-detalle').value.trim(),
   };
@@ -4562,6 +4782,7 @@ async function guardarProyecto(e) {
   const nuevo = normalizarProyecto({
     ...datos,
     id: codigo,
+    creadoEn: new Date().toISOString(),
     pendientes: [],
     muebles: [],
     pedidos: [],
@@ -4578,9 +4799,154 @@ async function guardarProyecto(e) {
   state.proyectosYear = 'Todos';
   state.proyectosQuarter = 'Todos los Trimestres';
   state.proyectosCity = 'Todos';
+  state.recienCreado = nuevo.id;
   commit();
   cerrarProyectoModal();
-  showToast(`${nuevo.id} creado y visible en todos los módulos.`);
+  /* Se muestra de una vez: primero en la lista y resaltado */
+  if (!['produccion', 'proyectos'].includes(state.tab)) switchTab('produccion');
+  requestAnimationFrame(() => {
+    document.querySelector(`.tab-panel:not(.is-hidden) [data-proyecto-id="${CSS.escape(nuevo.id)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  setTimeout(() => { if (state.recienCreado === nuevo.id) { state.recienCreado = null; document.querySelectorAll('.tarjeta-recien-creada').forEach((el) => el.classList.remove('tarjeta-recien-creada')); } }, 6000);
+  showToast(`${nuevo.id} creado: aparece de primero en Producción y Proyectos.`);
+}
+
+/* ==========================================================================
+   16b. CIUDADES (buscador de municipios) Y FECHAS (calendario)
+   ========================================================================== */
+
+function sinTildes(texto) {
+  return String(texto || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+}
+
+/* Índice de búsqueda: nombre + departamento sin tildes */
+let indiceCiudades = null;
+function ciudadesColombia() {
+  if (!indiceCiudades) {
+    indiceCiudades = (window.MG_CIUDADES || []).map(([nombre, depto]) => ({
+      nombre, depto, clave: sinTildes(`${nombre} ${depto}`), claveNombre: sinTildes(nombre),
+    }));
+  }
+  return indiceCiudades;
+}
+
+function buscarCiudades(texto, max = 80) {
+  const q = sinTildes(texto).trim();
+  const todas = ciudadesColombia();
+  if (!q) return todas.slice(0, max);
+  /* Primero las que empiezan por lo escrito, luego las que lo contienen */
+  const empiezan = [];
+  const contienen = [];
+  for (const c of todas) {
+    if (c.claveNombre.startsWith(q)) empiezan.push(c);
+    else if (c.clave.includes(q)) contienen.push(c);
+    if (empiezan.length >= max) break;
+  }
+  return empiezan.concat(contienen).slice(0, max);
+}
+
+function ciudadValida(nombre) {
+  return nombre === 'Por definir' || ciudadesColombia().some((c) => c.nombre === nombre);
+}
+
+function iniciarComboCiudad() {
+  const input = document.getElementById('proyecto-ciudad-buscar');
+  const oculto = document.getElementById('proyecto-ciudad');
+  const lista = document.getElementById('proyecto-ciudad-lista');
+  if (!input || !oculto || !lista) return;
+  let activo = -1;
+  let resultados = [];
+
+  const abrir = (abierta) => {
+    lista.classList.toggle('hidden', !abierta);
+    input.setAttribute('aria-expanded', abierta ? 'true' : 'false');
+  };
+  const pintar = () => {
+    resultados = buscarCiudades(input.value === oculto.value ? '' : input.value);
+    activo = resultados.length ? 0 : -1;
+    lista.innerHTML = resultados.length
+      ? resultados.map((c, i) => `
+          <li role="option" id="ciudad-op-${i}" data-ciudad="${esc(c.nombre)}" class="ciudad-combo__op ${i === activo ? 'activa' : ''}" aria-selected="${i === activo}">
+            <span class="font-bold text-slate-900">${esc(c.nombre)}</span><span class="text-[10px] text-slate-400 ml-2">${esc(c.depto)}</span>
+          </li>`).join('')
+        + (input.value && input.value !== oculto.value ? '' : '<li class="ciudad-combo__nota">Escribe para ver más municipios…</li>')
+      : '<li class="ciudad-combo__nota">Ningún municipio coincide. Revisa la ortografía.</li>';
+    input.setAttribute('aria-activedescendant', activo >= 0 ? `ciudad-op-${activo}` : '');
+    abrir(true);
+  };
+  const marcar = (i) => {
+    activo = i;
+    lista.querySelectorAll('[data-ciudad]').forEach((li, j) => {
+      li.classList.toggle('activa', j === i);
+      li.setAttribute('aria-selected', String(j === i));
+      if (j === i) li.scrollIntoView({ block: 'nearest' });
+    });
+    input.setAttribute('aria-activedescendant', i >= 0 ? `ciudad-op-${i}` : '');
+  };
+  const elegir = (nombre) => {
+    oculto.value = nombre;
+    input.value = nombre;
+    input.classList.remove('campo-invalido');
+    abrir(false);
+  };
+
+  input.addEventListener('focus', () => { input.select(); pintar(); });
+  input.addEventListener('input', pintar);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); if (lista.classList.contains('hidden')) pintar(); else marcar(Math.min(activo + 1, resultados.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); marcar(Math.max(activo - 1, 0)); }
+    else if (e.key === 'Enter') { if (!lista.classList.contains('hidden') && resultados[activo]) { e.preventDefault(); elegir(resultados[activo].nombre); } }
+    else if (e.key === 'Escape') { if (!lista.classList.contains('hidden')) { e.preventDefault(); e.stopPropagation(); abrir(false); input.value = oculto.value; } }
+  });
+  /* mousedown (no click) para elegir antes de que el campo pierda el foco */
+  lista.addEventListener('mousedown', (e) => {
+    const li = e.target.closest('[data-ciudad]');
+    if (!li) return;
+    e.preventDefault();
+    elegir(li.dataset.ciudad);
+  });
+  input.addEventListener('blur', () => {
+    setTimeout(() => {
+      abrir(false);
+      /* Si escribió el nombre exacto, se acepta; si no, vuelve a la última ciudad válida */
+      const exacta = ciudadesColombia().find((c) => sinTildes(c.nombre) === sinTildes(input.value.trim()));
+      if (exacta) elegir(exacta.nombre);
+      else input.value = oculto.value === 'Por definir' ? '' : oculto.value;
+    }, 120);
+  });
+}
+
+function fijarCiudadProyecto(nombre) {
+  const oculto = document.getElementById('proyecto-ciudad');
+  const input = document.getElementById('proyecto-ciudad-buscar');
+  const valor = nombre && nombre !== 'Por definir' ? nombre : 'Por definir';
+  if (oculto) oculto.value = valor;
+  if (input) input.value = valor === 'Por definir' ? '' : valor;
+}
+
+/* Filtros de ciudad: solo las ciudades que tienen proyectos, en orden alfabético */
+function poblarFiltrosCiudad() {
+  const ciudades = [...new Set(state.proyectos.map((p) => p.city).filter((c) => c && c !== 'Por definir'))]
+    .sort((a, b) => a.localeCompare(b, 'es'));
+  [['filtro-city', 'city'], ['proyectos-city', 'proyectosCity']].forEach(([id, clave]) => {
+    const sel = document.getElementById(id);
+    if (!sel) return;
+    if (state[clave] !== 'Todos' && !ciudades.includes(state[clave])) state[clave] = 'Todos';
+    sel.innerHTML = '<option value="Todos">Todas las ciudades</option>'
+      + ciudades.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+    sel.value = state[clave];
+  });
+}
+
+/* Fechas: el calendario entrega AAAA-MM-DD; en la app se muestran como "16 Dic 2027"
+   y en la base se guardan como fecha (AAAA-MM-DD). Nunca texto libre. */
+function isoParaInput(textoFecha) {
+  return fechaISODeTexto(textoFecha) || '';
+}
+
+function textoDesdeInputFecha(valorIso) {
+  const d = parseFecha(valorIso);
+  return d ? formatFechaLarga(d) : 'Por definir';
 }
 
 /* ==========================================================================
@@ -4603,6 +4969,7 @@ function cerrarProspectoModal() {
    ========================================================================== */
 
 function renderAll() {
+  poblarFiltrosCiudad();
   renderKpis();
   renderProduccion();
   renderEquipo();
@@ -4712,7 +5079,7 @@ function bindLoginEvents() {
     abrirRecuperacion('correo', email);
   });
 
-  document.getElementById('forgot-close')?.addEventListener('click', cerrarRecuperacion);
+  document.getElementById('forgot-close')?.addEventListener('click', cancelarRecuperacion);
 
   document.getElementById('forgot-reset')?.addEventListener('click', async () => {
     const modal = document.getElementById('login-forgot-modal');
@@ -4730,8 +5097,15 @@ function bindLoginEvents() {
       return;
     }
     if (modo === 'nueva') {
+      const veniaDelCorreo = enRecuperacion();
+      marcarRecuperacion(false);
       cerrarRecuperacion();
+      document.getElementById('forgot-close').textContent = 'Cancelar';
       showToast('Contraseña actualizada.');
+      if (veniaDelCorreo) {
+        const { data } = await supabaseClient.auth.getSession();
+        if (data?.session?.user) await entrarConSesion(data.session.user);
+      }
     } else {
       msgEl.textContent = 'Si el correo está registrado, recibirás un enlace para crear una nueva contraseña.';
       msgEl.className = 'text-xs font-bold text-emerald-700 mt-3';
@@ -4762,6 +5136,28 @@ function abrirRecuperacion(modo, email = '') {
 
 function cerrarRecuperacion() {
   document.getElementById('login-forgot-modal')?.classList.add('is-hidden');
+}
+
+/* Pantalla obligatoria tras abrir el enlace del correo: no deja ver la app */
+function exigirNuevaContrasena() {
+  if (sesionUserId) salirDeSesion();
+  else mostrarLogin();
+  abrirRecuperacion('nueva');
+  document.getElementById('forgot-close').textContent = 'Cancelar y salir';
+  document.getElementById('forgot-sub').textContent = 'Por seguridad, crea tu nueva contraseña antes de entrar (mínimo 6 caracteres).';
+  try { history.replaceState(null, '', window.location.pathname); } catch (e) { /* noop */ }
+}
+
+async function cancelarRecuperacion() {
+  const modo = document.getElementById('login-forgot-modal')?.dataset.modo;
+  cerrarRecuperacion();
+  document.getElementById('forgot-close').textContent = 'Cancelar';
+  if (modo === 'nueva' && enRecuperacion()) {
+    marcarRecuperacion(false);
+    await supabaseClient.auth.signOut();
+    salirDeSesion();
+    showToast('No se cambió la contraseña. Inicia sesión con tu contraseña actual o vuelve a pedir el enlace.');
+  }
 }
 
 function bindHeaderEvents() {
@@ -4870,7 +5266,7 @@ function bindFichaEvents() {
   });
   document.getElementById('proyecto-fecha-entrega')?.addEventListener('input', (e) => {
     const editando = state.proyectoModalMode === 'editar' && state.fechaEntregaOriginal !== null;
-    const cambia = editando && (e.target.value.trim() || 'Por definir') !== (state.fechaEntregaOriginal || 'Por definir');
+    const cambia = editando && textoDesdeInputFecha(e.target.value) !== state.fechaEntregaOriginal;
     document.getElementById('proyecto-motivo-wrap')?.classList.toggle('hidden', !cambia);
   });
   document.getElementById('proyecto-imagen-quitar')?.addEventListener('click', () => {
@@ -4896,6 +5292,9 @@ function bindFichaEvents() {
     const btn = e.target.closest('[data-sub]');
     if (!btn) return;
     mostrarSubFicha(btn.dataset.sub);
+    const cuerpo = document.getElementById('ficha-cuerpo');
+    if (cuerpo) cuerpo.scrollTop = 0;
+    btn.scrollIntoView({ block: 'nearest', inline: 'center' });
   });
 
   document.getElementById('ficha-fase-back')?.addEventListener('click', () => {
@@ -5003,11 +5402,11 @@ function contextoDesdeDataset(el) {
     const p = state.proyectos.find((x) => x.id === projectId);
     const m = (p?.muebles || []).find((x) => x.id === muebleId);
     if (!m) return null;
-    return { kind, projectId, muebleId, taskId: null, carpenter: m.carpenter || carpenter, text: m.name, actividad: m.actividad || 'Armando', detalle: m.detalle || '' };
+    return { kind, projectId, muebleId, taskId: null, carpenter: m.carpenter || carpenter, text: m.name, actividad: m.actividad || 'Armando', detalle: m.detalle || '', estado: estadoTrabajoValido(m.estadoTrabajo) };
   }
   const t = (state.tareas[carpenter] || []).find((x) => x.id === taskId);
   if (!t) return null;
-  return { kind: 'tarea', projectId: t.projectId, muebleId: null, taskId: t.id, carpenter, text: t.text, actividad: t.actividad || 'Otra', detalle: t.detalle || '', esLider: Boolean(t.esLider), grupoId: t.grupoId || null };
+  return { kind: 'tarea', projectId: t.projectId, muebleId: null, taskId: t.id, carpenter, text: t.text, actividad: t.actividad || 'Otra', detalle: t.detalle || '', esLider: Boolean(t.esLider), grupoId: t.grupoId || null, estado: estadoTrabajoValido(t.estado) };
 }
 
 function bindGlobalDelegation() {
@@ -5026,6 +5425,8 @@ function bindGlobalDelegation() {
       if (ficha.dataset.sub) state.fichaSub = ficha.dataset.sub;
       else state.fichaSub = 'resumen';
       openFicha(ficha.dataset.openFicha);
+      const cuerpo = document.getElementById('ficha-cuerpo');
+      if (cuerpo) cuerpo.scrollTop = 0;
       return;
     }
 
@@ -5082,6 +5483,9 @@ function bindGlobalDelegation() {
 
     const verDoc = e.target.closest('[data-ver-doc]');
     if (verDoc) { verDocumento(verDoc.dataset.verDoc); return; }
+
+    const borrarPrj = e.target.closest('[data-eliminar-proyecto]');
+    if (borrarPrj) { eliminarProyecto(borrarPrj.dataset.eliminarProyecto); return; }
 
     const docVer = e.target.closest('[data-doc-ver]');
     if (docVer) { abrirDocumento(docVer.dataset.docVer, false); return; }
@@ -5871,6 +6275,88 @@ function bindIncidentesEvents() {
    22. INICIALIZACIÓN
    ========================================================================== */
 
+/* ==========================================================================
+   22. APP MÓVIL · PWA (web instalable) y Capacitor (iOS / Android)
+   --------------------------------------------------------------------------
+   Capacitor inyecta window.Capacitor en la app nativa; en el navegador no
+   existe, así que todo esto es inofensivo en la versión web.
+   ========================================================================== */
+
+const URL_WEB_PUBLICA = 'https://nairoviancha.github.io/control_logistico/';
+
+function esAppNativa() {
+  return !!window.Capacitor?.isNativePlatform?.();
+}
+
+function pluginNativo(nombre) {
+  return esAppNativa() ? window.Capacitor?.Plugins?.[nombre] : null;
+}
+
+/* Enlaces externos y archivos: en la app nativa se abren en el navegador del
+   sistema (el visor interno de Android no muestra PDF ni descarga archivos). */
+async function abrirEnlaceExterno(url) {
+  const browser = pluginNativo('Browser');
+  if (browser) {
+    try { await browser.open({ url }); return; } catch (e) { console.warn('[MODUGAL] Browser.open', e); }
+  }
+  window.open(url, '_blank', 'noopener');
+}
+
+/* Cierra el modal o panel visible de más arriba. Devuelve true si cerró algo. */
+function cerrarCapaSuperior() {
+  const visibles = [...document.querySelectorAll('#modal-ficha, [id$="-modal"].fixed')]
+    .filter((m) => !m.classList.contains('is-hidden') && getComputedStyle(m).display !== 'none')
+    .map((m, i) => ({ m, i, z: parseInt(getComputedStyle(m).zIndex, 10) || 0 }))
+    /* Arriba = mayor z-index; si empatan, el que está después en la página */
+    .sort((a, b) => (b.z - a.z) || (b.i - a.i));
+  const capa = visibles[0]?.m;
+  if (capa) {
+    const boton = capa.querySelector('[id$="-cancelar"], [id$="-close"], [id$="-cerrar"]');
+    if (boton) boton.click(); else capa.classList.add('is-hidden');
+    return true;
+  }
+  const chat = document.getElementById('chat-panel');
+  if (chat?.classList.contains('open')) { document.getElementById('chat-close')?.click(); return true; }
+  return false;
+}
+
+function iniciarAppMovil() {
+  const nativa = esAppNativa();
+  document.documentElement.classList.toggle('app-nativa', nativa);
+
+  /* Tecla Esc en escritorio = botón atrás en Android: cierran la capa de arriba */
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !e.defaultPrevented) cerrarCapaSuperior();
+  });
+
+  if (nativa) {
+    const app = pluginNativo('App');
+    app?.addListener?.('backButton', () => {
+      if (cerrarCapaSuperior()) return;
+      if (state.tab && state.tab !== 'produccion' && tabsPermitidos().includes('produccion')) { switchTab('produccion'); return; }
+      app.minimizeApp?.();
+    });
+    /* Al volver a la app después de un rato, se traen los cambios de otros */
+    app?.addListener?.('appStateChange', ({ isActive }) => {
+      if (isActive && sbListo && state.user) programarRecargaRemota();
+    });
+    /* Enlaces que abrirían otra pestaña → navegador del sistema */
+    document.addEventListener('click', (e) => {
+      const a = e.target.closest('a[target="_blank"]');
+      if (!a || !a.href) return;
+      e.preventDefault();
+      abrirEnlaceExterno(a.href);
+    });
+    return;
+  }
+
+  /* Versión web: service worker para poder instalarla como app (PWA) */
+  const local = ['localhost', '127.0.0.1'].includes(location.hostname);
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || local)) {
+    navigator.serviceWorker.register('sw.js').catch((e) => console.warn('[MODUGAL] Service worker:', e));
+  }
+}
+
 async function init() {
   limpiarClavesLegadas();
   state.tema = localStorage.getItem(TEMA_KEY) || 'claro';
@@ -5896,6 +6382,8 @@ async function init() {
   bindComprasEvents();
   bindIncidentesEvents();
   bindFinanzasEvents();
+  iniciarAppMovil();
+  iniciarComboCiudad();
 
   /* Sin sesión no se muestra ni se consulta ningún dato */
   aplicarPermisosUI();
@@ -5909,7 +6397,10 @@ async function init() {
   /* Sesión activa (el SDK la guarda y la renueva sola) */
   const { data, error } = await supabaseClient.auth.getSession();
   if (error) console.warn('[MODUGAL] getSession:', error);
-  if (data?.session?.user) await entrarConSesion(data.session.user);
+  if (data?.session?.user) {
+    if (enRecuperacion()) exigirNuevaContrasena();
+    else await entrarConSesion(data.session.user);
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

@@ -1,0 +1,24 @@
+{
+  "name": "modugal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MODUGAL - espacios renovados · app web (GitHub Pages) y app móvil (Capacitor iOS/Android)",
+  "scripts": {
+    "web": "node scripts/copiar-web.mjs",
+    "android": "node scripts/copiar-web.mjs && npx cap sync android && npx cap open android",
+    "ios": "node scripts/copiar-web.mjs && npx cap sync ios && npx cap open ios",
+    "sync": "node scripts/copiar-web.mjs && npx cap sync",
+    "iconos": "npx @capacitor/assets generate --iconBackgroundColor \"#ffffff\" --splashBackgroundColor \"#f8fafc\""
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/app": "^8.0.0",
+    "@capacitor/browser": "^8.0.0",
+    "@capacitor/core": "^8.4.0",
+    "@capacitor/ios": "^8.4.0"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5",
+    "@capacitor/cli": "^8.4.0"
+  }
+}

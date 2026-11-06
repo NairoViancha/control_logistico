@@ -1,0 +1,19 @@
+{
+  "appId": "com.modugal.app",
+  "appName": "MODUGAL",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "ios": {
+    "contentInset": "never",
+    "scheme": "MODUGAL"
+  },
+  "plugins": {
+    "SystemBars": {
+      "insetsHandling": "css",
+      "style": "DEFAULT",
+      "hidden": false
+    }
+  }
+}

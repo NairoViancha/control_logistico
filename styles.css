@@ -509,3 +509,107 @@ html.tema-oscuro .toast { background: var(--brand); }
 html.tema-oscuro .doc-item--sin-archivo { background: #422006; border-color: #a16207; }
 html.tema-oscuro .doc-contador { background: #334155; color: #e2e8f0; }
 html.tema-oscuro .doc-btn--dark { background: #e2e8f0; border-color: #e2e8f0; color: #0f172a; }
+
+/* ============================================================
+   APP MÓVIL · áreas seguras (notch, barra de estado, gestos)
+   --safe-area-inset-* lo inyecta Capacitor (SystemBars) en Android;
+   en iOS y en la PWA se usa env(). En escritorio todo vale 0.
+   ============================================================ */
+:root {
+  --sat: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sab: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+  --sal: var(--safe-area-inset-left, env(safe-area-inset-left, 0px));
+  --sar: var(--safe-area-inset-right, env(safe-area-inset-right, 0px));
+}
+#mg-header { padding-top: var(--sat); padding-left: var(--sal); padding-right: var(--sar); }
+#mg-tabs { top: calc(5rem + var(--sat)); }
+#mg-main { padding-top: calc(5rem + var(--sat)); padding-bottom: var(--sab); }
+#login-screen { padding-top: calc(1rem + var(--sat)); padding-bottom: calc(1rem + var(--sab)); }
+.chat-fab { bottom: calc(1.25rem + var(--sab)); }
+.modal { padding-bottom: calc(1.1rem + var(--sab)); }
+.modal-overlay.desktop .modal { padding-bottom: 1.1rem; }
+/* En el celular, sin resaltado gris al tocar y sin zoom al enfocar campos */
+html.app-nativa, html.app-nativa body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; }
+@media (max-width: 640px) {
+  html.app-nativa input, html.app-nativa select, html.app-nativa textarea { font-size: 16px; }
+}
+#modal-ficha, [id$="-modal"].fixed { padding-top: calc(1rem + var(--sat)); padding-bottom: calc(1rem + var(--sab)); }
+.toast { bottom: calc(1.25rem + var(--sab)); }
+
+/* ============================================================
+   VENTANAS (login, ficha y modales): nunca se cortan arriba.
+   Si el contenido es más alto que la pantalla, la capa hace scroll
+   y la ventana queda centrada cuando cabe (margin:auto).
+   ============================================================ */
+#login-screen, #modal-ficha, [id$="-modal"].fixed {
+  align-items: flex-start !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+#login-screen > div, #modal-ficha > div, [id$="-modal"].fixed > div {
+  margin-top: auto !important;
+  margin-bottom: auto !important;
+}
+
+/* Login / registro más compacto, con aire arriba y abajo */
+#login-screen { padding-top: calc(1.5rem + var(--sat)); padding-bottom: calc(1.5rem + var(--sab)); }
+#login-card input, #login-card select { padding: 0.6rem 0.8rem; font-size: 0.875rem; }
+#login-card label { margin-bottom: 0.2rem; }
+#login-card #login-submit { padding-top: 0.7rem; padding-bottom: 0.7rem; }
+
+/* Ficha del proyecto: cabecera y pestañas fijas; solo el contenido se desplaza */
+#ficha-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 2rem - var(--sat) - var(--sab));
+  max-height: calc(100dvh - 2rem - var(--sat) - var(--sab));
+}
+#ficha-cabecera, #ficha-subtabs, #ficha-pie { flex-shrink: 0; }
+#ficha-cuerpo { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+@media (max-width: 640px) {
+  #modal-ficha { padding: calc(0.5rem + var(--sat)) 0.5rem calc(0.5rem + var(--sab)) !important; }
+  #ficha-panel { max-height: calc(100vh - 1rem - var(--sat) - var(--sab)); max-height: calc(100dvh - 1rem - var(--sat) - var(--sab)); }
+  #ficha-cabecera { padding: 0.85rem 1rem; }
+  #ficha-nombre { font-size: 1.15rem; line-height: 1.3; }
+  #ficha-cuerpo { padding: 1rem; }
+  #ficha-pie { padding: 0.6rem 1rem; }
+  #ficha-subtabs { padding-left: 1rem; padding-right: 1rem; }
+  #ficha-editar { padding: 0.5rem 0.65rem; }
+  /* Modales con formulario largo: el formulario se desplaza dentro */
+  [id$="-modal"].fixed { padding: calc(0.5rem + var(--sat)) 0.5rem calc(0.5rem + var(--sab)) !important; }
+}
+#proyecto-modal > div { display: flex; flex-direction: column; max-height: calc(100dvh - 2rem - var(--sat) - var(--sab)); }
+#proyecto-form { max-height: none !important; flex: 1 1 auto; min-height: 0; }
+
+/* Buscador de ciudades */
+.ciudad-combo { position: relative; }
+.ciudad-combo__icono { position: absolute; right: 0.85rem; top: 0.95rem; color: #94a3b8; font-size: 0.8rem; pointer-events: none; }
+.ciudad-combo__lista { position: absolute; z-index: 30; left: 0; right: 0; top: calc(100% + 4px); max-height: 15rem; overflow-y: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 0.75rem; box-shadow: 0 12px 28px rgba(15, 23, 42, 0.18); padding: 0.25rem; }
+.ciudad-combo__op { padding: 0.55rem 0.7rem; border-radius: 0.5rem; cursor: pointer; display: flex; align-items: baseline; }
+.ciudad-combo__op:hover, .ciudad-combo__op.activa { background: #fef2f2; }
+.ciudad-combo__nota { padding: 0.55rem 0.7rem; font-size: 0.7rem; color: #94a3b8; }
+html.tema-oscuro .ciudad-combo__op:hover, html.tema-oscuro .ciudad-combo__op.activa { background: #3f1d1d; }
+
+/* Proyecto nuevo */
+.badge-nuevo { display: inline-flex; align-items: center; padding: 0.15rem 0.5rem; border-radius: 999px; background: #dc2626; color: #fff; font-size: 0.6rem; font-weight: 900; letter-spacing: 0.08em; box-shadow: 0 2px 6px rgba(220, 38, 38, 0.35); vertical-align: middle; }
+.tarjeta-recien-creada { box-shadow: 0 0 0 3px #dc2626, 0 12px 28px rgba(220, 38, 38, 0.2) !important; animation: mg-pulso 1.2s ease-in-out 3; }
+@keyframes mg-pulso { 50% { box-shadow: 0 0 0 6px rgba(220, 38, 38, 0.35), 0 12px 28px rgba(220, 38, 38, 0.2); } }
+
+/* Botón eliminar proyecto (Gerencia) */
+.btn-eliminar-proyecto { display: inline-flex; align-items: center; justify-content: center; background: #fff; color: #b91c1c; border: 1px solid #fecaca; transition: background 0.15s, color 0.15s; }
+.btn-eliminar-proyecto:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
+html.tema-oscuro .btn-eliminar-proyecto { background: transparent; border-color: #7f1d1d; color: #fca5a5; }
+/* Registro: contraseña y confirmación lado a lado para que la tarjeta sea más baja */
+.grid-claves { display: grid; gap: 0.75rem; }
+@media (min-width: 480px) {
+  .grid-claves:has([data-solo-registro]:not(.hidden)) { grid-template-columns: 1fr 1fr; }
+  #login-card:has([data-solo-registro]:not(.hidden)) { max-width: 26rem; }
+}
+#login-card label { font-size: 0.68rem; }
+#login-card .space-y-3 > * + * { margin-top: 0.6rem; }
+#login-card:has([data-solo-registro]:not(.hidden)) #login-forgot { display: none; }
+/* El botón flotante del asistente no tapa las ventanas abiertas */
+body:has(#login-screen:not(.is-hidden)) .chat-fab,
+body:has(#modal-ficha:not(.is-hidden)) .chat-fab,
+body:has([id$="-modal"].fixed:not(.is-hidden)) .chat-fab { display: none; }
