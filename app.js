@@ -58,6 +58,17 @@ const ESTADOS_COMPRA = ['Solicitado', 'Confirmado', 'En tránsito', 'Recibido pa
 const ESTADOS_COMPRA_CERRADOS = ['Recibido', 'Cancelado'];
 const CALIDAD_COMPRA = ['Pendiente', 'Aprobado', 'Con novedad'];
 const UNIDADES_COMPRA = ['und', 'm', 'm²', 'ml', 'láminas', 'kg', 'galones', 'juegos', 'cajas'];
+/* Incidentes (tabla incidentes, v7) — antes "bloqueos" */
+const TIPOS_INCIDENTE = ['Material faltante', 'Material defectuoso', 'Diseño / planos', 'Cliente', 'Personal', 'Maquinaria', 'Transporte / despacho', 'Otro'];
+const GRAVEDADES_INCIDENTE = ['Baja', 'Media', 'Alta', 'Crítica'];
+const ESTADOS_INCIDENTE = ['Abierto', 'En gestión', 'Resuelto'];
+const ESTILO_GRAVEDAD = {
+  Baja: 'bg-slate-100 text-slate-700 border-slate-200',
+  Media: 'bg-amber-50 text-amber-800 border-amber-200',
+  Alta: 'bg-orange-50 text-orange-800 border-orange-200',
+  Crítica: 'bg-red-600 text-white border-red-600',
+};
+
 const ESTILO_ESTADO_COMPRA = {
   Solicitado: 'bg-slate-100 text-slate-700 border-slate-200',
   Confirmado: 'bg-sky-50 text-sky-800 border-sky-200',
@@ -294,18 +305,66 @@ function normalizarPedido(od, index) {
   };
 }
 
-function compraAbierta(od) {
-  return !ESTADOS_COMPRA_CERRADOS.includes(od?.status);
+/* Una compra está cerrada si se canceló o llegó completa SIN novedad de
+   calidad. Con novedad sigue abierta (y su pendiente también) hasta resolverla. */
+function compraCerrada(od) {
+  return od?.status === 'Cancelado' || (od?.status === 'Recibido' && od?.qc !== 'Con novedad');
 }
 
-/* Días de atraso respecto a la fecha prometida (0 si no aplica) */
+function compraAbierta(od) {
+  return !compraCerrada(od);
+}
+
+/* Días de atraso respecto a la fecha prometida (0 si ya llegó o se canceló) */
 function diasAtrasoCompra(od) {
-  if (!compraAbierta(od) || !od.fechaPrometida) return 0;
+  if (ESTADOS_COMPRA_CERRADOS.includes(od?.status) || !od.fechaPrometida) return 0;
   const prometida = parseFecha(od.fechaPrometida);
   if (!prometida) return 0;
   const hoy = new Date();
   hoy.setHours(0, 0, 0, 0);
   return Math.max(0, Math.round((hoy - prometida) / 86400000));
+}
+
+function normalizarIncidente(x, index) {
+  const item = x || {};
+  const legado = 'reason' in item || 'solved' in item;
+  const estado = ESTADOS_INCIDENTE.includes(item.estado) ? item.estado : (item.solved ? 'Resuelto' : 'Abierto');
+  return {
+    id: item.id || `inc-mig-${index}`,
+    tipo: TIPOS_INCIDENTE.includes(item.tipo) ? item.tipo : 'Otro',
+    gravedad: GRAVEDADES_INCIDENTE.includes(item.gravedad) ? item.gravedad : (legado ? 'Alta' : 'Media'),
+    descripcion: item.descripcion || item.reason || 'Incidente sin descripción',
+    accion: item.accion || item.action || '',
+    responsable: item.responsable || '',
+    detiene: Boolean(item.detiene),
+    estado,
+    fechaApertura: item.fechaApertura || new Date().toISOString(),
+    fechaCompromiso: item.fechaCompromiso || null,
+    fechaCierre: item.fechaCierre || null,
+    solucion: item.solucion || (estado === 'Resuelto' && legado ? 'Resuelto antes de la migración' : ''),
+    diasImpacto: Number.isInteger(Number(item.diasImpacto)) && Number(item.diasImpacto) > 0 ? Number(item.diasImpacto) : 0,
+    compraId: item.compraId || null,
+    dbVersion: Number.isInteger(item.dbVersion) ? item.dbVersion : null,
+  };
+}
+
+function incidenteAbierto(x) {
+  return x?.estado !== 'Resuelto';
+}
+
+function diasAbiertoIncidente(x) {
+  const inicio = new Date(x.fechaApertura);
+  const fin = x.fechaCierre ? new Date(x.fechaCierre) : new Date();
+  if (isNaN(inicio)) return 0;
+  return Math.max(0, Math.floor((fin - inicio) / 86400000));
+}
+
+function incidenteVencido(x) {
+  if (!incidenteAbierto(x) || !x.fechaCompromiso) return false;
+  const f = parseFecha(x.fechaCompromiso);
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  return Boolean(f) && f < hoy;
 }
 
 function normalizarMueble(m, index) {
@@ -346,7 +405,14 @@ function normalizarProyecto(p) {
   p.dateExpected = p.dateExpected || 'Por definir';
   p.muebles = Array.isArray(p.muebles) ? p.muebles.map(normalizarMueble) : [];
   p.pedidos = Array.isArray(p.pedidos) ? p.pedidos.map(normalizarPedido) : [];
-  p.bloqueos = Array.isArray(p.bloqueos) ? p.bloqueos : [];
+  const desdeBloqueos = !Array.isArray(p.incidentes) && Array.isArray(p.bloqueos);
+  p.incidentes = (Array.isArray(p.incidentes) ? p.incidentes : (Array.isArray(p.bloqueos) ? p.bloqueos : []))
+    .map(normalizarIncidente);
+  /* Igual que la migración v7: un bloqueo abierto de un proyecto detenido lo detiene */
+  if (desdeBloqueos && p.status === EST_PRODUCCION.DETENIDO) {
+    p.incidentes.forEach((x) => { if (incidenteAbierto(x)) x.detiene = true; });
+  }
+  delete p.bloqueos;
   p.archivos = Array.isArray(p.archivos) ? p.archivos : [];
   p.dropboxFiles = {
     publicFiles: Array.isArray(p.dropboxFiles?.publicFiles) ? p.dropboxFiles.publicFiles : [],
@@ -362,7 +428,7 @@ function normalizarProyecto(p) {
       derivados.push({ id: `pd-mig-${p.id}-${derivados.length}`, text: limpio, tipo, prioridad, createdAt: hoyISO() });
     };
     if (p.alert) push(p.alert, 'material', 'alta');
-    (p.bloqueos || []).forEach((b) => { if (!b.solved) push(b.reason, 'bloqueo', 'alta'); });
+    (p.incidentes || []).forEach((b) => { if (incidenteAbierto(b)) push(b.descripcion, 'bloqueo', 'alta'); });
     (p.pedidos || []).forEach((pedido) => {
       if (compraAbierta(pedido)) push(`${pedido.item} (${pedido.supplier || 'proveedor'})`, 'material', 'media');
     });
@@ -487,7 +553,8 @@ function filaDesdeProyecto(p) {
     /* Con la tabla proyecto_muebles activa, los muebles ya no viajan en el JSON */
     muebles: mueblesEnTabla ? undefined : p.muebles,
     pedidos: comprasEnTabla ? undefined : p.pedidos,
-    bloqueos: p.bloqueos,
+    /* "bloqueos" se reemplazó por "incidentes" (tabla propia desde la v7) */
+    incidentes: incidentesEnTabla ? undefined : p.incidentes,
     archivos: p.archivos,
     /* Solo la carpeta pública: lo financiero vive en proyectos_finanzas */
     dropboxFiles: { publicFiles: p.dropboxFiles?.publicFiles || [] },
@@ -632,6 +699,8 @@ let syncQueue = Promise.resolve();
 let mueblesEnTabla = false;
 /* Fase 2 (parte 2): compras en public.compras (v6); si no existe, JSON. */
 let comprasEnTabla = false;
+/* Fase 2 (parte 3): incidentes en public.incidentes (v7); si no existe, JSON. */
+let incidentesEnTabla = false;
 
 let syncSnapshot = {
   proyectos: new Map(),
@@ -641,7 +710,28 @@ let syncSnapshot = {
   finanzas: new Map(),
   muebles: new Map(),
   compras: new Map(),
+  incidentes: new Map(),
 };
+
+function filaDesdeIncidente(x, p) {
+  const compraExiste = (p.pedidos || []).some((od) => od.id === x.compraId);
+  return {
+    id: x.id,
+    proyecto_id: p.dbId || null,
+    tipo: TIPOS_INCIDENTE.includes(x.tipo) ? x.tipo : 'Otro',
+    gravedad: GRAVEDADES_INCIDENTE.includes(x.gravedad) ? x.gravedad : 'Media',
+    descripcion: String(x.descripcion || '').trim() || 'Incidente sin descripción',
+    accion: x.accion || null,
+    responsable: x.responsable || null,
+    detiene_produccion: Boolean(x.detiene),
+    estado: ESTADOS_INCIDENTE.includes(x.estado) ? x.estado : 'Abierto',
+    fecha_apertura: x.fechaApertura,
+    fecha_compromiso: x.fechaCompromiso || null,
+    solucion: x.solucion || null,
+    dias_impacto: Number(x.diasImpacto) > 0 ? Math.round(Number(x.diasImpacto)) : 0,
+    compra_id: compraExiste && esUUID(x.compraId) ? x.compraId : null,
+  };
+}
 
 function filaDesdeCompra(od, p) {
   const pendienteExiste = (p.pendientes || []).some((x) => x.id === od.pendienteId);
@@ -714,7 +804,7 @@ function filaDesdeMueble(m, p, orden) {
   };
 }
 
-function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRows = [], mueblesRows = null, comprasRows = null) {
+function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRows = [], mueblesRows = null, comprasRows = null, incidentesRows = null) {
   const proyectosApp = [];
   const comercial = [];
   const codigoPorDbId = new Map();
@@ -747,6 +837,34 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRow
     activo: c.activo !== false,
   }));
   const nombrePorId = new Map(carpinterosApp.map((c) => [c.id, c.nombre]));
+
+  /* Incidentes desde la tabla (fuente de verdad cuando existe) */
+  if (Array.isArray(incidentesRows)) {
+    const porProyecto = new Map();
+    incidentesRows.forEach((row) => {
+      if (!porProyecto.has(row.proyecto_id)) porProyecto.set(row.proyecto_id, []);
+      porProyecto.get(row.proyecto_id).push(row);
+    });
+    proyectosApp.forEach((p) => {
+      p.incidentes = (porProyecto.get(p.dbId) || []).map((row, i) => normalizarIncidente({
+        id: row.id,
+        tipo: row.tipo,
+        gravedad: row.gravedad,
+        descripcion: row.descripcion,
+        accion: row.accion,
+        responsable: row.responsable,
+        detiene: row.detiene_produccion,
+        estado: row.estado,
+        fechaApertura: row.fecha_apertura,
+        fechaCompromiso: row.fecha_compromiso,
+        fechaCierre: row.fecha_cierre,
+        solucion: row.solucion,
+        diasImpacto: row.dias_impacto,
+        compraId: row.compra_id,
+        dbVersion: row.version,
+      }, i));
+    });
+  }
 
   /* Compras desde la tabla (fuente de verdad cuando existe) */
   if (Array.isArray(comprasRows)) {
@@ -909,6 +1027,17 @@ async function leerSupabase() {
     comprasRows = com.data || [];
   }
 
+  /* Incidentes en tabla propia (v7) */
+  const inc = await supabaseClient.from('incidentes').select('*').order('fecha_apertura', { ascending: true });
+  let incidentesRows = null;
+  if (inc.error) {
+    if (!esTablaInexistente(inc.error)) throw inc.error;
+    incidentesEnTabla = false;
+  } else {
+    incidentesEnTabla = true;
+    incidentesRows = inc.data || [];
+  }
+
   /* Las finanzas solo se piden si el rol es Gerencia (la RLS igual las
      bloquea para los demás). */
   let finanzasRows = [];
@@ -917,7 +1046,7 @@ async function leerSupabase() {
     if (fin.error) console.warn('[MODUGAL] No se pudieron leer las finanzas.', fin.error);
     else finanzasRows = fin.data || [];
   }
-  return construirEstado(prj.data || [], pen.data || [], car.data || [], tar.data || [], finanzasRows, mueblesRows, comprasRows);
+  return construirEstado(prj.data || [], pen.data || [], car.data || [], tar.data || [], finanzasRows, mueblesRows, comprasRows, incidentesRows);
 }
 
 function esTablaInexistente(error) {
@@ -933,7 +1062,13 @@ function reconstruirSnapshot() {
     finanzas: new Map(),
     muebles: new Map(),
     compras: new Map(),
+    incidentes: new Map(),
   };
+  if (incidentesEnTabla) {
+    state.proyectos.forEach((p) => (p.incidentes || []).forEach((x) => {
+      syncSnapshot.incidentes.set(x.id, { hash: hashFila(filaDesdeIncidente(x, p)) });
+    }));
+  }
   if (comprasEnTabla) {
     state.proyectos.forEach((p) => (p.pedidos || []).forEach((od) => {
       syncSnapshot.compras.set(od.id, { hash: hashFila(filaDesdeCompra(od, p)) });
@@ -1183,6 +1318,23 @@ async function sincronizarEstado() {
     }
   }
 
+  /* 5d. Incidentes (después de compras: pueden apuntar a una compra nueva) */
+  if (incidentesEnTabla) {
+    const items = [];
+    state.proyectos.forEach((p) => {
+      if (!p.dbId) return;
+      (p.incidentes || []).forEach((x) => {
+        if (!esUUID(x.id)) x.id = nuevoUUID();
+        items.push({ obj: x, fila: filaDesdeIncidente(x, p), etiqueta: `${p.id} · incidente "${x.descripcion}"` });
+      });
+    });
+    const conflictosInc = await sincronizarHijos('incidentes', items, syncSnapshot.incidentes);
+    if (conflictosInc.length) {
+      showToast(`${conflictosInc.join(', ')}: otra persona lo actualizó. Se cargó la versión más reciente.`);
+      setTimeout(() => recargarTrasConflicto(), 0);
+    }
+  }
+
   /* 6. Finanzas (solo Gerencia; la RLS rechaza a cualquier otro rol) */
   if (esGerencia()) {
     for (const [codigo, f] of Object.entries(state.finanzas || {})) {
@@ -1358,7 +1510,7 @@ function recargarTrasConflicto() {
    Requiere que las tablas estén en la publicación `supabase_realtime`.
    -------------------------------------------------------------------------- */
 
-const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero', 'proyectos_finanzas', 'proyecto_muebles', 'compras'];
+const RT_TABLAS = ['proyectos', 'pendientes', 'carpinteros', 'tareas_carpintero', 'proyectos_finanzas', 'proyecto_muebles', 'compras', 'incidentes'];
 let rtCanal = null;
 let rtTimer = null;
 let rtVisibilidadLista = false;
@@ -3050,7 +3202,7 @@ function aprobarProspecto(id) {
     pendientes,
     muebles: [],
     pedidos: [],
-    bloqueos: [],
+    incidentes: [],
     archivos: [],
     dropboxFiles: { publicFiles: [] },
   }));
@@ -3165,8 +3317,34 @@ function materialesFaltantes() {
   return lista;
 }
 
+function incidentesAbiertosGlobal() {
+  const lista = [];
+  state.proyectos.forEach((p) => {
+    if (p.status === EST_PRODUCCION.COMPLETADO) return;
+    (p.incidentes || []).forEach((x) => { if (incidenteAbierto(x)) lista.push({ p, x }); });
+  });
+  return lista.sort((a, b) => (Number(incidenteVencido(b.x)) - Number(incidenteVencido(a.x)))
+    || (ORDEN_GRAVEDAD[a.x.gravedad] - ORDEN_GRAVEDAD[b.x.gravedad]));
+}
+
 function novedadesUrgentes() {
   const novedades = [];
+  incidentesAbiertosGlobal().forEach(({ p, x }) => {
+    if (x.gravedad === 'Crítica' || incidenteVencido(x)) {
+      novedades.push({
+        severity: 'alta',
+        titulo: `${p.id} · Incidente ${x.gravedad.toLowerCase()}${incidenteVencido(x) ? ' (compromiso vencido)' : ''}`,
+        detalle: `${x.descripcion} · Responsable: ${x.responsable || 'sin asignar'}`,
+        projectId: p.id,
+      });
+    }
+  });
+  todasLasCompras().forEach(({ p, od }) => {
+    const atraso = diasAtrasoCompra(od);
+    if (atraso >= 3 && p.status !== EST_PRODUCCION.COMPLETADO) {
+      novedades.push({ severity: 'media', titulo: `${p.id} · Compra atrasada ${atraso} días`, detalle: `${od.item} · ${od.supplier}`, projectId: p.id });
+    }
+  });
   state.proyectos.forEach((p) => {
     if (p.status === EST_PRODUCCION.DETENIDO) {
       novedades.push({
@@ -3218,6 +3396,14 @@ function reportarGerencia() {
     '',
     `Materiales/requerimientos faltantes (${materiales.length}):`,
     ...(materiales.length ? materiales.slice(0, 12).map(({ proyecto, pendiente }) => `- ${proyecto.id} · ${pendiente.text}`) : ['- Ninguno']),
+    '',
+    `Incidentes abiertos (${incidentesAbiertosGlobal().length}):`,
+    ...(incidentesAbiertosGlobal().length
+      ? incidentesAbiertosGlobal().slice(0, 12).map(({ p, x }) => `- ${p.id} · [${x.gravedad}] ${x.descripcion} · Resp.: ${x.responsable || 'sin asignar'} · ${diasAbiertoIncidente(x)} d${incidenteVencido(x) ? ' · VENCIDO' : ''}${x.detiene ? ' · DETIENE PRODUCCIÓN' : ''}`)
+      : ['- Ninguno']),
+    '',
+    `Compras atrasadas (${todasLasCompras().filter(({ od }) => diasAtrasoCompra(od) > 0).length}):`,
+    ...(todasLasCompras().filter(({ od }) => diasAtrasoCompra(od) > 0).map(({ p, od }) => `- ${p.id} · ${od.item} · ${od.supplier} · ${diasAtrasoCompra(od)} d de atraso`)),
   ];
   const texto = lineas.join('\n');
   if (navigator.clipboard?.writeText) {
@@ -3261,6 +3447,18 @@ function renderCentro() {
   const totalTareas = Object.values(tareas).reduce((acc, arr) => acc + arr.length, 0);
   const materiales = materialesFaltantes();
   const urgentes = novedadesUrgentes();
+  const incidentes = incidentesAbiertosGlobal();
+
+  const incidentesBody = incidentes.length ? incidentes.slice(0, 10).map(({ p, x }) => `
+    <div class="border rounded-xl p-2.5 ${x.gravedad === 'Crítica' || incidenteVencido(x) ? 'border-red-200 bg-red-50' : 'border-slate-200'}">
+      <div class="flex items-center justify-between gap-2">
+        <p class="text-[9px] font-black uppercase text-slate-500">${esc(p.id)} · ${esc(x.tipo)}</p>
+        ${badgeGravedad(x.gravedad)}
+      </div>
+      <p class="text-[11px] font-bold text-slate-900 mt-1">${esc(x.descripcion)}</p>
+      <p class="text-[10px] text-slate-500 mt-0.5">${esc(x.responsable || 'Sin responsable')} · ${diasAbiertoIncidente(x)} d abierto${x.detiene ? ' · <strong class="text-red-700">detiene producción</strong>' : ''}${incidenteVencido(x) ? ' · <strong class="text-red-700">vencido</strong>' : ''}</p>
+      <button type="button" class="mt-1 text-[10px] font-black underline text-red-700" data-open-ficha="${esc(p.id)}" data-sub="incidentes">Ver</button>
+    </div>`).join('') : '<p class="text-xs text-slate-400">Sin incidentes abiertos.</p>';
 
   const entregasBody = entregas.length ? entregas.map((p) => `
     <div class="flex items-start justify-between gap-2 border border-slate-200 rounded-xl p-2.5">
@@ -3310,6 +3508,7 @@ function renderCentro() {
     centroCard('fa-truck-fast', 'Entregas programadas para HOY', entregas.length, 'blue', entregasBody),
     centroCard('fa-triangle-exclamation', 'Proyectos retrasados o detenidos', retrasos.length, 'red', retrasosBody),
     centroCard('fa-helmet-safety', `Tareas pendientes por carpintero`, totalTareas, 'emerald', `${tareasBody}<button type="button" class="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-2 rounded-xl text-[11px]" data-centro-tab="equipo">Gestionar en Equipo &amp; Asignaciones</button>`),
+    centroCard('fa-triangle-exclamation', 'Incidentes abiertos', incidentes.length, 'red', incidentesBody),
     centroCard('fa-boxes-stacked', 'Materiales / requerimientos faltantes', materiales.length, 'amber', materialesBody),
     centroCard('fa-bullhorn', 'Novedades urgentes para Gerencia', urgentes.length, 'red', `${urgentesBody}<button type="button" class="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 rounded-xl text-[11px]" data-reporte-gerencia>Copiar reporte para Gerencia</button>`),
     centroCard('fa-chart-simple', 'Resumen operativo del día', state.proyectos.filter((p) => p.status !== EST_PRODUCCION.COMPLETADO).length, 'slate', `
@@ -3595,7 +3794,8 @@ function guardarCompra() {
   if (estado === 'Recibido' && recibida > 0 && recibida < cantidad) estado = 'Recibido parcial';
   if (['Solicitado', 'Confirmado', 'En tránsito'].includes(estado) && recibida > 0) estado = recibida >= cantidad ? 'Recibido' : 'Recibido parcial';
 
-  const estabaCerrada = !compraAbierta(od);
+  const antesCerrada = compraCerrada(od);
+  const qcAntes = od.qc;
   Object.assign(od, {
     status: estado,
     qc: document.getElementById('compra-calidad').value,
@@ -3611,18 +3811,45 @@ function guardarCompra() {
   });
   od.expected = od.fechaPrometida ? formatFechaLarga(parseFecha(od.fechaPrometida)) : 'Por definir';
 
-  /* El pendiente ligado se cierra/reabre igual que lo hace la base (v6) */
-  const pend = (p.pendientes || []).find((x) => x.id === od.pendienteId);
-  if (pend) {
-    if (!compraAbierta(od) && !estabaCerrada) pend.estado = 'Resuelto';
-    if (compraAbierta(od) && estabaCerrada) pend.estado = 'Pendiente';
+  /* El pendiente ligado se cierra/reabre igual que en la base (v7): con
+     novedad de calidad queda ABIERTO hasta que se resuelva. */
+  sincronizarPendienteCompraLocal(p, od, antesCerrada);
+
+  /* Novedad de calidad → incidente ligado a la compra (si no hay uno abierto) */
+  let incidenteNuevo = null;
+  if (od.qc === 'Con novedad' && qcAntes !== 'Con novedad'
+      && !(p.incidentes || []).some((x) => x.compraId === od.id && incidenteAbierto(x))) {
+    incidenteNuevo = normalizarIncidente({
+      id: uid(),
+      tipo: 'Material defectuoso',
+      gravedad: 'Media',
+      descripcion: `${od.item}: ${od.notas || 'novedad de calidad en la recepción'}`,
+      responsable: od.supplier,
+      accion: 'Solicitar reposición o solución al proveedor',
+      estado: 'Abierto',
+      fechaApertura: new Date().toISOString(),
+      compraId: od.id,
+    }, (p.incidentes || []).length);
+    p.incidentes = [...(p.incidentes || []), incidenteNuevo];
+  }
+  /* Calidad aprobada a mano → se cierra el incidente ligado */
+  if (qcAntes === 'Con novedad' && od.qc === 'Aprobado') {
+    (p.incidentes || []).forEach((x) => {
+      if (x.compraId === od.id && incidenteAbierto(x)) {
+        x.estado = 'Resuelto';
+        x.solucion = x.solucion || 'Calidad aprobada en la recepción de la compra';
+        x.fechaCierre = new Date().toISOString();
+      }
+    });
   }
   commit();
   refrescarPendientesProyecto(p.id);
   cerrarCompraModal();
   renderSeguimientoCompras();
   if (state.fichaId === p.id) { openFicha(p.id); mostrarSubFicha('pedidos'); }
-  showToast(`${od.item}: ${od.status}${od.qc === 'Con novedad' ? ' · con novedad' : ''}.`);
+  showToast(incidenteNuevo
+    ? `${od.item}: ${od.status} con novedad. Se abrió un incidente y el pendiente sigue abierto hasta resolverlo.`
+    : `${od.item}: ${od.status}${od.qc === 'Con novedad' ? ' · con novedad (pendiente abierto)' : ''}.`);
 }
 
 function bindComprasEvents() {
@@ -3652,7 +3879,8 @@ function mostrarSubFicha(sub) {
     if (b.dataset.sub === 'finanzas') b.classList.toggle('hidden', !puedeVerFinanzas());
     if (b.dataset.sub === 'historial') b.classList.toggle('hidden', !puedeVerHistorial());
   });
-  const panes = ['resumen', 'muebles', 'pendientes', 'pedidos', 'bloqueos', 'dropbox', 'finanzas', 'historial'];
+  if (sub === 'bloqueos') sub = 'incidentes';
+  const panes = ['resumen', 'muebles', 'pendientes', 'pedidos', 'incidentes', 'dropbox', 'finanzas', 'historial'];
   panes.forEach((nombre) => {
     const el = document.getElementById(`ficha-${nombre}`);
     if (el) el.classList.toggle('is-hidden', nombre !== sub);
@@ -3761,16 +3989,7 @@ function openFicha(id) {
 
   document.getElementById('ficha-pendientes-list').innerHTML = pendientesHTML(p);
 
-  document.getElementById('ficha-bloqueos-list').innerHTML = (p.bloqueos || []).length === 0
-    ? '<p class="text-xs text-slate-400 text-center py-6">Sin bloqueos registrados.</p>'
-    : (p.bloqueos || []).map((b) => `
-      <div class="p-4 bg-red-50 border border-red-200 rounded-xl flex justify-between items-center text-xs gap-3">
-        <div>
-          <p class="font-bold text-red-900">${esc(b.reason)}</p>
-          <p class="text-red-700 mt-1">${esc(b.action)}</p>
-        </div>
-        ${b.solved ? '<span class="text-emerald-700 font-black text-[10px] uppercase">Resuelto</span>' : `<button type="button" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1.5 rounded-lg shadow-sm" data-resolver="${esc(b.id)}">Resolver</button>`}
-      </div>`).join('');
+  renderIncidentesFicha(p);
 
   document.getElementById('dropbox-publico-list').innerHTML = (p.dropboxFiles?.publicFiles || []).map((f) => `
     <div class="p-3 bg-slate-50 border border-slate-200 rounded-xl flex justify-between items-center gap-2">
@@ -4067,7 +4286,7 @@ async function guardarProyecto(e) {
     pendientes: [],
     muebles: [],
     pedidos: [],
-    bloqueos: [],
+    incidentes: [],
     archivos: [],
     dropboxFiles: { publicFiles: [] },
   });
@@ -4579,16 +4798,6 @@ function bindGlobalDelegation() {
     const centroTab = e.target.closest('[data-centro-tab]');
     if (centroTab) { switchTab(centroTab.dataset.centroTab); return; }
 
-    const resolver = e.target.closest('[data-resolver]');
-    if (resolver) {
-      const p = state.proyectos.find((x) => x.id === state.fichaId);
-      const b = p?.bloqueos?.find((x) => x.id === resolver.dataset.resolver);
-      if (b) b.solved = true;
-      commit();
-      showToast('Bloqueo resuelto.');
-      return;
-    }
-
     const verDoc = e.target.closest('[data-ver-doc]');
     if (verDoc) { verDocumento(verDoc.dataset.verDoc); return; }
 
@@ -4926,11 +5135,14 @@ const ETIQUETAS_CAMPO = {
   es_lider: 'Líder de instalación', nombre: 'Nombre', fase: 'Fase', responsable_id: 'Responsable',
   material: 'Material', categoria: 'Categoría', cantidad: 'Cantidad', unidad: 'Unidad', cantidad_recibida: 'Cantidad recibida',
   proveedor: 'Proveedor', numero_guia: 'Guía', fecha_prometida: 'Fecha prometida', fecha_recibida: 'Fecha de llegada',
-  fecha_solicitud: 'Fecha de solicitud', control_calidad: 'Control de calidad', cargo: 'Cargo', activo: 'Activo',
+  fecha_solicitud: 'Fecha de solicitud', control_calidad: 'Control de calidad',
+  tipo: 'Tipo', gravedad: 'Gravedad', accion: 'Plan de acción', responsable: 'Responsable', detiene_produccion: 'Detiene producción',
+  fecha_compromiso: 'Fecha compromiso', fecha_cierre: 'Fecha de cierre', solucion: 'Solución', dias_impacto: 'Días de impacto',
+  'ficha.incidentes': 'Incidentes', cargo: 'Cargo', activo: 'Activo',
   valor_venta: 'Valor de venta', costo_materiales: 'Costo materiales', costo_mano_obra: 'Costo mano de obra',
   otros_costos: 'Otros costos', anticipo: 'Anticipo', notas: 'Notas', utilidad: 'Utilidad', margen_pct: 'Margen %',
   'ficha.name': 'Nombre del proyecto', 'ficha.muebles': 'Muebles', 'ficha.pedidos': 'Pedidos de material',
-  'ficha.bloqueos': 'Bloqueos', 'ficha.dateExpected': 'Fecha de entrega', 'ficha.dateStart': 'Fecha de inicio',
+  'ficha.bloqueos': 'Bloqueos (antiguo)', 'ficha.dateExpected': 'Fecha de entrega', 'ficha.dateStart': 'Fecha de inicio',
   'ficha.status': 'Estado', 'ficha.detalle': 'Detalle comercial', 'ficha.leadCarpenter': 'Carpintero líder',
   'ficha.arquitecto': 'Arquitecto', 'ficha.logisticOperator': 'Operador logístico', 'ficha.neighborhood': 'Barrio',
   'ficha.address': 'Dirección', 'ficha.phone': 'Teléfono', 'ficha.trimester': 'Trimestre',
@@ -4939,7 +5151,7 @@ const ETIQUETAS_CAMPO = {
 /* Campos técnicos o duplicados que no aportan al lector */
 const CAMPOS_OCULTOS = new Set(['id', 'proyecto_id', 'grupo_id', 'fase_manual', 'estado_tarea', 'ficha.alert',
   'ficha.manufacturingPhase', 'ficha.commercialStage', 'ficha.client', 'ficha.image', 'ficha.city', 'archivos_privados',
-  'activo_desde', 'descripcion_venta', 'orden', 'legacy_id', 'responsable_nombre', 'pendiente_id', 'creado_por']);
+  'activo_desde', 'descripcion_venta', 'orden', 'legacy_id', 'responsable_nombre', 'pendiente_id', 'creado_por', 'compra_id', 'fecha_apertura']);
 const TABLAS_HIST = {
   proyectos: { label: 'Proyecto', icon: 'fa-folder-open', color: 'bg-slate-900' },
   pendientes: { label: 'Pendiente', icon: 'fa-clipboard-list', color: 'bg-amber-600' },
@@ -4948,6 +5160,7 @@ const TABLAS_HIST = {
   proyectos_finanzas: { label: 'Finanzas', icon: 'fa-lock', color: 'bg-red-600' },
   proyecto_muebles: { label: 'Mueble', icon: 'fa-couch', color: 'bg-orange-600' },
   compras: { label: 'Compra', icon: 'fa-truck', color: 'bg-teal-700' },
+  incidentes: { label: 'Incidente', icon: 'fa-triangle-exclamation', color: 'bg-red-700' },
   usuarios: { label: 'Usuario', icon: 'fa-user-shield', color: 'bg-emerald-700' },
 };
 
@@ -4993,7 +5206,7 @@ function lineasCambio(ev) {
     const lado = ev.accion === 'crear' ? 'despues' : 'antes';
     const principal = ['descripcion', 'nombre_mueble', 'material', 'ficha.name', 'nombre', 'cliente']
       .find((k) => cambios[k]?.[lado]);
-    const extra = ['fase', 'actividad', 'detalle', 'carpintero_id', 'responsable_id', 'cantidad', 'proveedor', 'fecha_prometida', 'estado', 'cargo']
+    const extra = ['tipo', 'gravedad', 'fase', 'actividad', 'detalle', 'carpintero_id', 'responsable_id', 'cantidad', 'proveedor', 'fecha_prometida', 'estado', 'cargo']
       .filter((k) => cambios[k]?.[lado] !== undefined && cambios[k]?.[lado] !== null && cambios[k]?.[lado] !== '')
       .map((k) => `${ETIQUETAS_CAMPO[k] || k}: ${valorHist(k, cambios[k][lado])}`);
     return [principal ? valorHist(principal, cambios[principal][lado]) : '', ...extra].filter(Boolean);
@@ -5158,6 +5371,209 @@ function bindMueblesEvents() {
 }
 
 /* ==========================================================================
+   21f. INCIDENTES (ficha → Incidentes) · antes "Bloqueos"
+   Reportan y gestionan Gerencia, Logística y Secretaría; Arquitecto consulta.
+   ========================================================================== */
+
+function puedeGestionarIncidentes() {
+  return ['administrativo', 'operativo', 'secretaria'].includes(state.rol);
+}
+
+const ORDEN_GRAVEDAD = { Crítica: 0, Alta: 1, Media: 2, Baja: 3 };
+
+function ordenarIncidentes(lista) {
+  return lista.slice().sort((a, b) => (Number(incidenteAbierto(b)) - Number(incidenteAbierto(a)))
+    || (Number(incidenteVencido(b)) - Number(incidenteVencido(a)))
+    || (ORDEN_GRAVEDAD[a.gravedad] - ORDEN_GRAVEDAD[b.gravedad])
+    || String(a.fechaApertura).localeCompare(String(b.fechaApertura)));
+}
+
+function badgeGravedad(g) {
+  return `<span class="inline-block px-2 py-0.5 rounded-full border text-[10px] font-black ${ESTILO_GRAVEDAD[g] || ESTILO_GRAVEDAD.Media}">${esc(g)}</span>`;
+}
+
+function tarjetaIncidenteHTML(p, x) {
+  const abierto = incidenteAbierto(x);
+  const vencido = incidenteVencido(x);
+  const compra = x.compraId ? (p.pedidos || []).find((od) => od.id === x.compraId) : null;
+  const borde = !abierto ? 'border-slate-200 bg-slate-50' : (x.gravedad === 'Crítica' || vencido ? 'border-red-300 bg-red-50' : 'border-amber-200 bg-amber-50/60');
+  return `
+    <article class="p-4 border rounded-xl text-xs ${borde}">
+      <div class="flex flex-wrap items-start justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-1.5">
+          ${badgeGravedad(x.gravedad)}
+          <span class="text-[10px] font-black uppercase text-slate-500">${esc(x.tipo)}</span>
+          ${x.detiene && abierto ? '<span class="text-[10px] font-black uppercase bg-slate-900 text-white rounded px-1.5 py-0.5"><i class="fas fa-hand mr-1" aria-hidden="true"></i>Detiene producción</span>' : ''}
+          ${vencido ? '<span class="text-[10px] font-black uppercase text-red-700">Compromiso vencido</span>' : ''}
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="text-[10px] font-black uppercase ${abierto ? 'text-amber-800' : 'text-emerald-700'}">${esc(x.estado)}</span>
+          ${puedeGestionarIncidentes() ? `<button type="button" class="task-icon-btn" data-incidente-editar="${esc(x.id)}" title="Actualizar incidente" aria-label="Actualizar incidente"><i class="fas fa-pen" aria-hidden="true"></i></button>` : ''}
+        </div>
+      </div>
+      <p class="font-bold text-slate-900 mt-2 ${abierto ? '' : 'line-through decoration-slate-400'}">${esc(x.descripcion)}</p>
+      ${compra ? `<p class="text-[10px] text-teal-800 mt-1"><i class="fas fa-truck mr-1" aria-hidden="true"></i>Compra: ${esc(compra.item)} · ${esc(compra.supplier)}</p>` : ''}
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-2 text-[11px]">
+        <div><p class="text-[9px] uppercase font-black text-slate-400">Responsable</p><p class="font-bold text-slate-800">${esc(x.responsable || 'Sin asignar')}</p></div>
+        <div><p class="text-[9px] uppercase font-black text-slate-400">Compromiso</p><p class="font-bold ${vencido ? 'text-red-700' : 'text-slate-800'}">${x.fechaCompromiso ? esc(formatFechaLarga(parseFecha(x.fechaCompromiso))) : '—'}</p></div>
+        <div><p class="text-[9px] uppercase font-black text-slate-400">${abierto ? 'Abierto hace' : 'Duró'}</p><p class="font-bold text-slate-800">${diasAbiertoIncidente(x)} d</p></div>
+        <div><p class="text-[9px] uppercase font-black text-slate-400">Impacto entrega</p><p class="font-bold ${x.diasImpacto ? 'text-red-700' : 'text-slate-800'}">${x.diasImpacto ? `+${x.diasImpacto} d` : '—'}</p></div>
+      </div>
+      ${x.accion ? `<p class="mt-2 text-slate-700"><span class="font-bold">Plan:</span> ${esc(x.accion)}</p>` : ''}
+      ${!abierto && x.solucion ? `<p class="mt-2 text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1"><span class="font-bold">Solución:</span> ${esc(x.solucion)}</p>` : ''}
+    </article>`;
+}
+
+function renderIncidentesFicha(p) {
+  const box = document.getElementById('ficha-incidentes-list');
+  if (!box) return;
+  document.getElementById('incidente-agregar')?.classList.toggle('hidden', !puedeGestionarIncidentes());
+  const lista = ordenarIncidentes(p.incidentes || []);
+  const abiertos = lista.filter(incidenteAbierto).length;
+  const badge = document.getElementById('ficha-incidentes-badge');
+  if (badge) { badge.textContent = String(abiertos); badge.classList.toggle('hidden', !abiertos); }
+  const impacto = lista.filter(incidenteAbierto).reduce((acc, x) => acc + (x.diasImpacto || 0), 0);
+  box.innerHTML = (impacto ? `<p class="text-xs font-bold text-red-800 bg-red-50 border border-red-200 rounded-xl px-3 py-2"><i class="fas fa-calendar-xmark mr-1" aria-hidden="true"></i>Los incidentes abiertos podrían retrasar la entrega unos ${impacto} días (fecha actual: ${esc(p.dateExpected)}).</p>` : '')
+    + (lista.length ? lista.map((x) => tarjetaIncidenteHTML(p, x)).join('')
+      : '<p class="text-xs text-slate-400 text-center py-6">Sin incidentes registrados.</p>');
+}
+
+/* El proyecto queda "Detenido" mientras haya incidentes abiertos que lo detengan */
+function aplicarDetencion(p, habiaDetencion) {
+  const hayDetencion = (p.incidentes || []).some((x) => incidenteAbierto(x) && x.detiene);
+  if (hayDetencion && p.status !== EST_PRODUCCION.COMPLETADO && p.status !== EST_PRODUCCION.DETENIDO) {
+    p.status = EST_PRODUCCION.DETENIDO;
+    return 'El proyecto quedó DETENIDO hasta resolver el incidente.';
+  }
+  if (habiaDetencion && !hayDetencion && p.status === EST_PRODUCCION.DETENIDO) {
+    p.status = EST_PRODUCCION.EN_PROCESO;
+    return 'Sin incidentes que lo detengan: el proyecto vuelve a En proceso.';
+  }
+  return '';
+}
+
+/* Resolver/reabrir un incidente ligado a una compra mueve la calidad de la
+   compra y su pendiente (igual que los triggers de la v7). */
+function reflejarIncidenteEnCompra(p, x, estabaAbierto) {
+  const od = x.compraId ? (p.pedidos || []).find((c) => c.id === x.compraId) : null;
+  if (!od) return;
+  const antesCerrada = compraCerrada(od);
+  if (estabaAbierto && !incidenteAbierto(x) && od.qc === 'Con novedad') od.qc = 'Aprobado';
+  if (!estabaAbierto && incidenteAbierto(x) && od.qc !== 'Con novedad') od.qc = 'Con novedad';
+  sincronizarPendienteCompraLocal(p, od, antesCerrada);
+}
+
+function sincronizarPendienteCompraLocal(p, od, antesCerrada) {
+  const pend = (p.pendientes || []).find((x) => x.id === od.pendienteId);
+  if (!pend) return;
+  const ahoraCerrada = compraCerrada(od);
+  if (ahoraCerrada && !antesCerrada) pend.estado = 'Resuelto';
+  if (!ahoraCerrada && antesCerrada) pend.estado = 'Pendiente';
+}
+
+function responsablesSugeridos() {
+  const set = new Set([...personalActivo().map((c) => c.nombre), ...proveedoresConocidos(), 'Gerencia', 'Logística', 'Secretaría', 'Arquitecto', 'Cliente']);
+  return [...set];
+}
+
+function abrirIncidenteModal(projectId, incidenteId, prefill = null) {
+  if (!puedeGestionarIncidentes()) { showToast('Tu rol solo puede consultar los incidentes.'); return; }
+  const p = state.proyectos.find((x) => x.id === projectId);
+  if (!p) return;
+  const x = incidenteId ? (p.incidentes || []).find((i) => i.id === incidenteId) : null;
+  const d = x || prefill || {};
+  state.incidenteCtx = { projectId, incidenteId: x?.id || null, compraId: d.compraId || null };
+  const opts = (lista, actual) => lista.map((v) => `<option value="${esc(v)}" ${v === actual ? 'selected' : ''}>${esc(v)}</option>`).join('');
+  document.getElementById('incidente-title').textContent = x ? 'Actualizar incidente' : 'Reportar incidente';
+  document.getElementById('incidente-sub').textContent = `${p.id} · ${p.name}`;
+  document.getElementById('incidente-tipo').innerHTML = opts(TIPOS_INCIDENTE, d.tipo || 'Otro');
+  document.getElementById('incidente-gravedad').innerHTML = opts(GRAVEDADES_INCIDENTE, d.gravedad || 'Media');
+  document.getElementById('incidente-descripcion').value = d.descripcion || '';
+  document.getElementById('incidente-detiene').checked = Boolean(d.detiene);
+  document.getElementById('incidente-responsable').value = d.responsable || '';
+  document.getElementById('incidente-responsables-list').innerHTML = responsablesSugeridos().map((n) => `<option value="${esc(n)}"></option>`).join('');
+  document.getElementById('incidente-compromiso').value = d.fechaCompromiso || '';
+  document.getElementById('incidente-accion').value = d.accion || '';
+  document.getElementById('incidente-impacto').value = d.diasImpacto || 0;
+  document.getElementById('incidente-estado').innerHTML = opts(ESTADOS_INCIDENTE, d.estado || 'Abierto');
+  document.getElementById('incidente-solucion').value = d.solucion || '';
+  document.getElementById('incidente-estado-box').classList.toggle('hidden', !x);
+  pintarSolucionIncidente();
+  document.getElementById('incidente-modal').classList.remove('is-hidden');
+  setTimeout(() => document.getElementById('incidente-descripcion')?.focus(), 40);
+}
+
+function pintarSolucionIncidente() {
+  const resuelto = document.getElementById('incidente-estado').value === 'Resuelto';
+  document.getElementById('incidente-solucion-box').classList.toggle('hidden', !resuelto);
+}
+
+function cerrarIncidenteModal() {
+  document.getElementById('incidente-modal')?.classList.add('is-hidden');
+  state.incidenteCtx = null;
+}
+
+function guardarIncidente() {
+  const ctx = state.incidenteCtx;
+  const p = state.proyectos.find((x) => x.id === ctx?.projectId);
+  if (!p) return;
+  const descripcion = document.getElementById('incidente-descripcion').value.trim();
+  const estado = ctx.incidenteId ? document.getElementById('incidente-estado').value : 'Abierto';
+  const solucion = document.getElementById('incidente-solucion').value.trim();
+  const impacto = Math.max(0, Math.round(Number(document.getElementById('incidente-impacto').value) || 0));
+  if (!descripcion) { showToast('Describe qué pasó.'); document.getElementById('incidente-descripcion').focus(); return; }
+  if (estado === 'Resuelto' && !solucion) { showToast('Escribe cómo se resolvió el incidente.'); document.getElementById('incidente-solucion').focus(); return; }
+
+  const habiaDetencion = (p.incidentes || []).some((x) => incidenteAbierto(x) && x.detiene);
+  const datos = {
+    tipo: document.getElementById('incidente-tipo').value,
+    gravedad: document.getElementById('incidente-gravedad').value,
+    descripcion,
+    detiene: document.getElementById('incidente-detiene').checked,
+    responsable: document.getElementById('incidente-responsable').value.trim(),
+    fechaCompromiso: document.getElementById('incidente-compromiso').value || null,
+    accion: document.getElementById('incidente-accion').value.trim(),
+    diasImpacto: impacto,
+    estado,
+    solucion: estado === 'Resuelto' ? solucion : (solucion || ''),
+  };
+  p.incidentes = p.incidentes || [];
+  let x;
+  let estabaAbierto = true;
+  if (ctx.incidenteId) {
+    x = p.incidentes.find((i) => i.id === ctx.incidenteId);
+    if (!x) return;
+    estabaAbierto = incidenteAbierto(x);
+    Object.assign(x, datos);
+    x.fechaCierre = estado === 'Resuelto' ? (x.fechaCierre || new Date().toISOString()) : null;
+  } else {
+    x = normalizarIncidente({ id: uid(), ...datos, fechaApertura: new Date().toISOString(), compraId: ctx.compraId }, p.incidentes.length);
+    p.incidentes.push(x);
+  }
+  reflejarIncidenteEnCompra(p, x, estabaAbierto);
+  const avisoDetencion = aplicarDetencion(p, habiaDetencion);
+  commit();
+  refrescarPendientesProyecto(p.id);
+  cerrarIncidenteModal();
+  if (state.fichaId === p.id) { openFicha(p.id); mostrarSubFicha('incidentes'); }
+  renderSeguimientoCompras();
+  showToast(`${ctx.incidenteId ? 'Incidente actualizado' : 'Incidente reportado'}${avisoDetencion ? `. ${avisoDetencion}` : '.'}`);
+}
+
+function bindIncidentesEvents() {
+  document.getElementById('incidente-agregar')?.addEventListener('click', () => {
+    if (state.fichaId) abrirIncidenteModal(state.fichaId, null);
+  });
+  document.getElementById('ficha-incidentes-list')?.addEventListener('click', (e) => {
+    const btn = e.target.closest('[data-incidente-editar]');
+    if (btn && state.fichaId) abrirIncidenteModal(state.fichaId, btn.dataset.incidenteEditar);
+  });
+  document.getElementById('incidente-estado')?.addEventListener('change', pintarSolucionIncidente);
+  document.getElementById('incidente-guardar')?.addEventListener('click', guardarIncidente);
+  document.getElementById('incidente-cancelar')?.addEventListener('click', cerrarIncidenteModal);
+}
+
+/* ==========================================================================
    22. INICIALIZACIÓN
    ========================================================================== */
 
@@ -5184,6 +5600,7 @@ async function init() {
   bindHistorialEvents();
   bindMueblesEvents();
   bindComprasEvents();
+  bindIncidentesEvents();
   bindFinanzasEvents();
 
   /* Sin sesión no se muestra ni se consulta ningún dato */

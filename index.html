@@ -584,7 +584,7 @@
         <button type="button" class="f-subtab" data-sub="muebles">Muebles</button>
         <button type="button" class="f-subtab" data-sub="pendientes">Pendientes</button>
         <button type="button" class="f-subtab" data-sub="pedidos">Pedidos/Compras</button>
-        <button type="button" class="f-subtab" data-sub="bloqueos">Bloqueos</button>
+        <button type="button" class="f-subtab" data-sub="incidentes">Incidentes <span id="ficha-incidentes-badge" class="hidden ml-1 bg-red-600 text-white text-[10px] font-black rounded-full px-1.5"></span></button>
         <button type="button" class="f-subtab" data-sub="dropbox">Archivos Dropbox (Proxy)</button>
         <button type="button" class="f-subtab hidden" data-sub="historial"><i class="fas fa-clock-rotate-left mr-1" aria-hidden="true"></i>Historial</button>
         <button type="button" class="f-subtab hidden" data-sub="finanzas"><i class="fas fa-lock mr-1 text-red-600" aria-hidden="true"></i>Finanzas</button>
@@ -688,9 +688,13 @@
           </div>
         </div>
 
-        <!-- Bloqueos -->
-        <div id="ficha-bloqueos" class="space-y-3">
-          <div id="ficha-bloqueos-list" class="space-y-3"></div>
+        <!-- Incidentes (antes "Bloqueos") -->
+        <div id="ficha-incidentes" class="space-y-3">
+          <div class="flex items-center justify-between gap-2">
+            <p class="text-xs text-slate-500">Problemas que afectan el proyecto: quién los resuelve, para cuándo y cómo se resolvieron.</p>
+            <button type="button" id="incidente-agregar" class="hidden bg-red-600 hover:bg-red-700 text-white font-bold px-3 py-2 rounded-xl text-xs shrink-0"><i class="fas fa-triangle-exclamation mr-1" aria-hidden="true"></i>Reportar incidente</button>
+          </div>
+          <div id="ficha-incidentes-list" class="space-y-3"></div>
         </div>
 
         <!-- Archivos Dropbox (Proxy) -->
@@ -1140,6 +1144,67 @@
         <button type="button" id="tarea-guardar" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">Guardar</button>
         <button type="button" id="tarea-eliminar" class="bg-slate-900 hover:bg-slate-800 text-white font-bold px-4 py-2.5 rounded-xl text-sm hidden">Eliminar</button>
         <button type="button" id="tarea-close" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm">Cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Incidente -->
+  <div id="incidente-modal" class="is-hidden fixed inset-0 z-[96] bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white border border-slate-200 w-full max-w-lg rounded-2xl shadow-2xl p-6 max-h-[92vh] overflow-y-auto">
+      <h3 class="text-xl font-black text-slate-900 mb-1" id="incidente-title">Reportar incidente</h3>
+      <p class="text-xs text-slate-500 mb-4" id="incidente-sub"></p>
+      <div class="space-y-3 text-xs">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="incidente-tipo" class="block font-bold text-slate-500 uppercase mb-1">Tipo</label>
+            <select id="incidente-tipo" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white"></select>
+          </div>
+          <div>
+            <label for="incidente-gravedad" class="block font-bold text-slate-500 uppercase mb-1">Gravedad</label>
+            <select id="incidente-gravedad" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white"></select>
+          </div>
+        </div>
+        <div>
+          <label for="incidente-descripcion" class="block font-bold text-slate-500 uppercase mb-1">¿Qué pasó?</label>
+          <textarea id="incidente-descripcion" rows="2" maxlength="500" placeholder="Ej. Llegaron 2 láminas RH rayadas" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white"></textarea>
+        </div>
+        <label class="flex items-center gap-2 p-2.5 rounded-xl border border-red-200 bg-red-50 font-bold text-red-900 cursor-pointer">
+          <input id="incidente-detiene" type="checkbox" class="accent-red-600" />
+          Detiene la producción del proyecto
+        </label>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label for="incidente-responsable" class="block font-bold text-slate-500 uppercase mb-1">Responsable de resolverlo</label>
+            <input id="incidente-responsable" type="text" list="incidente-responsables-list" maxlength="120" placeholder="Persona, proveedor o área" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+            <datalist id="incidente-responsables-list"></datalist>
+          </div>
+          <div>
+            <label for="incidente-compromiso" class="block font-bold text-slate-500 uppercase mb-1">Resolver a más tardar</label>
+            <input id="incidente-compromiso" type="date" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+          </div>
+        </div>
+        <div>
+          <label for="incidente-accion" class="block font-bold text-slate-500 uppercase mb-1">Plan de acción</label>
+          <input id="incidente-accion" type="text" maxlength="300" placeholder="Ej. Pedir reposición a Pelikano" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+        </div>
+        <div>
+          <label for="incidente-impacto" class="block font-bold text-slate-500 uppercase mb-1">Días que retrasa la entrega (estimado)</label>
+          <input id="incidente-impacto" type="number" min="0" step="1" value="0" inputmode="numeric" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+        </div>
+        <div id="incidente-estado-box" class="border-t border-slate-200 pt-3 space-y-3">
+          <div>
+            <label for="incidente-estado" class="block font-bold text-slate-500 uppercase mb-1">Estado</label>
+            <select id="incidente-estado" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white font-bold"></select>
+          </div>
+          <div id="incidente-solucion-box" class="hidden">
+            <label for="incidente-solucion" class="block font-bold text-emerald-800 uppercase mb-1">¿Cómo se resolvió? (obligatorio)</label>
+            <textarea id="incidente-solucion" rows="2" maxlength="500" placeholder="Ej. Proveedor repuso las láminas el 8 de noviembre" class="w-full bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-slate-900"></textarea>
+          </div>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2 mt-5">
+        <button type="button" id="incidente-guardar" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-2.5 rounded-xl text-sm">Guardar</button>
+        <button type="button" id="incidente-cancelar" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-sm">Cancelar</button>
       </div>
     </div>
   </div>
