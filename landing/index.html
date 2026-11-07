@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Modugal — Cocinas integrales a medida</title>
+  <meta name="description" content="Modugal diseña y fabrica cocinas integrales exclusivas: entrega a tiempo, asesoría personalizada, materiales de alta calidad y servicio postventa.">
+  <meta name="theme-color" content="#0a0807">
+  <link rel="icon" href="assets/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,500;1,600;1,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="particles" aria-hidden="true"></canvas>
+  <div class="beam" aria-hidden="true"></div>
+
+  <!-- ============ HEADER ============ -->
+  <header class="top" id="top">
+    <a href="#inicio" class="brand-wrap" aria-label="Modugal, inicio">
+      <img src="assets/logo.png" alt="" class="brand-logo" width="30" height="30">
+      <span class="brand">MODUGAL</span>
+    </a>
+    <nav class="menu" aria-label="Principal">
+      <a href="#problemas">Problemas</a>
+      <a href="#soluciones">Soluciones</a>
+      <a href="#proceso">Proceso</a>
+      <a href="#diego">Nosotros</a>
+      <a href="#contacto">Contacto</a>
+    </nav>
+    <a class="pill" href="https://modugal.co/formulario/" target="_blank" rel="noopener">
+      Cotizar cocina
+      <span class="pill-arrow"><svg viewBox="0 0 24 24"><path d="M7 17 17 7M9 7h8v8"/></svg></span>
+    </a>
+    <button class="burger" aria-label="Abrir menú" aria-expanded="false"><span></span><span></span></button>
+  </header>
+
+  <main>
+    <!-- ============ HERO ============ -->
+    <section class="hero" id="inicio">
+      <p class="ghost" aria-hidden="true">MODUGAL</p>
+
+      <div class="hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow reveal">Cocinas integrales · Diseño interior</p>
+          <h1 class="hero-title reveal">
+            Transformamos<br>
+            espacios en<br>
+            <span class="glow" data-text="experiencias.">experiencias.</span>
+          </h1>
+          <p class="hero-lead reveal">Una cocina exclusiva y sofisticada que se convierte en el centro de tu hogar. Diseñada a tu medida, entregada a tiempo y respaldada después de la instalación.</p>
+          <div class="hero-btns reveal">
+            <a class="btn" href="https://modugal.co/formulario/" target="_blank" rel="noopener">Quiero mi cocina</a>
+            <a class="btn btn-ghost" href="#soluciones">Ver cómo trabajamos</a>
+          </div>
+        </div>
+
+        <div class="frame-wrap reveal">
+          <div class="frame" id="frame">
+            <img src="assets/cocina.png" alt="Cocina integral Modugal con isla en piedra, gabinetes negros mate y techo en listones de madera con iluminación LED" width="948" height="1024">
+            <div class="frame-tag tag-a"><i></i>Entrega a tiempo</div>
+            <div class="frame-tag tag-b"><b>+9</b><span>años en el mercado</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hero-foot">
+        <ul class="hero-facts">
+          <li><b>Diseño único</b><span>100% a tu medida</span></li>
+          <li><b>Materiales</b><span>de alta calidad</span></li>
+          <li><b>Postventa</b><span>y garantía real</span></li>
+        </ul>
+        <a href="#manifiesto" class="scroll-cue" aria-label="Seguir bajando"><span></span></a>
+      </div>
+    </section>
+
+    <!-- ============ MANIFIESTO ============ -->
+    <section class="manifesto" id="manifiesto">
+      <p class="mani" data-words>No es sobre tener una cocina más. Es sobre un espacio que <em>transforma</em> tu forma de vivir: elegante, funcional y <em>tuyo</em>, sin el estrés de la compra.</p>
+    </section>
+
+    <!-- ============ PROBLEMAS ============ -->
+    <section class="problems" id="problemas">
+      <div class="sec-top reveal">
+        <p class="eyebrow">¿Te ha pasado?</p>
+        <h2>Lo que <em>nadie</em> te cuenta<br>al hacer una cocina.</h2>
+      </div>
+
+      <div class="prob-grid">
+        <ul class="prob-list">
+          <li class="reveal"><span>01</span>Incumplimiento en los tiempos de entrega</li>
+          <li class="reveal"><span>02</span>Mala gestión de tu inversión</li>
+          <li class="reveal"><span>03</span>Productos que no cumplen expectativas</li>
+          <li class="reveal"><span>04</span>Diseños tradicionales que no reflejan tu estilo</li>
+          <li class="reveal"><span>05</span>Mala asesoría durante el proceso</li>
+          <li class="reveal"><span>06</span>Ansiedad y estrés durante la compra</li>
+          <li class="reveal"><span>07</span>Problemas de garantía y cero postventa</li>
+          <li class="reveal"><span>08</span>Cocinas que no perduran en el tiempo</li>
+          <li class="reveal"><span>09</span>Espacios poco funcionales y mal aprovechados</li>
+        </ul>
+
+        <aside class="causes reveal">
+          <p class="causes-t">¿Por qué sucede?</p>
+          <ol>
+            <li>Decisiones apresuradas.</li>
+            <li>Dejar la carpintería para el final de la obra.</li>
+            <li>Elegir solo por precio.</li>
+            <li>No contratar una empresa con respaldo.</li>
+          </ol>
+          <p class="causes-foot">En Modugal convertimos cada uno de estos riesgos en una promesa.</p>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ============ SOLUCIONES (carrusel) ============ -->
+    <section class="sol" id="soluciones">
+      <div class="sol-head">
+        <div>
+          <p class="eyebrow">Soluciones</p>
+          <h2>Una compra <em>tranquila</em>,<br>de principio a fin.</h2>
+        </div>
+        <p>Cada beneficio responde a un problema real. Toca una tarjeta para ver el detalle.</p>
+      </div>
+
+      <div class="cards-vp" id="cardsVp" tabindex="0" aria-label="Beneficios Modugal, desliza horizontalmente">
+        <div class="cards" id="cards">
+          <article class="card on">
+            <span class="c-n">01</span>
+            <div class="c-body"><p class="c-lt">Resuelve: tiempos incumplidos</p><p>Planeamos fabricación e instalación con fechas claras y las cumplimos. Tu obra no se detiene por la carpintería.</p></div>
+            <h3>Entrega a tiempo</h3>
+          </article>
+          <article class="card">
+            <span class="c-n">02</span>
+            <div class="c-body"><p class="c-lt">Resuelve: mala asesoría</p><p>Te acompañamos desde la primera idea hasta el último ajuste, con un asesor que entiende cómo usas tu cocina.</p></div>
+            <h3>Asesoría personalizada</h3>
+          </article>
+          <article class="card">
+            <span class="c-n">03</span>
+            <div class="c-body"><p class="c-lt">Resuelve: diseños genéricos</p><p>Nada de catálogo. Diseñamos una cocina única que refleja tu estilo y aprovecha cada centímetro.</p></div>
+            <h3>Diseño exclusivo</h3>
+          </article>
+          <article class="card">
+            <span class="c-n">04</span>
+            <div class="c-body"><p class="c-lt">Resuelve: inversión mal gestionada</p><p>Presupuesto transparente y decisiones informadas para que cada peso se refleje en calidad.</p></div>
+            <h3>Buena gestión de tu inversión</h3>
+          </article>
+          <article class="card">
+            <span class="c-n">05</span>
+            <div class="c-body"><p class="c-lt">Resuelve: cocinas que no duran</p><p>Materiales de alta calidad, herrajes confiables y acabados pensados para durar años.</p></div>
+            <h3>Materiales premium</h3>
+          </article>
+          <article class="card">
+            <span class="c-n">06</span>
+            <div class="c-body"><p class="c-lt">Resuelve: garantía y postventa</p><p>Seguimos contigo después de la instalación: garantía real y servicio postventa cuando lo necesites.</p></div>
+            <h3>Postventa y garantía</h3>
+          </article>
+        </div>
+      </div>
+
+      <div class="sol-foot">
+        <div class="sol-progress"><span id="solBar"></span></div>
+        <div class="sol-nav">
+          <button id="prev" aria-label="Anterior"><svg viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></svg></button>
+          <button id="next" aria-label="Siguiente"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ BENTO (21st · Bento Grid) ============ -->
+    <section class="bento-sec" id="experiencia">
+      <div class="sec-top reveal">
+        <p class="eyebrow">La experiencia Modugal</p>
+        <h2>Más que una cocina,<br>un <em>estilo de vida</em>.</h2>
+      </div>
+      <div class="bento">
+        <div class="b-item b-wide b-img reveal">
+          <img src="assets/cocina.png" alt="" loading="lazy">
+          <div class="b-over">
+            <span class="b-chip">Elegancia</span>
+            <h3>El centro de tu hogar</h3>
+            <p>Líneas limpias, iluminación integrada y texturas nobles.</p>
+          </div>
+        </div>
+        <div class="b-item reveal">
+          <div class="b-ic"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div>
+          <span class="b-chip">Funcionalidad</span>
+          <h3>Cada centímetro cuenta</h3>
+          <p>Distribución pensada para cocinar, guardar y compartir sin esfuerzo.</p>
+        </div>
+        <div class="b-item reveal">
+          <div class="b-ic"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.8 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg></div>
+          <span class="b-chip">Distinción</span>
+          <h3>Diseño con firma propia</h3>
+          <p>Una cocina que no se parece a ninguna otra.</p>
+        </div>
+        <div class="b-item reveal">
+          <div class="b-ic"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0zM12 7v5l3 2"/></svg></div>
+          <span class="b-chip">Confort</span>
+          <h3>Sin estrés</h3>
+          <p>Un proceso claro y acompañado, de la idea a la entrega.</p>
+        </div>
+        <div class="b-item b-accent reveal">
+          <div class="b-ic"><svg viewBox="0 0 24 24"><path d="M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.5 5.5 21l2-7.5L2 9h7z"/></svg></div>
+          <span class="b-chip">Exclusividad</span>
+          <h3>Hecha solo para ti</h3>
+          <p>Personalizada en materiales, colores y acabados.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PROCESO ============ -->
+    <section class="processo" id="proceso">
+      <div class="sec-top reveal">
+        <p class="eyebrow">Cómo trabajamos</p>
+        <h2>De la idea a tu cocina,<br>en <em>cuatro pasos</em>.</h2>
+      </div>
+      <ol class="steps">
+        <li class="reveal"><span>01</span><h3>Asesoría</h3><p>Escuchamos tu estilo, tu rutina y tu presupuesto. Visitamos el espacio y tomamos medidas.</p></li>
+        <li class="reveal"><span>02</span><h3>Diseño y cotización</h3><p>Te presentamos una propuesta a medida con materiales, acabados y tiempos definidos.</p></li>
+        <li class="reveal"><span>03</span><h3>Fabricación e instalación</h3><p>Fabricamos con materiales de alta calidad e instalamos cumpliendo la fecha pactada.</p></li>
+        <li class="reveal"><span>04</span><h3>Entrega y postventa</h3><p>Revisamos cada detalle contigo y seguimos disponibles con garantía y soporte.</p></li>
+      </ol>
+    </section>
+
+    <!-- ============ DIEGO ============ -->
+    <section class="founder" id="diego">
+      <div class="f-photo reveal">
+        <img src="assets/diego.jpg" alt="Diego Galvis, fundador de Modugal, en una cocina terminada" loading="lazy" width="618" height="694">
+      </div>
+      <div class="f-text reveal">
+        <p class="eyebrow">Detrás de Modugal</p>
+        <h2>Diego <em>Galvis</em></h2>
+        <p>Empresario santandereano con más de <b>nueve años</b> al frente de Modugal, profesional en administración de empresas y mentor de emprendimiento.</p>
+        <p>Su apuesta es simple: que comprar una cocina sea una experiencia confiable y sin estrés, con una empresa que responde antes, durante y después.</p>
+        <div class="f-stats">
+          <div><b data-count="9">0</b><span>+ años de trayectoria</span></div>
+          <div><b>100%</b><span>diseños a medida</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ CTA ============ -->
+    <section class="cta" id="contacto">
+      <div class="cta-card reveal">
+        <p class="eyebrow">Hablemos</p>
+        <h2>¿Listo para la cocina<br>que <span class="glow" data-text="mereces?">mereces?</span></h2>
+        <p>Cuéntanos de tu espacio, ya sea una obra nueva o una remodelación. Te asesoramos sin compromiso.</p>
+        <div class="cta-btns">
+          <a class="btn" href="https://modugal.co/formulario/" target="_blank" rel="noopener">Solicitar cotización</a>
+          <a class="btn btn-ghost" href="https://www.instagram.com/modugal/" target="_blank" rel="noopener">Ver proyectos en Instagram</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ FOOTER ============ -->
+  <footer class="foot">
+    <div class="foot-grid">
+      <div>
+        <div class="brand-wrap"><img src="assets/logo.png" alt="" class="brand-logo" width="30" height="30"><span class="brand">MODUGAL</span></div>
+        <p class="foot-desc">Cocinas integrales y diseño interior. Transformamos espacios en experiencias.</p>
+      </div>
+      <div>
+        <p class="foot-t">Navegación</p>
+        <a href="#soluciones">Soluciones</a>
+        <a href="#proceso">Proceso</a>
+        <a href="#diego">Nosotros</a>
+      </div>
+      <div>
+        <p class="foot-t">Síguenos</p>
+        <a href="https://www.instagram.com/modugal/" target="_blank" rel="noopener">Instagram</a>
+        <a href="https://www.youtube.com/watch?v=LVOIc_liVFA" target="_blank" rel="noopener">YouTube</a>
+        <a href="https://modugal.co/formulario/" target="_blank" rel="noopener">Cotizar</a>
+      </div>
+      <div>
+        <p class="foot-t">Hora en Colombia</p>
+        <p class="clock" id="clock">--:--</p>
+      </div>
+    </div>
+    <p class="foot-mark" aria-hidden="true">MODUGAL</p>
+    <p class="foot-copy">© <span id="year"></span> Modugal. Todos los derechos reservados.</p>
+  </footer>
+
+  <!-- Filtro de brillo (adaptado de 21st · Illuminated Hero) -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <defs>
+      <filter id="glow" color-interpolation-filters="sRGB" x="-50%" y="-200%" width="200%" height="500%">
+        <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b4"/>
+        <feGaussianBlur in="SourceGraphic" stdDeviation="19" result="b19"/>
+        <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b9"/>
+        <feGaussianBlur in="SourceGraphic" stdDeviation="30" result="b30"/>
+        <feColorMatrix in="b4" result="c0" type="matrix" values="1 0 0 0 0  0 .98 0 0 0  0 0 .96 0 0  0 0 0 .8 0"/>
+        <feColorMatrix in="b19" result="c1" type="matrix" values=".9 0 0 0 0  0 .2 0 0 0  0 0 .15 0 0  0 0 0 1 0"/>
+        <feOffset in="c1" result="o1" dy="2"/>
+        <feColorMatrix in="b9" result="c2" type="matrix" values="1 0 0 0 0  0 .45 0 0 0  0 0 .3 0 0  0 0 0 .65 0"/>
+        <feOffset in="c2" result="o2" dy="2"/>
+        <feColorMatrix in="b30" result="c3" type="matrix" values=".85 0 0 0 0  0 .15 0 0 0  0 0 .1 0 0  0 0 0 .9 0"/>
+        <feOffset in="c3" result="o3" dy="6"/>
+        <feMerge>
+          <feMergeNode in="c0"/><feMergeNode in="o1"/><feMergeNode in="o2"/><feMergeNode in="o3"/><feMergeNode in="c0"/><feMergeNode in="SourceGraphic"/>
+        </feMerge>
+      </filter>
+    </defs>
+  </svg>
+
+  <script src="main.js"></script>
+</body>
+</html>
