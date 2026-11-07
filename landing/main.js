@@ -52,15 +52,108 @@
     window.addEventListener('resize', paint);
   }
 
-  /* hero: inclinación del marco con el mouse */
-  const frame = document.getElementById('frame');
-  if (frame && !reduce && window.matchMedia('(pointer: fine)').matches) {
-    window.addEventListener('mousemove', e => {
-      const x = e.clientX / window.innerWidth - 0.5;
-      const y = e.clientY / window.innerHeight - 0.5;
-      frame.style.setProperty('--ry', (-9 + x * 10).toFixed(2) + 'deg');
-      frame.style.setProperty('--rx', (4 - y * 8).toFixed(2) + 'deg');
+  /* hero: recorrido por la cocina.
+     Cada foto hace un acercamiento/paneo lento (Ken Burns) y se funde con la
+     siguiente, para que se sienta como caminar por la cocina. */
+  const tour = document.getElementById('tour');
+  if (tour) {
+    const slides = [...tour.querySelectorAll('.slide')];
+    const label = document.getElementById('tourLabel');
+    const barsBox = document.getElementById('tourBars');
+    const pauseBtn = document.getElementById('tourPause');
+    const DUR = reduce ? 7000 : 5600;   // tiempo en cada vista
+    const FADE = 1600;                  // fundido (igual que el CSS)
+    let cur = -1, timer = null, paused = false, startedAt = 0, remaining = DUR, anim = null, barAnim = null;
+
+    const bars = slides.map((s, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('aria-label', 'Ver: ' + s.dataset.label);
+      b.innerHTML = '<span><i></i></span>';
+      b.addEventListener('click', () => go(i));
+      barsBox.appendChild(b);
+      return b;
     });
+
+    const kb = s => {
+      let [s0, x0, y0, s1, x1, y1] = s.dataset.kb.split(' ').map(Number);
+      // el paneo nunca puede pasar del zoom (si no, se ve el borde de la foto)
+      const lim = sc => (sc - 1) / (2 * sc) * 100 * 0.9;
+      const cl = (v, sc) => Math.max(-lim(sc), Math.min(lim(sc), v));
+      x0 = cl(x0, s0); y0 = cl(y0, s0); x1 = cl(x1, s1); y1 = cl(y1, s1);
+      return [
+        { transform: `scale(${s0}) translate(${x0}%, ${y0}%)` },
+        { transform: `scale(${s1}) translate(${x1}%, ${y1}%)` }
+      ];
+    };
+
+    const schedule = ms => {
+      clearTimeout(timer);
+      startedAt = performance.now(); remaining = ms;
+      timer = setTimeout(() => go(cur + 1), ms);
+    };
+
+    function go(i) {
+      i = (i + slides.length) % slides.length;
+      const prev = slides[cur];
+      if (prev && prev !== slides[i]) {
+        prev.classList.remove('on'); prev.classList.add('out');
+        setTimeout(() => prev.classList.remove('out'), FADE);
+      }
+      cur = i;
+      const s = slides[i];
+      s.classList.remove('out'); s.classList.add('on');
+      // precarga la siguiente
+      const nx = slides[(i + 1) % slides.length].querySelector('img');
+      if (nx.loading === 'lazy') nx.loading = 'eager';
+
+      if (!reduce) {
+        const img = s.querySelector('img');
+        img.getAnimations().forEach(a => a.cancel());
+        anim = img.animate(kb(s), { duration: DUR + FADE, easing: 'cubic-bezier(.3,.1,.4,1)', fill: 'forwards' });
+      }
+      label.style.opacity = 0;
+      setTimeout(() => { label.textContent = s.dataset.label; label.style.opacity = 1; }, 250);
+
+      bars.forEach((b, k) => {
+        b.classList.toggle('done', k < i);
+        b.setAttribute('aria-current', k === i ? 'true' : 'false');
+        const fill = b.querySelector('i');
+        fill.getAnimations().forEach(a => a.cancel());
+        if (k !== i) fill.style.width = '';
+      });
+      const fill = bars[i].querySelector('i');
+      barAnim = fill.animate([{ width: '0%' }, { width: '100%' }], { duration: DUR, easing: 'linear', fill: 'forwards' });
+
+      if (paused) { anim && anim.pause(); barAnim.pause(); remaining = DUR; }
+      else schedule(DUR);
+    }
+
+    // paused = estado real; userPaused = el usuario tocó pausa; hidden = no está en pantalla
+    let userPaused = false, hidden = false;
+    const sync = () => {
+      pauseBtn.setAttribute('aria-pressed', userPaused);
+      pauseBtn.setAttribute('aria-label', userPaused ? 'Reanudar recorrido' : 'Pausar recorrido');
+      const p = userPaused || hidden;
+      if (p === paused) return;
+      paused = p;
+      if (p) {
+        clearTimeout(timer);
+        remaining = Math.max(0, remaining - (performance.now() - startedAt));
+        anim && anim.pause(); barAnim && barAnim.pause();
+      } else {
+        anim && anim.play(); barAnim && barAnim.play();
+        schedule(remaining);
+      }
+    };
+    pauseBtn.addEventListener('click', () => { userPaused = !userPaused; sync(); });
+
+    // no gastar batería cuando el recorrido no se ve
+    let offscreen = false;
+    new IntersectionObserver(([e]) => { offscreen = !e.isIntersecting; hidden = offscreen || document.hidden; sync(); }, { threshold: 0.2 }).observe(tour);
+    document.addEventListener('visibilitychange', () => { hidden = offscreen || document.hidden; sync(); });
+
+    go(0);
   }
 
   /* carrusel de soluciones */
@@ -141,7 +234,7 @@
   tickClock(); setInterval(tickClock, 1000);
   document.getElementById('year').textContent = new Date().getFullYear();
 
-  /* partículas cálidas (polvo de luz) */
+  /* partículas cálidas (polvo de madera, muy sutil sobre fondo claro) */
   const cv = document.getElementById('particles');
   if (cv && !reduce) {
     const ctx = cv.getContext('2d');
@@ -149,12 +242,12 @@
     const resize = () => {
       dpr = Math.min(2, window.devicePixelRatio || 1);
       W = cv.width = innerWidth * dpr; H = cv.height = innerHeight * dpr;
-      const n = Math.round(Math.min(70, innerWidth / 18));
+      const n = Math.round(Math.min(40, innerWidth / 30));
       pts = Array.from({ length: n }, () => ({
         x: Math.random() * W, y: Math.random() * H,
         r: (Math.random() * 1.4 + .4) * dpr,
         vx: (Math.random() - .5) * .15 * dpr, vy: -(Math.random() * .25 + .05) * dpr,
-        a: Math.random() * .5 + .15, red: Math.random() < .3
+        a: Math.random() * .25 + .1, red: Math.random() < .35
       }));
     };
     const draw = () => {
@@ -165,7 +258,7 @@
         if (p.x < -10) p.x = W + 10; if (p.x > W + 10) p.x = -10;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = p.red ? `rgba(255,107,94,${p.a})` : `rgba(240,180,106,${p.a})`;
+        ctx.fillStyle = p.red ? `rgba(180,96,42,${p.a})` : `rgba(205,178,137,${p.a + .15})`;
         ctx.fill();
       }
       requestAnimationFrame(draw);

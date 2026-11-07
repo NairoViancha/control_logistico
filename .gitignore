@@ -10,3 +10,6 @@ ios/DerivedData/
 *.keystore
 *.jks
 pruebas/.tmp/
+
+# índice local de codebase-memory-mcp
+.codebase-memory/

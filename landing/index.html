@@ -5,16 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Modugal — Cocinas integrales a medida</title>
   <meta name="description" content="Modugal diseña y fabrica cocinas integrales exclusivas: entrega a tiempo, asesoría personalizada, materiales de alta calidad y servicio postventa.">
-  <meta name="theme-color" content="#0a0807">
+  <meta name="theme-color" content="#fbf8f3">
   <link rel="icon" href="assets/logo.png">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,500;1,600;1,700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@1,9..144,400;1,9..144,500&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="preload" as="image" href="assets/cocina/k01-entrada.jpg">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <canvas id="particles" aria-hidden="true"></canvas>
-  <div class="beam" aria-hidden="true"></div>
+  <div class="glow-bg" aria-hidden="true"></div>
 
   <!-- ============ HEADER ============ -->
   <header class="top" id="top">
@@ -25,9 +26,9 @@
     <nav class="menu" aria-label="Principal">
       <a href="#problemas">Problemas</a>
       <a href="#soluciones">Soluciones</a>
+      <a href="#proyecto">Proyectos</a>
       <a href="#proceso">Proceso</a>
       <a href="#diego">Nosotros</a>
-      <a href="#contacto">Contacto</a>
     </nav>
     <a class="pill" href="https://modugal.co/formulario/" target="_blank" rel="noopener">
       Cotizar cocina
@@ -37,7 +38,7 @@
   </header>
 
   <main>
-    <!-- ============ HERO ============ -->
+    <!-- ============ HERO + RECORRIDO ============ -->
     <section class="hero" id="inicio">
       <p class="ghost" aria-hidden="true">MODUGAL</p>
 
@@ -47,21 +48,50 @@
           <h1 class="hero-title reveal">
             Transformamos<br>
             espacios en<br>
-            <span class="glow" data-text="experiencias.">experiencias.</span>
+            <span class="shine">experiencias.</span>
           </h1>
           <p class="hero-lead reveal">Una cocina exclusiva y sofisticada que se convierte en el centro de tu hogar. Diseñada a tu medida, entregada a tiempo y respaldada después de la instalación.</p>
           <div class="hero-btns reveal">
             <a class="btn" href="https://modugal.co/formulario/" target="_blank" rel="noopener">Quiero mi cocina</a>
-            <a class="btn btn-ghost" href="#soluciones">Ver cómo trabajamos</a>
+            <a class="btn btn-ghost" href="#proyecto">Ver un proyecto</a>
           </div>
         </div>
 
-        <div class="frame-wrap reveal">
-          <div class="frame" id="frame">
-            <img src="assets/cocina.png" alt="Cocina integral Modugal con isla en piedra, gabinetes negros mate y techo en listones de madera con iluminación LED" width="948" height="1024">
-            <div class="frame-tag tag-a"><i></i>Entrega a tiempo</div>
-            <div class="frame-tag tag-b"><b>+9</b><span>años en el mercado</span></div>
+        <div class="tour-wrap reveal">
+          <div class="tour" id="tour" role="region" aria-roledescription="carrusel" aria-label="Recorrido por una cocina Modugal">
+            <figure class="slide" data-kb="1 0 0 1.16 0 -1.5" data-label="Entrada · vista general">
+              <img src="assets/cocina/k01-entrada.jpg" alt="Vista general de la cocina: isla en piedra veteada, jardinera interior y torres oscuras con vitrinas iluminadas" width="2000" height="1307">
+            </figure>
+            <figure class="slide" data-kb="1.14 3 0 1.04 -3 0" data-label="Isla con jardinera">
+              <img src="assets/cocina/k03-esquina.jpg" alt="Isla de cocina con jardinera en primer plano y torres con hornos empotrados" width="2000" height="1307" loading="lazy">
+            </figure>
+            <figure class="slide" data-kb="1.04 2 0 1.18 -3 -1" data-label="Barra comedor">
+              <img src="assets/cocina/k04-barra.jpg" alt="Barra comedor curva en madera clara con sillas grises bajo lámparas colgantes" width="2000" height="1126" loading="lazy">
+            </figure>
+            <figure class="slide" data-kb="1.18 4 1 1.06 -2 0" data-label="Barra volada en madera">
+              <img src="assets/cocina/k05-barra-curva.jpg" alt="Barra volada de madera que nace de la isla de piedra sinterizada" width="2000" height="1126" loading="lazy">
+            </figure>
+            <figure class="slide" data-kb="1.04 0 2 1.18 1 -2" data-label="Mesón de trabajo">
+              <img src="assets/cocina/k06-meson.jpg" alt="Pasillo de trabajo entre la isla y el mesón posterior con iluminación LED bajo los muebles" width="2000" height="1126" loading="lazy">
+            </figure>
+            <figure class="slide" data-kb="1.18 -3 0 1.05 3 0" data-label="Torres y centro de café">
+              <img src="assets/cocina/k08-torres.jpg" alt="Pared de torres en gris antracita con hornos, pantalla y nicho de café en madera iluminada" width="2000" height="1126" loading="lazy">
+            </figure>
+            <figure class="slide" data-kb="1.06 0 0 1.2 0 -1" data-label="Vista frontal">
+              <img src="assets/cocina/k09-frontal.jpg" alt="Vista frontal de la isla con barra para seis personas y salpicadero en piedra veteada" width="1600" height="901" loading="lazy">
+            </figure>
+
+            <div class="tour-ui">
+              <p class="tour-label"><span class="dot"></span><span id="tourLabel">Entrada · vista general</span></p>
+              <button class="tour-pause" id="tourPause" aria-label="Pausar recorrido" aria-pressed="false">
+                <svg class="i-pause" viewBox="0 0 24 24"><path d="M9 6v12M15 6v12"/></svg>
+                <svg class="i-play" viewBox="0 0 24 24"><path d="M8 5l11 7-11 7z"/></svg>
+              </button>
+            </div>
+            <div class="tour-bars" id="tourBars"></div>
           </div>
+          <div class="frame-tag tag-a"><i></i>Entrega a tiempo</div>
+          <div class="frame-tag tag-b"><b>+9</b><span>años en el mercado</span></div>
         </div>
       </div>
 
@@ -101,14 +131,17 @@
         </ul>
 
         <aside class="causes reveal">
-          <p class="causes-t">¿Por qué sucede?</p>
-          <ol>
-            <li>Decisiones apresuradas.</li>
-            <li>Dejar la carpintería para el final de la obra.</li>
-            <li>Elegir solo por precio.</li>
-            <li>No contratar una empresa con respaldo.</li>
-          </ol>
-          <p class="causes-foot">En Modugal convertimos cada uno de estos riesgos en una promesa.</p>
+          <div class="causes-img"><img src="assets/cocina/d-nicho.jpg" alt="" loading="lazy" width="1100" height="579"></div>
+          <div class="causes-body">
+            <p class="causes-t">¿Por qué sucede?</p>
+            <ol>
+              <li>Decisiones apresuradas.</li>
+              <li>Dejar la carpintería para el final de la obra.</li>
+              <li>Elegir solo por precio.</li>
+              <li>No contratar una empresa con respaldo.</li>
+            </ol>
+            <p class="causes-foot">En Modugal convertimos cada uno de estos riesgos en una promesa.</p>
+          </div>
         </aside>
       </div>
     </section>
@@ -125,32 +158,32 @@
 
       <div class="cards-vp" id="cardsVp" tabindex="0" aria-label="Beneficios Modugal, desliza horizontalmente">
         <div class="cards" id="cards">
-          <article class="card on">
+          <article class="card on" style="--img:url(assets/cocina/k01-entrada.jpg)">
             <span class="c-n">01</span>
             <div class="c-body"><p class="c-lt">Resuelve: tiempos incumplidos</p><p>Planeamos fabricación e instalación con fechas claras y las cumplimos. Tu obra no se detiene por la carpintería.</p></div>
             <h3>Entrega a tiempo</h3>
           </article>
-          <article class="card">
+          <article class="card" style="--img:url(assets/cocina/k08-torres.jpg)">
             <span class="c-n">02</span>
             <div class="c-body"><p class="c-lt">Resuelve: mala asesoría</p><p>Te acompañamos desde la primera idea hasta el último ajuste, con un asesor que entiende cómo usas tu cocina.</p></div>
             <h3>Asesoría personalizada</h3>
           </article>
-          <article class="card">
+          <article class="card" style="--img:url(assets/cocina/k05-barra-curva.jpg)">
             <span class="c-n">03</span>
             <div class="c-body"><p class="c-lt">Resuelve: diseños genéricos</p><p>Nada de catálogo. Diseñamos una cocina única que refleja tu estilo y aprovecha cada centímetro.</p></div>
             <h3>Diseño exclusivo</h3>
           </article>
-          <article class="card">
+          <article class="card" style="--img:url(assets/cocina/d-alacena.jpg)">
             <span class="c-n">04</span>
             <div class="c-body"><p class="c-lt">Resuelve: inversión mal gestionada</p><p>Presupuesto transparente y decisiones informadas para que cada peso se refleje en calidad.</p></div>
             <h3>Buena gestión de tu inversión</h3>
           </article>
-          <article class="card">
+          <article class="card" style="--img:url(assets/cocina/t-marmol.jpg)">
             <span class="c-n">05</span>
             <div class="c-body"><p class="c-lt">Resuelve: cocinas que no duran</p><p>Materiales de alta calidad, herrajes confiables y acabados pensados para durar años.</p></div>
             <h3>Materiales premium</h3>
           </article>
-          <article class="card">
+          <article class="card" style="--img:url(assets/cocina/d-herrajes.jpg)">
             <span class="c-n">06</span>
             <div class="c-body"><p class="c-lt">Resuelve: garantía y postventa</p><p>Seguimos contigo después de la instalación: garantía real y servicio postventa cuando lo necesites.</p></div>
             <h3>Postventa y garantía</h3>
@@ -167,7 +200,35 @@
       </div>
     </section>
 
-    <!-- ============ BENTO (21st · Bento Grid) ============ -->
+    <!-- ============ PROYECTO DESTACADO ============ -->
+    <section class="project" id="proyecto">
+      <div class="proj-head">
+        <div class="reveal">
+          <p class="eyebrow">Proyecto destacado · Ruitoque, Santander</p>
+          <h2>Cada detalle,<br><em>pensado</em> para ti.</h2>
+        </div>
+        <p class="reveal">Una cocina abierta con isla para seis personas, jardinera interior y barra volada en madera. Así se ve una propuesta Modugal antes de fabricarse: materiales definidos, herrajes elegidos y cada espacio con una función.</p>
+      </div>
+
+      <div class="materials reveal" aria-label="Materiales del proyecto">
+        <div class="mat"><span class="sw sw-marmol"></span><b>Colorado Dunes</b><small>Piedra sinterizada · mesones</small></div>
+        <div class="mat"><span class="sw" style="--c:#45474b"></span><b>Umbra Mate</b><small>Torres y muebles bajos</small></div>
+        <div class="mat"><span class="sw sw-madera"></span><b>Iguaque</b><small>Repisas, nichos y barra</small></div>
+        <div class="mat"><span class="sw" style="--c:#cdc4b3"></span><b>Cubanite</b><small>Frentes de gabinete</small></div>
+        <div class="mat"><span class="sw" style="--c:#a8a5a1"></span><b>Cinza</b><small>Detalles y perfiles</small></div>
+      </div>
+
+      <div class="gallery">
+        <figure class="g-item g-tall reveal"><img src="assets/cocina/d-alacena.jpg" alt="Alacena con repisas en madera iluminadas y torre extraíble" loading="lazy" width="1100" height="617"><figcaption><b>Alacena iluminada</b><span>Repisas en madera con LED cálido</span></figcaption></figure>
+        <figure class="g-item reveal"><img src="assets/cocina/d-especiero.jpg" alt="Especiero extraíble junto al mesón" loading="lazy" width="1100" height="552"><figcaption><b>Especiero extraíble</b><span>Todo a la mano mientras cocinas</span></figcaption></figure>
+        <figure class="g-item reveal"><img src="assets/cocina/d-herrajes.jpg" alt="Esquinero con bandejas extraíbles" loading="lazy" width="1100" height="538"><figcaption><b>Esquina aprovechada</b><span>Bandejas que salen hacia ti</span></figcaption></figure>
+        <figure class="g-item reveal"><img src="assets/cocina/d-vitrina.jpg" alt="Vitrinas iluminadas sobre el mesón y pared de torres" loading="lazy" width="1100" height="618"><figcaption><b>Vitrinas con luz</b><span>Vidrio, madera y LED vertical</span></figcaption></figure>
+        <figure class="g-item g-wide reveal"><img src="assets/cocina/k04-barra.jpg" alt="Barra comedor curva con lámparas colgantes" loading="lazy" width="2000" height="1126"><figcaption><b>Barra volada</b><span>El lugar donde se reúne la familia</span></figcaption></figure>
+        <figure class="g-item reveal"><img src="assets/cocina/k08-torres.jpg" alt="Pared de torres con hornos, pantalla y centro de café" loading="lazy" width="2000" height="1126"><figcaption><b>Centro de café</b><span>Hornos y nicho iluminado en un solo muro</span></figcaption></figure>
+      </div>
+    </section>
+
+    <!-- ============ BENTO ============ -->
     <section class="bento-sec" id="experiencia">
       <div class="sec-top reveal">
         <p class="eyebrow">La experiencia Modugal</p>
@@ -175,36 +236,42 @@
       </div>
       <div class="bento">
         <div class="b-item b-wide b-img reveal">
-          <img src="assets/cocina.png" alt="" loading="lazy">
+          <img src="assets/cocina/k09-frontal.jpg" alt="" loading="lazy">
           <div class="b-over">
             <span class="b-chip">Elegancia</span>
             <h3>El centro de tu hogar</h3>
             <p>Líneas limpias, iluminación integrada y texturas nobles.</p>
           </div>
         </div>
-        <div class="b-item reveal">
-          <div class="b-ic"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"/></svg></div>
-          <span class="b-chip">Funcionalidad</span>
-          <h3>Cada centímetro cuenta</h3>
-          <p>Distribución pensada para cocinar, guardar y compartir sin esfuerzo.</p>
+        <div class="b-item b-img reveal">
+          <img src="assets/cocina/d-especiero.jpg" alt="" loading="lazy">
+          <div class="b-over">
+            <span class="b-chip">Funcionalidad</span>
+            <h3>Cada centímetro cuenta</h3>
+            <p>Distribución pensada para cocinar, guardar y compartir sin esfuerzo.</p>
+          </div>
         </div>
-        <div class="b-item reveal">
-          <div class="b-ic"><svg viewBox="0 0 24 24"><path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.8 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/></svg></div>
-          <span class="b-chip">Distinción</span>
-          <h3>Diseño con firma propia</h3>
-          <p>Una cocina que no se parece a ninguna otra.</p>
+        <div class="b-item b-img reveal">
+          <img src="assets/cocina/k05-barra-curva.jpg" alt="" loading="lazy">
+          <div class="b-over">
+            <span class="b-chip">Distinción</span>
+            <h3>Diseño con firma propia</h3>
+            <p>Una cocina que no se parece a ninguna otra.</p>
+          </div>
         </div>
-        <div class="b-item reveal">
-          <div class="b-ic"><svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 18 0 9 9 0 0 0-18 0zM12 7v5l3 2"/></svg></div>
-          <span class="b-chip">Confort</span>
-          <h3>Sin estrés</h3>
-          <p>Un proceso claro y acompañado, de la idea a la entrega.</p>
+        <div class="b-item b-img reveal">
+          <img src="assets/cocina/k06-meson.jpg" alt="" loading="lazy">
+          <div class="b-over">
+            <span class="b-chip">Confort</span>
+            <h3>Sin estrés</h3>
+            <p>Un proceso claro y acompañado, de la idea a la entrega.</p>
+          </div>
         </div>
         <div class="b-item b-accent reveal">
           <div class="b-ic"><svg viewBox="0 0 24 24"><path d="M12 2l3 7h7l-5.5 4.5L18.5 21 12 16.5 5.5 21l2-7.5L2 9h7z"/></svg></div>
           <span class="b-chip">Exclusividad</span>
           <h3>Hecha solo para ti</h3>
-          <p>Personalizada en materiales, colores y acabados.</p>
+          <p>Personalizada en materiales, colores y acabados. Tú eliges la piedra, la madera y la luz.</p>
         </div>
       </div>
     </section>
@@ -216,10 +283,10 @@
         <h2>De la idea a tu cocina,<br>en <em>cuatro pasos</em>.</h2>
       </div>
       <ol class="steps">
-        <li class="reveal"><span>01</span><h3>Asesoría</h3><p>Escuchamos tu estilo, tu rutina y tu presupuesto. Visitamos el espacio y tomamos medidas.</p></li>
-        <li class="reveal"><span>02</span><h3>Diseño y cotización</h3><p>Te presentamos una propuesta a medida con materiales, acabados y tiempos definidos.</p></li>
-        <li class="reveal"><span>03</span><h3>Fabricación e instalación</h3><p>Fabricamos con materiales de alta calidad e instalamos cumpliendo la fecha pactada.</p></li>
-        <li class="reveal"><span>04</span><h3>Entrega y postventa</h3><p>Revisamos cada detalle contigo y seguimos disponibles con garantía y soporte.</p></li>
+        <li class="reveal"><div class="s-img"><img src="assets/cocina/t-marmol.jpg" alt="" loading="lazy"></div><span>01</span><h3>Asesoría</h3><p>Escuchamos tu estilo, tu rutina y tu presupuesto. Visitamos el espacio y tomamos medidas.</p></li>
+        <li class="reveal"><div class="s-img"><img src="assets/cocina/k03-esquina.jpg" alt="" loading="lazy"></div><span>02</span><h3>Diseño y cotización</h3><p>Te presentamos una propuesta a medida, con renders, materiales, acabados y tiempos definidos.</p></li>
+        <li class="reveal"><div class="s-img"><img src="assets/cocina/d-herrajes.jpg" alt="" loading="lazy"></div><span>03</span><h3>Fabricación e instalación</h3><p>Fabricamos con materiales de alta calidad e instalamos cumpliendo la fecha pactada.</p></li>
+        <li class="reveal"><div class="s-img"><img src="assets/cocina/k01-entrada.jpg" alt="" loading="lazy"></div><span>04</span><h3>Entrega y postventa</h3><p>Revisamos cada detalle contigo y seguimos disponibles con garantía y soporte.</p></li>
       </ol>
     </section>
 
@@ -243,12 +310,15 @@
     <!-- ============ CTA ============ -->
     <section class="cta" id="contacto">
       <div class="cta-card reveal">
-        <p class="eyebrow">Hablemos</p>
-        <h2>¿Listo para la cocina<br>que <span class="glow" data-text="mereces?">mereces?</span></h2>
-        <p>Cuéntanos de tu espacio, ya sea una obra nueva o una remodelación. Te asesoramos sin compromiso.</p>
-        <div class="cta-btns">
-          <a class="btn" href="https://modugal.co/formulario/" target="_blank" rel="noopener">Solicitar cotización</a>
-          <a class="btn btn-ghost" href="https://www.instagram.com/modugal/" target="_blank" rel="noopener">Ver proyectos en Instagram</a>
+        <img class="cta-bg" src="assets/cocina/k06-meson.jpg" alt="" loading="lazy">
+        <div class="cta-in">
+          <p class="eyebrow">Hablemos</p>
+          <h2>¿Listo para la cocina<br>que <span class="shine">mereces?</span></h2>
+          <p>Cuéntanos de tu espacio, ya sea una obra nueva o una remodelación. Te asesoramos sin compromiso.</p>
+          <div class="cta-btns">
+            <a class="btn" href="https://modugal.co/formulario/" target="_blank" rel="noopener">Solicitar cotización</a>
+            <a class="btn btn-ghost" href="https://www.instagram.com/modugal/" target="_blank" rel="noopener">Ver proyectos en Instagram</a>
+          </div>
         </div>
       </div>
     </section>
@@ -264,6 +334,7 @@
       <div>
         <p class="foot-t">Navegación</p>
         <a href="#soluciones">Soluciones</a>
+        <a href="#proyecto">Proyectos</a>
         <a href="#proceso">Proceso</a>
         <a href="#diego">Nosotros</a>
       </div>
@@ -281,28 +352,6 @@
     <p class="foot-mark" aria-hidden="true">MODUGAL</p>
     <p class="foot-copy">© <span id="year"></span> Modugal. Todos los derechos reservados.</p>
   </footer>
-
-  <!-- Filtro de brillo (adaptado de 21st · Illuminated Hero) -->
-  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
-    <defs>
-      <filter id="glow" color-interpolation-filters="sRGB" x="-50%" y="-200%" width="200%" height="500%">
-        <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="b4"/>
-        <feGaussianBlur in="SourceGraphic" stdDeviation="19" result="b19"/>
-        <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="b9"/>
-        <feGaussianBlur in="SourceGraphic" stdDeviation="30" result="b30"/>
-        <feColorMatrix in="b4" result="c0" type="matrix" values="1 0 0 0 0  0 .98 0 0 0  0 0 .96 0 0  0 0 0 .8 0"/>
-        <feColorMatrix in="b19" result="c1" type="matrix" values=".9 0 0 0 0  0 .2 0 0 0  0 0 .15 0 0  0 0 0 1 0"/>
-        <feOffset in="c1" result="o1" dy="2"/>
-        <feColorMatrix in="b9" result="c2" type="matrix" values="1 0 0 0 0  0 .45 0 0 0  0 0 .3 0 0  0 0 0 .65 0"/>
-        <feOffset in="c2" result="o2" dy="2"/>
-        <feColorMatrix in="b30" result="c3" type="matrix" values=".85 0 0 0 0  0 .15 0 0 0  0 0 .1 0 0  0 0 0 .9 0"/>
-        <feOffset in="c3" result="o3" dy="6"/>
-        <feMerge>
-          <feMergeNode in="c0"/><feMergeNode in="o1"/><feMergeNode in="o2"/><feMergeNode in="o3"/><feMergeNode in="c0"/><feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
-    </defs>
-  </svg>
 
   <script src="main.js"></script>
 </body>
