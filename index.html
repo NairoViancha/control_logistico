@@ -33,7 +33,7 @@
        ============================================================ -->
   <div id="login-screen" class="fixed inset-0 z-[70] bg-slate-50 flex items-center justify-center p-4">
     <div id="login-card" class="bg-white border border-slate-200 rounded-2xl shadow-2xl w-full max-w-sm p-6 sm:p-7">
-      <div class="flex items-center space-x-3 mb-4">
+      <div class="flex items-center justify-center space-x-3 mb-4">
         <div class="w-12 h-12 rounded-full border-2 border-red-600 bg-white flex items-center justify-center shadow-md shrink-0">
           <span class="text-red-600 font-black text-xl tracking-tighter">MG</span>
         </div>
@@ -47,8 +47,8 @@
         </div>
       </div>
 
-      <h2 class="text-xl font-black text-slate-900 mb-0.5">Acceso a MODUGAL</h2>
-      <p class="text-xs text-slate-500 mb-4">Inicia sesión o crea tu cuenta corporativa</p>
+      <h2 class="text-xl font-black text-slate-900 mb-0.5 text-center">Acceso a MODUGAL</h2>
+      <p class="text-xs text-slate-500 mb-4 text-center">Inicia sesión o crea tu cuenta corporativa</p>
 
       <form id="login-form" class="space-y-3">
         <div data-solo-registro class="hidden">
@@ -120,8 +120,8 @@
        HEADER FIJO · Isotipo MG · Marca · Buscador · Rol · Nuevo Pedido
        ============================================================ -->
   <header id="mg-header" class="fixed top-0 inset-x-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
-      <div class="flex items-center space-x-3">
+    <div class="mg-header-fila max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between">
+      <div class="mg-marca flex items-center space-x-3">
         <div class="w-12 h-12 rounded-full border-2 border-red-600 bg-white flex items-center justify-center shadow-md shrink-0" aria-label="MG">
           <span class="text-red-600 font-black text-xl tracking-tighter">MG</span>
         </div>
@@ -135,13 +135,13 @@
         </div>
       </div>
 
-      <div class="hidden md:flex flex-1 max-w-md mx-8 relative">
+      <div class="hidden xl:flex flex-1 max-w-md mx-8 relative">
         <i class="fas fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" aria-hidden="true"></i>
         <input id="mg-search-input" type="text" placeholder="Buscar por cliente, carpintero o ciudad..." autocomplete="off"
           class="w-full bg-slate-100 border border-slate-200 text-slate-800 rounded-full pl-10 pr-4 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-600 focus:bg-white transition-all placeholder:text-slate-400" />
       </div>
 
-      <div class="flex items-center space-x-3">
+      <div class="mg-acciones flex items-center space-x-3 shrink-0">
         <div id="mg-role-selector" class="flex items-center bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 shadow-inner" aria-label="Rol del usuario">
           <i class="fas fa-shield-alt text-red-600 mr-2 w-4 h-4" aria-hidden="true"></i>
           <span class="text-xs text-slate-500 font-medium mr-2 hidden lg:inline">Perfil:</span>
@@ -151,10 +151,10 @@
         <button type="button" id="mg-sync" class="hidden mg-sync" aria-live="polite"></button>
 
         <div id="mg-user" class="hidden flex items-center bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 shadow-inner">
-          <i class="fas fa-user w-3.5 h-3.5 text-slate-500 mr-1" aria-hidden="true"></i>
+          <i class="mg-user-icono fas fa-user w-3.5 h-3.5 text-slate-500 mr-1" aria-hidden="true"></i>
           <span id="mg-user-info" class="text-xs font-bold text-slate-800"></span>
           <button type="button" id="btn-logout" class="ml-2 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-black text-red-600 hover:bg-red-50 transition-colors" aria-label="Cerrar sesión">
-            <i class="fas fa-right-from-bracket" aria-hidden="true"></i> Salir
+            <i class="fas fa-right-from-bracket" aria-hidden="true"></i><span class="mg-salir-texto"> Salir</span>
           </button>
         </div>
 
