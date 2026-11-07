@@ -3,6 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <!-- Seguridad: solo se ejecuta código de este sitio y de los CDN listados; los datos
+       solo viajan a Supabase. Bloquea scripts inyectados, eval y envíos a otros dominios. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.tailwindcss.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; font-src 'self' https://cdnjs.cloudflare.com data:; img-src 'self' data: blob: https://*.supabase.co https://images.unsplash.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co; frame-src 'self' blob: https://*.supabase.co; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'" />
+  <meta name="referrer" content="strict-origin-when-cross-origin" />
   <meta name="theme-color" content="#f8fafc" />
   <!-- App instalable (PWA) y app nativa (Capacitor) -->
   <link rel="manifest" href="manifest.webmanifest" />
@@ -14,10 +18,12 @@
   <meta name="description" content="MODUGAL - espacios renovados · Control de producción de cocinas integrales y mobiliario de alta gama" />
   <title>MODUGAL - espacios renovados</title>
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <!-- Tailwind CSS (CDN) + FontAwesome (CDN) + Supabase SDK · Sin build de por medio -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  <!-- Librerías externas con versión fija. Supabase y FontAwesome llevan "integrity":
+       si el archivo del CDN cambia (manipulado), el navegador no lo ejecuta.
+       Tailwind CDN no permite integrity (sin CORS): versión fija; ver auditoría. -->
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.119.0/dist/umd/supabase.js" integrity="sha384-uteMfOloLDGt042uDz+xHGF3ym63/WQ6rFq7murQRG8Ih7QrXGEGNtWd8688sb4O" crossorigin="anonymous"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha384-PPIZEGYM1v8zp5Py7UjFb79S58UeqCL9pYVnVPURKEqvioPROaVAJKKLzvH2rDnI" crossorigin="anonymous" referrerpolicy="no-referrer" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body class="bg-slate-50 text-slate-900 font-sans min-h-screen">
@@ -60,7 +66,7 @@
         </div>
         <div data-solo-registro class="hidden">
           <label for="login-password2" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Confirmar</label>
-          <input id="login-password2" type="password" autocomplete="new-password" minlength="6" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+          <input id="login-password2" type="password" autocomplete="new-password" minlength="8" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
         </div>
         </div>
         <div data-solo-registro class="hidden">
@@ -97,9 +103,9 @@
         </div>
         <div id="forgot-pass-wrap" class="hidden">
           <label for="forgot-pass" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1">Nueva contraseña</label>
-          <input id="forgot-pass" type="password" autocomplete="new-password" minlength="6" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+          <input id="forgot-pass" type="password" autocomplete="new-password" minlength="8" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
           <label for="forgot-pass2" class="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-1 mt-3">Confirmar contraseña</label>
-          <input id="forgot-pass2" type="password" autocomplete="new-password" minlength="6" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+          <input id="forgot-pass2" type="password" autocomplete="new-password" minlength="8" placeholder="••••••••" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
         </div>
       </div>
       <p id="forgot-msg" class="hidden" role="status"></p>
@@ -726,7 +732,7 @@
               </div>
               <div>
                 <label for="doc-archivo" class="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Archivos (máx. 25 MB cada uno)</label>
-                <input id="doc-archivo" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,.skp,.glb,.gltf,.obj,.zip,.rar,.doc,.docx,.xls,.xlsx,.csv,image/*,application/pdf" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 file:mr-2 file:rounded-lg file:border-0 file:bg-red-600 file:text-white file:px-3 file:py-1" />
+                <input id="doc-archivo" type="file" multiple accept=".pdf,.png,.jpg,.jpeg,.webp,.dwg,.dxf,.skp,.glb,.gltf,.obj,.zip,.rar,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.csv" class="w-full text-xs bg-slate-50 border border-slate-200 rounded-xl p-2.5 file:mr-2 file:rounded-lg file:border-0 file:bg-red-600 file:text-white file:px-3 file:py-1" />
               </div>
               <div>
                 <label for="doc-notas" class="block text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1">Nota (opcional)</label>

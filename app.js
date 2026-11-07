@@ -281,6 +281,113 @@ function esc(str) {
   return String(str ?? '').replace(/[&<>"']/g, (c) => map[c]);
 }
 
+/* ==========================================================================
+   0b. SEGURIDAD (auditoría nov 2026)
+   --------------------------------------------------------------------------
+   - Anti clickjacking: la app no se deja mostrar dentro de un marco ajeno
+     (GitHub Pages no permite la cabecera frame-ancestors).
+   - Mensajes de error para el usuario sin detalles internos de la base.
+   - Política de contraseñas y lista blanca de archivos.
+   - Cierre de sesión por inactividad (equipos compartidos del taller).
+   ========================================================================== */
+
+(function antiClickjacking() {
+  try {
+    if (window.top !== window.self) {
+      document.documentElement.style.display = 'none';
+      window.top.location.replace(window.self.location.href);
+    }
+  } catch (e) {
+    /* Marco de otro dominio que bloquea la redirección: la página queda oculta */
+    document.documentElement.style.display = 'none';
+  }
+}());
+
+/* Error técnico → mensaje claro. El detalle queda solo en la consola. */
+function mensajeError(error, porDefecto = 'No se pudo completar la acción. Intenta de nuevo.') {
+  if (!error) return porDefecto;
+  const codigo = String(error.code || error.statusCode || error.status || '');
+  const texto = String(error.message || error.error || error || '');
+  console.warn('[MODUGAL] Detalle del error:', error);
+  if (/failed to fetch|network|load failed|timeout/i.test(texto)) return 'Sin conexión con el servidor. Revisa el internet e intenta de nuevo.';
+  if (['42501', 'PGRST301', '401', '403'].includes(codigo) || /row-level security|permission denied|not authorized|unauthorized/i.test(texto)) {
+    return 'No tienes permiso para hacer esto con tu rol.';
+  }
+  if (codigo === '23505' || /duplicate key|already exists/i.test(texto)) return 'Ya existe un registro igual.';
+  if (codigo === '23503') return 'Este registro está relacionado con otros datos y no se puede cambiar así.';
+  if (codigo === '23514' || codigo === '22001' || /check constraint|too long/i.test(texto)) return 'Algún dato no tiene el formato o el tamaño permitido.';
+  if (codigo === '413' || /payload too large|exceeded the maximum/i.test(texto)) return 'El archivo es demasiado grande.';
+  if (/mime type|invalid_mime|not supported/i.test(texto)) return 'Ese tipo de archivo no está permitido.';
+  if (/jwt|expired|refresh token/i.test(texto)) return 'Tu sesión expiró. Vuelve a iniciar sesión.';
+  return porDefecto;
+}
+
+/* Contraseñas nuevas: mínimo 8 caracteres, con letras y números, distinta del correo */
+const CLAVE_MIN = 8;
+function validarClaveNueva(clave, email = '') {
+  const c = String(clave || '');
+  if (c.length < CLAVE_MIN) return `La contraseña debe tener mínimo ${CLAVE_MIN} caracteres.`;
+  if (c.length > 72) return 'La contraseña no puede pasar de 72 caracteres.';
+  if (!/[A-Za-zÁÉÍÓÚáéíóúÑñ]/.test(c) || !/\d/.test(c)) return 'La contraseña debe combinar letras y números.';
+  const usuario = String(email || '').split('@')[0].toLowerCase();
+  if (usuario.length >= 4 && c.toLowerCase().includes(usuario)) return 'La contraseña no puede contener tu correo.';
+  if (/^(.)\1+$/.test(c) || /^(12345678|123456789|password|contraseña|modugal)/i.test(c)) return 'Esa contraseña es muy fácil de adivinar.';
+  return null;
+}
+
+/* Archivos permitidos en Documentos: extensión → tipo con el que se guarda.
+   El tipo lo decide la app por la extensión (no el navegador), así un HTML o
+   un SVG disfrazado nunca se guarda como página web. */
+const TIPOS_DOC_PERMITIDOS = {
+  pdf: 'application/pdf',
+  png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp',
+  dwg: 'application/octet-stream', dxf: 'application/octet-stream', skp: 'application/octet-stream',
+  glb: 'model/gltf-binary', gltf: 'model/gltf+json', obj: 'application/octet-stream',
+  zip: 'application/zip', rar: 'application/vnd.rar',
+  doc: 'application/msword', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xls: 'application/vnd.ms-excel', xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  ppt: 'application/vnd.ms-powerpoint', pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  csv: 'text/csv',
+};
+const TIPOS_PREVISUALIZABLES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/webp']);
+
+function extensionDe(nombre) {
+  const m = /\.([a-z0-9]{1,6})$/i.exec(String(nombre || '').trim());
+  return m ? m[1].toLowerCase() : '';
+}
+
+/* null si el archivo se puede subir; si no, el motivo */
+function tipoDocumentoSeguro(nombre) {
+  return TIPOS_DOC_PERMITIDOS[extensionDe(nombre)] || null;
+}
+
+/* Cierre de sesión por inactividad */
+const INACTIVIDAD_MAX_MS = 8 * 3600 * 1000;
+const CLAVE_ACTIVIDAD = 'mg-ultima-actividad';
+function registrarActividad() {
+  try { localStorage.setItem(CLAVE_ACTIVIDAD, String(Date.now())); } catch (e) { /* noop */ }
+}
+function sesionInactiva(ahora = Date.now()) {
+  let ultima = 0;
+  try { ultima = Number(localStorage.getItem(CLAVE_ACTIVIDAD)) || 0; } catch (e) { return false; }
+  return ultima > 0 && ahora - ultima > INACTIVIDAD_MAX_MS;
+}
+function vigilarInactividad() {
+  let pendiente = false;
+  const marcar = () => {
+    if (pendiente) return;
+    pendiente = true;
+    setTimeout(() => { pendiente = false; registrarActividad(); }, 30000);
+  };
+  ['pointerdown', 'keydown', 'touchstart', 'visibilitychange'].forEach((ev) => document.addEventListener(ev, marcar, { passive: true }));
+  setInterval(async () => {
+    if (state.user && sesionInactiva()) {
+      await supabaseClient.auth.signOut();
+      showToast('Por seguridad se cerró la sesión tras 8 horas sin uso.');
+    }
+  }, 5 * 60 * 1000);
+}
+
 function nuevoUUID() {
   if (window.crypto?.randomUUID) return window.crypto.randomUUID();
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -1259,7 +1366,7 @@ async function sincronizarEstado() {
       const res = await supabaseClient.from('proyectos').delete().eq('id', meta.dbId).select('id');
       if (res.error || !(res.data || []).length) {
         syncSnapshot.proyectos.delete(codigo);
-        showToast(`No se pudo eliminar ${codigo}: ${res.error?.message || 'sin permiso'}. Se recargan los datos.`);
+        showToast(`No se pudo eliminar ${codigo}: ${mensajeError(res.error, 'sin permiso')}. Se recargan los datos.`);
         setTimeout(() => recargarTrasConflicto(), 0);
         continue;
       }
@@ -1877,14 +1984,14 @@ const MENSAJES_AUTH = {
   'Invalid login credentials': 'Correo o contraseña incorrectos.',
   'Email not confirmed': 'Debes confirmar tu correo antes de ingresar. Revisa tu bandeja de entrada.',
   'User already registered': 'Ese correo ya tiene una cuenta. Inicia sesión.',
-  'Password should be at least 6 characters.': 'La contraseña debe tener mínimo 6 caracteres.',
+  'Password should be at least 6 characters.': 'La contraseña debe tener mínimo 8 caracteres, con letras y números.',
 };
 
 function traducirErrorAuth(error) {
   const msg = String(error?.message || error || 'Error desconocido');
   if (MENSAJES_AUTH[msg]) return MENSAJES_AUTH[msg];
   if (/rate limit/i.test(msg)) return 'Demasiados intentos. Espera un momento e inténtalo de nuevo.';
-  if (/password/i.test(msg) && /characters/i.test(msg)) return 'La contraseña es muy corta (mínimo 6 caracteres).';
+  if (/password/i.test(msg) && /characters/i.test(msg)) return 'La contraseña es muy corta (mínimo 8 caracteres, con letras y números).';
   if (/fetch|network/i.test(msg)) return 'Sin conexión con el servidor. Revisa tu internet.';
   return msg;
 }
@@ -1905,7 +2012,8 @@ async function iniciarSesion(email, password) {
 async function registrar(email, password, cargo, nombre, confirmacion) {
   const mail = String(email || '').trim().toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) return { ok: false, msg: 'Correo electrónico inválido.' };
-  if (String(password).length < 6) return { ok: false, msg: 'La contraseña debe tener mínimo 6 caracteres.' };
+  const problemaClave = validarClaveNueva(password, mail);
+  if (problemaClave) return { ok: false, msg: problemaClave };
   if (password !== confirmacion) return { ok: false, msg: 'Las contraseñas no coinciden.' };
   if (!String(nombre || '').trim()) return { ok: false, msg: 'Escribe tu nombre completo.' };
   const { data, error } = await supabaseClient.auth.signUp({
@@ -2081,7 +2189,8 @@ async function enviarRecuperacion(email) {
 }
 
 async function cambiarContrasena(nueva, confirmacion) {
-  if (String(nueva || '').length < 6) return { ok: false, msg: 'La contraseña debe tener mínimo 6 caracteres.' };
+  const problemaClave = validarClaveNueva(nueva, state.user?.email || '');
+  if (problemaClave) return { ok: false, msg: problemaClave };
   if (nueva !== confirmacion) return { ok: false, msg: 'Las contraseñas no coinciden.' };
   const { error } = await supabaseClient.auth.updateUser({ password: nueva });
   if (error) return { ok: false, msg: traducirErrorAuth(error) };
@@ -3187,7 +3296,7 @@ async function agregarPersonal() {
   btn.disabled = true;
   const { data, error } = await supabaseClient.from('carpinteros').insert({ nombre, cargo, activo: true }).select('*');
   btn.disabled = false;
-  if (error || !data?.length) { showToast(`No se pudo registrar: ${error?.message || 'sin permiso'}`); return; }
+  if (error || !data?.length) { showToast(`No se pudo registrar: ${mensajeError(error, 'sin permiso')}`); return; }
   state.carpinteros.push({ id: data[0].id, nombre: data[0].nombre, cargo: data[0].cargo, activo: true });
   document.getElementById('personal-nombre').value = '';
   renderPersonal();
@@ -3200,7 +3309,7 @@ async function actualizarPersonal(id, cambios) {
   const c = (state.carpinteros || []).find((x) => x.id === id);
   if (!c) return;
   const { data, error } = await supabaseClient.from('carpinteros').update(cambios).eq('id', id).select('*');
-  if (error || !data?.length) { showToast(`No se pudo actualizar: ${error?.message || 'sin permiso'}`); renderPersonal(); return; }
+  if (error || !data?.length) { showToast(`No se pudo actualizar: ${mensajeError(error, 'sin permiso')}`); renderPersonal(); return; }
   Object.assign(c, { cargo: data[0].cargo, activo: data[0].activo !== false });
   renderPersonal();
   renderEquipo();
@@ -3233,7 +3342,7 @@ async function eliminarPersonal(id) {
   encolarSync(async () => {
     const r = await supabaseClient.from('carpinteros').delete().eq('id', id).select('id');
     if (r.error || !(r.data || []).length) {
-      showToast(`No se pudo eliminar a ${c.nombre}: ${r.error?.message || 'sin permiso'}. Se recargan los datos.`);
+      showToast(`No se pudo eliminar a ${c.nombre}: ${mensajeError(r.error, 'sin permiso')}. Se recargan los datos.`);
       setTimeout(() => recargarDesdeBase().then(renderPersonal), 0);
     }
   });
@@ -4627,8 +4736,8 @@ function iconoDocumento(d) {
 }
 
 function sePuedePrevisualizar(d) {
-  const mime = d.tipo_mime || '';
-  return mime.startsWith('image/') || mime === 'application/pdf';
+  /* Solo PDF e imágenes, y que el tipo coincida con la extensión del nombre */
+  return TIPOS_PREVISUALIZABLES.has(d.tipo_mime) && tipoDocumentoSeguro(d.nombre) === d.tipo_mime;
 }
 
 function documentoHTML(d) {
@@ -4728,6 +4837,11 @@ async function subirDocumentos() {
   if (!puedeSubirDocumento(carpeta)) { showToast('Tu rol no puede subir documentos a esa carpeta.'); return; }
   if (!sbListo || !documentosEnTabla) { showToast('Sin conexión con la base de datos: no se pueden subir documentos.'); return; }
   if (!p.dbId) { showToast('El proyecto aún se está guardando. Intenta de nuevo en unos segundos.'); return; }
+  const noPermitidos = archivos.filter((f) => !tipoDocumentoSeguro(f.name));
+  if (noPermitidos.length) {
+    showToast(`Tipo de archivo no permitido: ${noPermitidos.map((f) => f.name).join(', ')}. Se aceptan PDF, imágenes, planos (DWG/DXF/SKP), modelos 3D, Office y ZIP.`);
+    return;
+  }
   const grandes = archivos.filter((f) => f.size > MAX_DOC_MB * 1024 * 1024);
   if (grandes.length) { showToast(`${grandes.map((f) => f.name).join(', ')} supera ${MAX_DOC_MB} MB.`); return; }
 
@@ -4741,25 +4855,26 @@ async function subirDocumentos() {
     const f = archivos[i];
     btn.innerHTML = `<i class="fas fa-spinner fa-spin mr-1" aria-hidden="true"></i>Subiendo ${i + 1} de ${archivos.length}…`;
     const path = `${p.dbId}/${Date.now()}-${nuevoUUID().slice(0, 8)}-${nombreSeguroArchivo(f.name)}`;
+    const tipoSeguro = tipoDocumentoSeguro(f.name);
     const subida = await supabaseClient.storage.from(bucket).upload(path, f, {
-      contentType: f.type || 'application/octet-stream',
+      contentType: tipoSeguro,
       upsert: false,
     });
-    if (subida.error) { fallos.push(`${f.name}: ${subida.error.message}`); continue; }
+    if (subida.error) { fallos.push(`${f.name}: ${mensajeError(subida.error)}`); continue; }
     const { data, error } = await supabaseClient.from('documentos').insert({
       proyecto_id: p.dbId,
       carpeta,
       categoria,
       nombre: f.name,
       ruta: `${bucket}/${path}`,
-      tipo_mime: f.type || null,
+      tipo_mime: tipoSeguro,
       tamano_bytes: f.size,
       notas: notas || null,
     }).select().single();
     if (error) {
       /* Sin registro el archivo quedaría huérfano: se retira del bucket */
       await supabaseClient.storage.from(bucket).remove([path]);
-      fallos.push(`${f.name}: ${error.message}`);
+      fallos.push(`${f.name}: ${mensajeError(error)}`);
       continue;
     }
     nuevos.push(data);
@@ -4784,9 +4899,10 @@ async function abrirDocumento(id, descargar) {
   const d = documentosDe(p?.id).find((x) => x.id === id);
   const partes = separarRuta(d?.ruta);
   if (!d || !partes) { showToast('Este documento no tiene archivo asociado.'); return; }
+  if (!descargar && !sePuedePrevisualizar(d)) descargar = true; /* nada que no sea PDF/imagen se abre dentro de la app */
   const opciones = descargar ? { download: d.nombre } : undefined;
   const { data, error } = await supabaseClient.storage.from(partes.bucket).createSignedUrl(partes.path, 600, opciones);
-  if (error || !data?.signedUrl) { showToast(`No se pudo abrir el documento: ${error?.message || 'sin enlace'}`); return; }
+  if (error || !data?.signedUrl) { showToast(`No se pudo abrir el documento: ${mensajeError(error, 'sin enlace')}`); return; }
   const esPdf = !(d.tipo_mime || '').startsWith('image/');
   if (esAppNativa() && (descargar || esPdf)) { abrirEnlaceExterno(data.signedUrl); return; }
   if (descargar) {
@@ -4836,10 +4952,10 @@ async function eliminarDocumento(id) {
   const partes = separarRuta(d.ruta);
   if (partes) {
     const { error } = await supabaseClient.storage.from(partes.bucket).remove([partes.path]);
-    if (error) { showToast(`No se pudo eliminar el archivo: ${error.message}`); return; }
+    if (error) { showToast(`No se pudo eliminar el archivo: ${mensajeError(error)}`); return; }
   }
   const { error } = await supabaseClient.from('documentos').delete().eq('id', d.id);
-  if (error) { showToast(`No se pudo eliminar el registro: ${error.message}`); return; }
+  if (error) { showToast(`No se pudo eliminar el registro: ${mensajeError(error)}`); return; }
   state.documentos[p.id] = documentosDe(p.id).filter((x) => x.id !== d.id);
   cerrarVisorDocumento();
   renderDocumentos(p);
@@ -5013,7 +5129,7 @@ async function subirImagenProyecto(file, codigo) {
     cacheControl: '31536000',
     upsert: false,
   });
-  if (error) throw new Error(`No se pudo subir la imagen: ${error.message}`);
+  if (error) throw new Error(`No se pudo subir la imagen: ${mensajeError(error)}`);
   return supabaseClient.storage.from(BUCKET_IMAGENES).getPublicUrl(ruta).data.publicUrl;
 }
 
@@ -5624,7 +5740,7 @@ function abrirRecuperacion(modo, email = '') {
   const esNueva = modo === 'nueva';
   document.getElementById('forgot-title').textContent = esNueva ? 'Crea tu nueva contraseña' : 'Recuperar contraseña';
   document.getElementById('forgot-sub').textContent = esNueva
-    ? 'Escribe la nueva contraseña para tu cuenta (mínimo 6 caracteres).'
+    ? 'Escribe la nueva contraseña para tu cuenta (mínimo 8 caracteres, con letras y números).'
     : 'Te enviaremos un enlace a tu correo para crear una nueva contraseña.';
   document.getElementById('forgot-email-wrap').classList.toggle('hidden', esNueva);
   document.getElementById('forgot-pass-wrap').classList.toggle('hidden', !esNueva);
@@ -5648,7 +5764,7 @@ function exigirNuevaContrasena() {
   else mostrarLogin();
   abrirRecuperacion('nueva');
   document.getElementById('forgot-close').textContent = 'Cancelar y salir';
-  document.getElementById('forgot-sub').textContent = 'Por seguridad, crea tu nueva contraseña antes de entrar (mínimo 6 caracteres).';
+  document.getElementById('forgot-sub').textContent = 'Por seguridad, crea tu nueva contraseña antes de entrar (mínimo 8 caracteres, con letras y números).';
   try { history.replaceState(null, '', window.location.pathname); } catch (e) { /* noop */ }
 }
 
@@ -6107,7 +6223,7 @@ async function cargarUsuarios() {
     if (error) {
       console.error('[MODUGAL] No se pudo cargar la lista de usuarios.', error);
       const box = document.getElementById('usuarios-lista');
-      if (box) box.innerHTML = `<p class="text-xs font-bold text-red-600 p-4">No se pudo cargar la lista de usuarios: ${esc(error.message)}</p>`;
+      if (box) box.innerHTML = `<p class="text-xs font-bold text-red-600 p-4">No se pudo cargar la lista de usuarios: ${esc(mensajeError(error))}</p>`;
       return;
     }
     state.usuarios = data || [];
@@ -6237,7 +6353,7 @@ async function accionUsuario(accion, id) {
   const { data, error } = await supabaseClient.from('usuarios').update(cambios).eq('id', id).select();
   if (error || !data?.length) {
     card?.querySelectorAll('button,select').forEach((el) => { el.disabled = false; });
-    showToast(`No se pudo actualizar a ${u.nombre}: ${error?.message || 'sin permiso'}`);
+    showToast(`No se pudo actualizar a ${u.nombre}: ${mensajeError(error, 'sin permiso')}`);
     return;
   }
   Object.assign(u, data[0]);
@@ -6463,7 +6579,7 @@ async function cargarHistorial(codigo) {
     .limit(150);
   if (state.fichaId !== codigo) return; /* el usuario ya cambió de ficha */
   if (error) {
-    lista.innerHTML = `<li class="text-red-600 font-bold p-4">No se pudo cargar el historial: ${esc(error.message)}</li>`;
+    lista.innerHTML = `<li class="text-red-600 font-bold p-4">No se pudo cargar el historial: ${esc(mensajeError(error))}</li>`;
     return;
   }
   const eventos = (data || []).map((ev) => ({ ...ev, lineas: lineasCambio(ev) }))
@@ -6484,7 +6600,7 @@ async function cargarHistorial(codigo) {
         <div class="bg-white border border-slate-200 rounded-xl p-3 shadow-sm">
           <div class="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <p class="text-slate-800"><strong>${esc(ev.usuario_nombre || 'Desconocido')}</strong>
-              <span class="text-slate-500">${verbos[ev.accion] || ev.accion} ${esc(t.label.toLowerCase())}</span></p>
+              <span class="text-slate-500">${esc(verbos[ev.accion] || ev.accion)} ${esc(t.label.toLowerCase())}</span></p>
             <time class="text-[10px] text-slate-400 font-bold" datetime="${esc(ev.creado_en)}">${esc(fechaHoraHist(ev.creado_en))}</time>
           </div>
           ${ev.usuario_rol ? `<p class="text-[10px] text-slate-400 uppercase font-bold">${esc(labelCargo(ev.usuario_rol))}</p>` : ''}
@@ -6637,7 +6753,7 @@ function tarjetaIncidenteHTML(p, x) {
         <div><p class="text-[9px] uppercase font-black text-slate-400">Responsable</p><p class="font-bold text-slate-800">${esc(x.responsable || 'Sin asignar')}</p></div>
         <div><p class="text-[9px] uppercase font-black text-slate-400">Compromiso</p><p class="font-bold ${vencido ? 'text-red-700' : 'text-slate-800'}">${x.fechaCompromiso ? esc(formatFechaLarga(parseFecha(x.fechaCompromiso))) : '—'}</p></div>
         <div><p class="text-[9px] uppercase font-black text-slate-400">${abierto ? 'Abierto hace' : 'Duró'}</p><p class="font-bold text-slate-800">${diasAbiertoIncidente(x)} d</p></div>
-        <div><p class="text-[9px] uppercase font-black text-slate-400">Impacto entrega</p><p class="font-bold ${x.diasImpacto ? 'text-red-700' : 'text-slate-800'}">${x.diasImpacto ? `+${x.diasImpacto} d` : '—'}</p></div>
+        <div><p class="text-[9px] uppercase font-black text-slate-400">Impacto entrega</p><p class="font-bold ${x.diasImpacto ? 'text-red-700' : 'text-slate-800'}">${x.diasImpacto ? `+${esc(Number(x.diasImpacto) || 0)} d` : '—'}</p></div>
       </div>
       ${x.accion ? `<p class="mt-2 text-slate-700"><span class="font-bold">Plan:</span> ${esc(x.accion)}</p>` : ''}
       ${!abierto && x.solucion ? `<p class="mt-2 text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1"><span class="font-bold">Solución:</span> ${esc(x.solucion)}</p>` : ''}
@@ -6907,6 +7023,9 @@ async function init() {
   iniciarAppMovil();
   iniciarComboCiudad();
   iniciarValidacionFormularios();
+  if (sesionInactiva()) await supabaseClient.auth.signOut();
+  registrarActividad();
+  vigilarInactividad();
   /* Filtros de Estadísticas */
   [['stats-anio', 'anio'], ['stats-q', 'q'], ['stats-proyecto', 'proyecto']].forEach(([id, clave]) => {
     document.getElementById(id)?.addEventListener('change', (e) => {
