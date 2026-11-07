@@ -10,6 +10,9 @@
   Strict-Transport-Security: max-age=31536000; includeSubDomains
   Cross-Origin-Opener-Policy: same-origin
 
-# El service worker siempre se revisa (así las actualizaciones llegan al instante)
+# El service worker siempre se revisa (así las actualizaciones llegan al instante).
+# No lleva la CSP de la página: un worker con esa CSP no podría descargar
+# Tailwind/Supabase/íconos de los CDN para guardarlos y la app quedaría sin estilos.
 /sw.js
+  ! Content-Security-Policy
   Cache-Control: no-cache

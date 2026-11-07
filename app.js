@@ -291,6 +291,15 @@ function esc(str) {
    - Cierre de sesión por inactividad (equipos compartidos del taller).
    ========================================================================== */
 
+/* La app se mudó de GitHub Pages a Cloudflare Pages (nov 2026): quien abra el
+   enlace viejo llega a la dirección nueva, con los mismos parámetros (p. ej. el
+   enlace de recuperación de contraseña que viene en el #). */
+(function redirigirDominioViejo() {
+  if (location.hostname === 'nairoviancha.github.io') {
+    location.replace('https://modugal-app.pages.dev/' + location.search + location.hash);
+  }
+})();
+
 (function antiClickjacking() {
   try {
     if (window.top !== window.self) {
@@ -6927,7 +6936,7 @@ function bindIncidentesEvents() {
    existe, así que todo esto es inofensivo en la versión web.
    ========================================================================== */
 
-const URL_WEB_PUBLICA = 'https://nairoviancha.github.io/control_logistico/';
+const URL_WEB_PUBLICA = 'https://modugal-app.pages.dev/';
 
 function esAppNativa() {
   return !!window.Capacitor?.isNativePlatform?.();
