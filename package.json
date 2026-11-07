@@ -2,9 +2,10 @@
   "name": "modugal",
   "version": "1.0.0",
   "private": true,
-  "description": "MODUGAL - espacios renovados · app web (GitHub Pages) y app móvil (Capacitor iOS/Android)",
+  "description": "MODUGAL - espacios renovados · app web (Cloudflare Pages) y app móvil (Capacitor iOS/Android)",
   "scripts": {
     "web": "node scripts/copiar-web.mjs",
+    "cloudflare": "node scripts/copiar-web.mjs --web",
     "android": "node scripts/copiar-web.mjs && npx cap sync android && npx cap open android",
     "ios": "node scripts/copiar-web.mjs && npx cap sync ios && npx cap open ios",
     "sync": "node scripts/copiar-web.mjs && npx cap sync",

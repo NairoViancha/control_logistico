@@ -2241,12 +2241,19 @@ function aplicarTema() {
   document.documentElement.classList.toggle('tema-oscuro', oscuro);
   const btn = document.getElementById('btn-tema');
   if (btn) btn.innerHTML = oscuro ? '<i class="fas fa-sun w-4 h-4"></i>' : '<i class="fas fa-moon w-4 h-4"></i>';
+  /* Color de la barra del navegador / barra de estado del celular */
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', oscuro ? '#0e0f11' : '#f8fafc');
+  document.querySelector('meta[name="apple-mobile-web-app-status-bar-style"]')?.setAttribute('content', oscuro ? 'black' : 'default');
 }
 
 function toggleTema() {
   state.tema = state.tema === 'oscuro' ? 'claro' : 'oscuro';
-  localStorage.setItem(TEMA_KEY, state.tema);
+  try { localStorage.setItem(TEMA_KEY, state.tema); } catch (_) { /* sin almacenamiento: dura la sesión */ }
+  /* Transición suave solo durante el cambio (no afecta el resto del uso) */
+  const raiz = document.documentElement;
+  raiz.classList.add('cambiando-tema');
   aplicarTema();
+  setTimeout(() => raiz.classList.remove('cambiando-tema'), 320);
 }
 
 function mostrarLogin() {
