@@ -9,7 +9,7 @@
      sesión del usuario.
    Al cambiar este archivo, sube VERSION para limpiar las copias viejas.
    ========================================================================== */
-const VERSION = 'modugal-v2';
+const VERSION = 'modugal-v4';
 const APP = [
   './',
   './index.html',

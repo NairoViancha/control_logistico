@@ -42,13 +42,6 @@ const EST_PRODUCCION = { EN_PROCESO: 'En proceso', DETENIDO: 'Detenido', COMPLET
 
 const ETAPAS_COMERCIAL = ['Prospectos', 'Cotizaciones', 'Aprobados', 'En Fabricación', 'Instalaciones', 'Garantías', 'Prospecto No Continuado'];
 
-const STAGES_STATS = [
-  { phase: 'Diseño & Trazos', days: '3.2 Días', label: 'Óptimo', color: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
-  { phase: 'Corte de Tableros', days: '2.5 Días', label: 'Óptimo', color: 'border-emerald-200 bg-emerald-50 text-emerald-800' },
-  { phase: 'Fabricación & Armado', days: '8.4 Días', label: 'Cuello de Botella', color: 'border-red-200 bg-red-50 text-red-800' },
-  { phase: 'Instalación Final', days: '4.1 Días', label: 'Normal', color: 'border-slate-200 bg-slate-50 text-slate-800' },
-];
-
 /* Personal de planta y actividades que puede estar haciendo cada persona.
    (Las fases Recepción/Asignación/Instalación son del proyecto, no del operario.) */
 const CARGOS_PERSONAL = ['Carpintero', 'Auxiliar de carpintería', 'Eléctrico'];
@@ -427,6 +420,8 @@ function normalizarMueble(m, index) {
     actividad: ACTIVIDAD_POR_NOMBRE[item.actividad] ? item.actividad : 'Armando',
     detalle: item.detalle || '',
     estadoTrabajo: estadoTrabajoValido(item.estadoTrabajo),
+    asignadoEn: item.asignadoEn || null,
+    completadoEn: item.completadoEn || null,
     dbVersion: Number.isInteger(item.dbVersion) ? item.dbVersion : null,
   };
 }
@@ -968,6 +963,8 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRow
           actividad: row.actividad,
           detalle: row.detalle,
           estadoTrabajo: row.estado_trabajo,
+          asignadoEn: row.asignado_en || ((row.responsable_id || row.responsable_nombre) ? row.created_at : null) || null,
+          completadoEn: row.completado_en || null,
           dbVersion: row.version,
         }, i));
     });
@@ -987,6 +984,9 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRow
       grupoId: t.grupo_id || null,
       esLider: Boolean(t.es_lider),
       estado: estadoTrabajoValido(t.estado_tarea),
+      /* Tiempos (v11): los pone la base; antes de la v11 se usa created_at */
+      asignadaEn: t.asignada_en || t.created_at || null,
+      completadaEn: t.completada_en || null,
     });
   });
 
@@ -1703,6 +1703,7 @@ function aplicarDatos(data) {
   state.carpinteros = data.carpinteros || [];
   state.finanzas = puedeVerFinanzas() ? (data.finanzas || {}) : {};
   if (data.documentos) state.documentos = data.documentos;
+  registrarTiemposVistos();
 }
 
 function cargarEstadoLocal() {
@@ -1758,6 +1759,7 @@ function guardarCacheLocal() {
 }
 
 function commit() {
+  actualizarTiemposLocales();
   guardarCacheLocal();
   renderAll();
   encolarSync(sincronizarEstado);
@@ -2715,6 +2717,8 @@ function asignacionesPorPersona() {
         actividad: m.actividad || 'Armando',
         detalle: m.detalle || '',
         estado: estadoTrabajoValido(m.estadoTrabajo),
+        inicio: m.asignadoEn || null,
+        fin: m.completadoEn || null,
         projectId: p.id,
         projectName: p.name,
         carpenter: m.carpenter,
@@ -2740,11 +2744,94 @@ function asignacionesPorPersona() {
         projectName: p?.name || 'Sin proyecto',
         carpenter,
         estado: estadoTrabajoValido(t.estado),
+        inicio: t.asignadaEn || null,
+        fin: t.completadaEn || null,
         detenido: p?.status === EST_PRODUCCION.DETENIDO,
       });
     });
   });
   return assignments;
+}
+
+/* ==========================================================================
+   21h. TIEMPOS DE TRABAJO (v11)
+   --------------------------------------------------------------------------
+   Cada tarea y cada mueble asignado guarda cuándo se asignó y cuándo se
+   completó. La base de datos pone las horas oficiales (trigger); aquí se
+   llenan al momento para que la pantalla responda sin esperar.
+   ========================================================================== */
+
+const tiemposVistos = new Map();
+
+function recorrerTrabajos(fn) {
+  Object.entries(state.tareas || {}).forEach(([persona, lista]) => (lista || []).forEach((t) => fn('t', t, persona)));
+  state.proyectos.forEach((p) => (p.muebles || []).forEach((m) => fn('m', m, m.carpenter || '')));
+}
+
+function registrarTiemposVistos() {
+  tiemposVistos.clear();
+  recorrerTrabajos((tipo, x, persona) => {
+    tiemposVistos.set(`${tipo}:${x.id}`, { persona, estado: tipo === 't' ? x.estado : x.estadoTrabajo });
+  });
+}
+
+function actualizarTiemposLocales() {
+  const ahora = new Date().toISOString();
+  recorrerTrabajos((tipo, x, persona) => {
+    const clave = `${tipo}:${x.id}`;
+    const antes = tiemposVistos.get(clave);
+    const estado = tipo === 't' ? x.estado : x.estadoTrabajo;
+    const campoIni = tipo === 't' ? 'asignadaEn' : 'asignadoEn';
+    const campoFin = tipo === 't' ? 'completadaEn' : 'completadoEn';
+    /* Solo se marca hora en cambios reales hechos ahora: trabajo nuevo, cambio de
+       persona o paso a Completado. Los datos viejos sin hora se dejan sin hora. */
+    if (!persona) x[campoIni] = null;
+    else if (!antes || antes.persona !== persona) x[campoIni] = ahora;
+    if (estado !== 'Completado') x[campoFin] = null;
+    else if (!x[campoFin] && (!antes || antes.estado !== 'Completado' || antes.persona !== persona)) x[campoFin] = ahora;
+    tiemposVistos.set(clave, { persona, estado });
+  });
+}
+
+/* "2 d 5 h", "3 h 20 min", "15 min" */
+function formatoDuracion(ms) {
+  if (!Number.isFinite(ms) || ms < 0) return '—';
+  const min = Math.round(ms / 60000);
+  if (min < 60) return `${Math.max(min, 1)} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} h${min % 60 ? ` ${min % 60} min` : ''}`;
+  const d = Math.floor(h / 24);
+  return `${d} d${h % 24 ? ` ${h % 24} h` : ''}`;
+}
+
+function duracionTrabajo(task, ahora = Date.now()) {
+  const ini = task.inicio ? Date.parse(task.inicio) : NaN;
+  if (!Number.isFinite(ini)) return null;
+  const fin = task.fin ? Date.parse(task.fin) : (task.estado === 'Completado' ? NaN : ahora);
+  return Number.isFinite(fin) ? Math.max(fin - ini, 0) : null;
+}
+
+function lineaTiempoTrabajo(task) {
+  if (!task.inicio) return '';
+  const fecha = new Date(task.inicio).toLocaleString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const dur = duracionTrabajo(task);
+  if (task.estado === 'Completado') {
+    return `<p class="tiempo-trabajo tiempo-trabajo--ok" title="Asignada el ${esc(fecha)}"><i class="fas fa-flag-checkered" aria-hidden="true"></i>Completada en ${esc(dur === null ? '—' : formatoDuracion(dur))}</p>`;
+  }
+  return `<p class="tiempo-trabajo ${task.estado === 'Detenido' ? 'tiempo-trabajo--alerta' : ''}" title="Asignada el ${esc(fecha)}"><i class="fas fa-stopwatch" aria-hidden="true"></i>Asignada hace ${esc(formatoDuracion(dur))} · ${esc(fecha)}</p>`;
+}
+
+function resumenTiemposPersona(tasks) {
+  const hechas = tasks.filter((t) => t.estado === 'Completado').map((t) => duracionTrabajo(t)).filter((d) => d !== null);
+  const abiertas = tasks.filter((t) => t.estado !== 'Completado' && t.inicio);
+  if (!hechas.length && !abiertas.length) return '';
+  const prom = hechas.length ? hechas.reduce((a, b) => a + b, 0) / hechas.length : null;
+  const masAntigua = abiertas.length ? Math.max(...abiertas.map((t) => duracionTrabajo(t) || 0)) : null;
+  return `
+    <div class="px-4 py-2 border-b border-slate-200 bg-white grid grid-cols-2 gap-2 text-[10px]">
+      <div><p class="uppercase font-bold text-slate-400 tracking-wide">Promedio por tarea</p><p class="font-black text-slate-900 text-xs">${prom === null ? '—' : esc(formatoDuracion(prom))} <span class="font-bold text-slate-400">(${hechas.length} hecha${hechas.length === 1 ? '' : 's'})</span></p></div>
+      <div><p class="uppercase font-bold text-slate-400 tracking-wide">Más antigua abierta</p><p class="font-black text-xs ${masAntigua > 7 * 864e5 ? 'text-red-700' : 'text-slate-900'}">${masAntigua === null ? '—' : esc(formatoDuracion(masAntigua))}</p></div>
+    </div>`;
 }
 
 function tarjetaTareaHTML(task) {
@@ -2769,6 +2856,7 @@ function tarjetaTareaHTML(task) {
       <p class="font-bold text-slate-900 leading-tight">${esc(task.text)}</p>
       ${task.detalle ? `<p class="text-slate-700 mt-1"><i class="fas fa-arrow-right text-[9px] text-slate-400 mr-1" aria-hidden="true"></i>${esc(task.detalle)}</p>` : ''}
       <p class="text-slate-500 mt-1 truncate">Proyecto: ${esc(task.projectName)}</p>
+      ${lineaTiempoTrabajo(task)}
       ${instalacion && (lider || companeros.length) ? `
         <p class="text-[10px] text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1 mt-2">
           ${lider && !task.esLider ? `Líder: <strong>${esc(lider)}</strong>` : ''}${lider && !task.esLider && companeros.length ? ' · ' : ''}${companeros.length ? `Con: ${esc(companeros.join(', '))}` : ''}
@@ -2813,6 +2901,7 @@ function renderEquipo() {
         </div>
         <span class="bg-slate-900 text-white text-xs font-black px-3 py-1 rounded-lg shadow-sm shrink-0">${tasks.length} ${tasks.length === 1 ? 'Tarea' : 'Tareas'}</span>
       </div>
+      ${resumenTiemposPersona(tasks)}
       <div class="p-4 flex-1 overflow-y-auto space-y-3">
         ${tasks.length ? tasks.map(tarjetaTareaHTML).join('') : '<p class="text-xs text-slate-400 text-center py-3">Sin tareas asignadas.</p>'}
         ${puedeAsignar() && registrado ? `
@@ -3751,15 +3840,222 @@ function renderTabla() {
    14. ESTADÍSTICAS & RENDIMIENTO
    ========================================================================== */
 
+/* ==========================================================================
+   14. ESTADÍSTICAS · Medición de tiempos por etapa (v11)
+   --------------------------------------------------------------------------
+   Etapas que se miden (por proyecto y en promedio):
+     1. Esperando material  → compras: fecha de solicitud → fecha de recibido
+     2. Escogiendo material → tareas/muebles con esa actividad
+     3. Armando             → tareas/muebles con actividad "Armando"
+     4. Instalando          → tareas/muebles con actividad "Instalación"
+   Duración de una etapa en un proyecto = desde que empezó el primer trabajo
+   hasta que terminó el último. Si alguno sigue abierto, la etapa está "en curso".
+   El año/trimestre se toma de la fecha en que terminó la etapa.
+   ========================================================================== */
+
+const ETAPAS_TIEMPO = [
+  { id: 'material', nombre: 'Esperando material', ayuda: 'Desde que se pide hasta que llega todo', porDias: true },
+  { id: 'seleccion', nombre: 'Escogiendo material', ayuda: 'Actividad "Escogiendo material"', actividad: 'Escogiendo material' },
+  { id: 'armado', nombre: 'Armando', ayuda: 'Actividad "Armando"', actividad: 'Armando' },
+  { id: 'instalacion', nombre: 'Instalando', ayuda: 'Actividad "Instalación"', actividad: 'Instalación' },
+];
+const DIA_MS = 864e5;
+
+function formatoEtapa(ms, porDias) {
+  if (ms === null || ms === undefined) return '—';
+  if (porDias) {
+    const d = Math.round(ms / DIA_MS);
+    return d <= 0 ? 'Mismo día' : `${d} d`;
+  }
+  return formatoDuracion(ms);
+}
+
+function trimestreDeFecha(ms) {
+  const d = new Date(ms);
+  return { anio: d.getFullYear(), q: Math.floor(d.getMonth() / 3) + 1 };
+}
+
+/* Trabajos (tareas + muebles asignados) con su etapa */
+function trabajosConTiempo() {
+  const lista = [];
+  Object.entries(state.tareas || {}).forEach(([persona, ts]) => (ts || []).forEach((t) => {
+    lista.push({ persona, proyectoId: t.projectId, actividad: t.actividad, estado: t.estado, inicio: t.asignadaEn, fin: t.completadaEn, texto: t.text });
+  }));
+  state.proyectos.forEach((p) => (p.muebles || []).forEach((m) => {
+    if (!m.carpenter) return;
+    lista.push({ persona: m.carpenter, proyectoId: p.id, actividad: m.actividad, estado: m.estadoTrabajo, inicio: m.asignadoEn, fin: m.completadoEn, texto: m.name });
+  }));
+  return lista;
+}
+
+/* Medición de una etapa en un proyecto: { ms, terminadaEn, enCurso, n } o null */
+function medirEtapa(p, etapa, trabajos, ahora) {
+  if (etapa.porDias) {
+    const compras = (p.pedidos || []).filter((od) => od.status !== 'Cancelado' && od.fechaSolicitud);
+    if (!compras.length) return null;
+    const ini = Math.min(...compras.map((od) => parseFecha(od.fechaSolicitud)?.getTime()).filter(Number.isFinite));
+    if (!Number.isFinite(ini)) return null;
+    const pendientes = compras.filter((od) => !(od.status === 'Recibido' && od.fechaRecibida));
+    if (pendientes.length) return { ms: ahora - ini, enCurso: true, n: compras.length };
+    const fin = Math.max(...compras.map((od) => parseFecha(od.fechaRecibida)?.getTime()).filter(Number.isFinite));
+    return { ms: Math.max(fin - ini, 0), terminadaEn: fin, enCurso: false, n: compras.length };
+  }
+  const propios = trabajos.filter((w) => w.proyectoId === p.id && w.actividad === etapa.actividad && w.inicio);
+  if (!propios.length) return null;
+  const ini = Math.min(...propios.map((w) => Date.parse(w.inicio)));
+  const abiertos = propios.filter((w) => w.estado !== 'Completado' || !w.fin);
+  if (abiertos.length) return { ms: ahora - ini, enCurso: true, n: propios.length };
+  const fin = Math.max(...propios.map((w) => Date.parse(w.fin)));
+  return { ms: Math.max(fin - ini, 0), terminadaEn: fin, enCurso: false, n: propios.length };
+}
+
+function enPeriodo(ms, anio, q) {
+  if (!Number.isFinite(ms)) return false;
+  const t = trimestreDeFecha(ms);
+  return (anio === 'Todos' || t.anio === Number(anio)) && (q === 'Todos' || t.q === Number(q));
+}
+
+function promedio(nums) {
+  return nums.length ? nums.reduce((a, b) => a + b, 0) / nums.length : null;
+}
+
+function calcularEstadisticas() {
+  const ahora = Date.now();
+  const f = state.statsFiltro || { anio: 'Todos', q: 'Todos', proyecto: 'Todos' };
+  const trabajos = trabajosConTiempo();
+  const proyectos = state.proyectos.filter((p) => f.proyecto === 'Todos' || p.id === f.proyecto);
+
+  const porProyecto = proyectos.map((p) => ({
+    p,
+    etapas: Object.fromEntries(ETAPAS_TIEMPO.map((e) => [e.id, medirEtapa(p, e, trabajos, ahora)])),
+  })).filter((x) => Object.values(x.etapas).some(Boolean));
+
+  const resumen = ETAPAS_TIEMPO.map((e) => {
+    const hechas = porProyecto.map((x) => x.etapas[e.id]).filter((m) => m && !m.enCurso && enPeriodo(m.terminadaEn, f.anio, f.q));
+    const enCurso = porProyecto.map((x) => x.etapas[e.id]).filter((m) => m && m.enCurso);
+    const valores = hechas.map((m) => m.ms);
+    return {
+      etapa: e,
+      prom: promedio(valores),
+      min: valores.length ? Math.min(...valores) : null,
+      max: valores.length ? Math.max(...valores) : null,
+      n: valores.length,
+      enCurso: enCurso.length,
+    };
+  });
+
+  /* Trimestres del año elegido (o del actual) */
+  const anioQ = f.anio === 'Todos' ? new Date().getFullYear() : Number(f.anio);
+  const trimestres = [1, 2, 3, 4].map((q) => ({
+    q,
+    valores: Object.fromEntries(ETAPAS_TIEMPO.map((e) => {
+      const ms = porProyecto.map((x) => x.etapas[e.id]).filter((m) => m && !m.enCurso && enPeriodo(m.terminadaEn, anioQ, q)).map((m) => m.ms);
+      return [e.id, { prom: promedio(ms), n: ms.length }];
+    })),
+  }));
+
+  /* Por persona: tareas completadas en el periodo */
+  const personas = {};
+  trabajos.filter((w) => f.proyecto === 'Todos' || w.proyectoId === f.proyecto).forEach((w) => {
+    const r = personas[w.persona] || (personas[w.persona] = { nombre: w.persona, hechas: [], porEtapa: {}, abiertas: [] });
+    const ini = Date.parse(w.inicio);
+    if (!Number.isFinite(ini)) return;
+    if (w.estado === 'Completado' && w.fin) {
+      const fin = Date.parse(w.fin);
+      if (!enPeriodo(fin, f.anio, f.q)) return;
+      r.hechas.push(fin - ini);
+      const et = ETAPAS_TIEMPO.find((e) => e.actividad && e.actividad === w.actividad);
+      if (et) (r.porEtapa[et.id] = r.porEtapa[et.id] || []).push(fin - ini);
+    } else {
+      r.abiertas.push(ahora - ini);
+    }
+  });
+
+  return { f, porProyecto, resumen, trimestres, anioQ, personas: Object.values(personas) };
+}
+
+function barraTiempo(ms, max, texto) {
+  const pct = ms && max ? Math.max(4, Math.round((ms / max) * 100)) : 0;
+  return `<div class="stat-barra" title="${esc(texto)}"><span style="width:${pct}%"></span></div>`;
+}
+
 function renderStats() {
-  const contenedor = document.getElementById('stats-view');
-  if (!contenedor) return;
-  contenedor.innerHTML = STAGES_STATS.map((s) => `
-    <div class="p-4 rounded-xl border ${s.color}">
-      <span class="text-[10px] font-black uppercase px-2 py-0.5 rounded bg-white border border-slate-200 shadow-sm">${s.label}</span>
-      <h4 class="font-bold text-slate-900 mt-2 text-sm">${s.phase}</h4>
-      <p class="text-3xl font-black mt-1">${s.days}</p>
+  const cont = document.getElementById('stats-view');
+  if (!cont) return;
+  if (!state.statsFiltro) state.statsFiltro = { anio: 'Todos', q: 'Todos', proyecto: 'Todos' };
+  const d = calcularEstadisticas();
+
+  /* Filtros: años con datos */
+  const anios = new Set([new Date().getFullYear()]);
+  d.porProyecto.forEach((x) => Object.values(x.etapas).forEach((m) => { if (m?.terminadaEn) anios.add(trimestreDeFecha(m.terminadaEn).anio); }));
+  const selAnio = document.getElementById('stats-anio');
+  const selQ = document.getElementById('stats-q');
+  const selP = document.getElementById('stats-proyecto');
+  selAnio.innerHTML = '<option value="Todos">Todos los años</option>' + [...anios].sort((a, b) => b - a).map((a) => `<option value="${a}">${a}</option>`).join('');
+  selAnio.value = d.f.anio;
+  selQ.value = d.f.q;
+  selP.innerHTML = '<option value="Todos">Todos los proyectos</option>' + ordenarRecientes(state.proyectos.slice())
+    .map((p) => `<option value="${esc(p.id)}">${esc(p.name)} · ${esc(p.client)}</option>`).join('');
+  selP.value = state.proyectos.some((p) => p.id === d.f.proyecto) ? d.f.proyecto : 'Todos';
+
+  const periodo = `${d.f.q === 'Todos' ? '' : `T${d.f.q} `}${d.f.anio === 'Todos' ? 'todo el historial' : d.f.anio}`;
+
+  /* 1. Tarjetas por etapa */
+  const tarjetas = d.resumen.map((r, i) => `
+    <div class="stat-etapa">
+      <p class="stat-etapa__num">${i + 1}</p>
+      <p class="text-[10px] font-black uppercase tracking-wide text-slate-500">${esc(r.etapa.nombre)}</p>
+      <p class="text-3xl font-black text-slate-900 mt-1 leading-none">${esc(formatoEtapa(r.prom, r.etapa.porDias))}</p>
+      <p class="text-[11px] text-slate-500 mt-1">${r.n ? `Promedio de ${r.n} proyecto${r.n === 1 ? '' : 's'} · ${esc(formatoEtapa(r.min, r.etapa.porDias))} a ${esc(formatoEtapa(r.max, r.etapa.porDias))}` : 'Sin etapas terminadas en el periodo'}</p>
+      ${r.enCurso ? `<p class="stat-etapa__curso">${r.enCurso} en curso ahora</p>` : ''}
+      <p class="text-[10px] text-slate-400 mt-2">${esc(r.etapa.ayuda)}</p>
     </div>`).join('');
+
+  /* 2. Por trimestre */
+  const maxQ = Math.max(1, ...d.trimestres.flatMap((t) => ETAPAS_TIEMPO.map((e) => t.valores[e.id].prom || 0)));
+  const tablaQ = `
+    <table class="stat-tabla">
+      <thead><tr><th>Trimestre ${d.anioQ}</th>${ETAPAS_TIEMPO.map((e) => `<th>${esc(e.nombre)}</th>`).join('')}</tr></thead>
+      <tbody>${d.trimestres.map((t) => `
+        <tr><td class="font-black">T${t.q}</td>${ETAPAS_TIEMPO.map((e) => {
+          const v = t.valores[e.id];
+          return `<td>${v.n ? `<span class="font-bold">${esc(formatoEtapa(v.prom, e.porDias))}</span> <span class="text-slate-400">(${v.n})</span>${barraTiempo(v.prom, maxQ, `${e.nombre} T${t.q}: ${formatoEtapa(v.prom, e.porDias)}`)}` : '<span class="text-slate-300">—</span>'}</td>`;
+        }).join('')}</tr>`).join('')}
+      </tbody>
+    </table>`;
+
+  /* 3. Por proyecto */
+  const filasP = d.porProyecto.map((x) => `
+    <tr><td><p class="font-bold text-slate-900">${esc(x.p.name)}</p><p class="text-[10px] text-slate-400">${esc(x.p.client)} · ${esc(x.p.city)}</p></td>
+      ${ETAPAS_TIEMPO.map((e) => {
+        const m = x.etapas[e.id];
+        if (!m) return '<td><span class="text-slate-300">—</span></td>';
+        return m.enCurso
+          ? `<td><span class="stat-chip-curso">En curso · ${esc(formatoEtapa(m.ms, e.porDias))}</span></td>`
+          : `<td class="font-bold">${esc(formatoEtapa(m.ms, e.porDias))}</td>`;
+      }).join('')}</tr>`).join('');
+  const tablaP = filasP
+    ? `<table class="stat-tabla"><thead><tr><th>Proyecto</th>${ETAPAS_TIEMPO.map((e) => `<th>${esc(e.nombre)}</th>`).join('')}</tr></thead><tbody>${filasP}</tbody></table>`
+    : '<p class="text-xs text-slate-400 p-4 text-center">Aún no hay compras ni tareas con tiempos registrados.</p>';
+
+  /* 4. Por persona */
+  const filasPer = d.personas.filter((r) => r.hechas.length || r.abiertas.length)
+    .sort((a, b) => b.hechas.length - a.hechas.length || a.nombre.localeCompare(b.nombre))
+    .map((r) => `
+      <tr><td><p class="font-bold text-slate-900">${esc(r.nombre)}</p><p class="text-[10px] text-slate-400">${esc(cargoDe(r.nombre) || '')}</p></td>
+        <td class="font-bold">${r.hechas.length}</td>
+        <td>${esc(formatoDuracion(promedio(r.hechas) ?? NaN))}</td>
+        ${ETAPAS_TIEMPO.filter((e) => e.actividad).map((e) => `<td>${r.porEtapa[e.id] ? esc(formatoDuracion(promedio(r.porEtapa[e.id]))) : '<span class="text-slate-300">—</span>'}</td>`).join('')}
+        <td>${r.abiertas.length ? `${r.abiertas.length} · <span class="${Math.max(...r.abiertas) > 7 * DIA_MS ? 'text-red-700 font-bold' : ''}">la más antigua ${esc(formatoDuracion(Math.max(...r.abiertas)))}</span>` : '0'}</td></tr>`).join('');
+  const tablaPer = filasPer
+    ? `<table class="stat-tabla"><thead><tr><th>Persona</th><th>Hechas</th><th>Promedio por tarea</th>${ETAPAS_TIEMPO.filter((e) => e.actividad).map((e) => `<th>${esc(e.nombre)}</th>`).join('')}<th>Abiertas</th></tr></thead><tbody>${filasPer}</tbody></table>`
+    : '<p class="text-xs text-slate-400 p-4 text-center">Sin tareas con tiempos en el periodo.</p>';
+
+  cont.innerHTML = `
+    <div class="stat-etapas">${tarjetas}</div>
+    <section class="stat-bloque"><h3>Comparativo por trimestre</h3><p>Promedio de cada etapa según el trimestre en que terminó (entre paréntesis, cuántos proyectos).</p><div class="stat-scroll">${tablaQ}</div></section>
+    <section class="stat-bloque"><h3>Por proyecto · ${esc(periodo)}</h3><p>Duración de cada etapa en cada proyecto. "En curso" cuenta hasta hoy.</p><div class="stat-scroll">${tablaP}</div></section>
+    <section class="stat-bloque"><h3>Por persona · ${esc(periodo)}</h3><p>Tiempo desde que se asignó cada tarea hasta que se marcó como Completado.</p><div class="stat-scroll">${tablaPer}</div></section>`;
 }
 
 /* ==========================================================================
@@ -4990,6 +5286,7 @@ function renderAll() {
   renderProyectos();
   renderCentro();
   renderNewOrder();
+  if (state.tab === 'stats') renderStats();
   if (state.fichaId) {
     const modal = document.getElementById('modal-ficha');
     if (modal && !modal.classList.contains('is-hidden')) openFicha(state.fichaId);
@@ -6399,6 +6696,19 @@ async function init() {
   bindFinanzasEvents();
   iniciarAppMovil();
   iniciarComboCiudad();
+  /* Filtros de Estadísticas */
+  [['stats-anio', 'anio'], ['stats-q', 'q'], ['stats-proyecto', 'proyecto']].forEach(([id, clave]) => {
+    document.getElementById(id)?.addEventListener('change', (e) => {
+      state.statsFiltro = { ...(state.statsFiltro || { anio: 'Todos', q: 'Todos', proyecto: 'Todos' }), [clave]: e.target.value };
+      renderStats();
+    });
+  });
+  /* Los relojes ("asignada hace…") se refrescan cada minuto en la pestaña visible */
+  setInterval(() => {
+    if (document.hidden || !state.user) return;
+    if (state.tab === 'equipo') renderEquipo();
+    if (state.tab === 'stats') renderStats();
+  }, 60000);
 
   /* Sin sesión no se muestra ni se consulta ningún dato */
   aplicarPermisosUI();

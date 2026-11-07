@@ -426,10 +426,25 @@
 
     <!-- MÓDULO 7 · ESTADÍSTICAS & RENDIMIENTO -->
     <section id="tab-stats" class="tab-panel p-4">
-      <div class="bg-white border border-slate-200 p-6 rounded-2xl shadow-sm">
-        <h2 class="text-xl font-black text-slate-900 mb-1">Medición de Tiempos por Fase</h2>
-        <p class="text-xs text-slate-500 mb-6">Promedio de duración en días por etapa de carpintería</p>
-        <div id="stats-view" class="grid gap-4" style="grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));"></div>
+      <div class="max-w-7xl mx-auto space-y-4">
+        <div class="bg-white border border-slate-200 p-5 rounded-2xl shadow-sm flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4">
+          <div>
+            <h2 class="text-xl font-black text-slate-900">Medición de tiempos por etapa</h2>
+            <p class="text-xs text-slate-500 mt-1">Cuánto tardamos esperando material, escogiéndolo, armando e instalando: por proyecto, por persona y por trimestre.</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <select id="stats-anio" aria-label="Año" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900"></select>
+            <select id="stats-q" aria-label="Trimestre" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900">
+              <option value="Todos">Todo el año</option>
+              <option value="1">T1 · ene–mar</option>
+              <option value="2">T2 · abr–jun</option>
+              <option value="3">T3 · jul–sep</option>
+              <option value="4">T4 · oct–dic</option>
+            </select>
+            <select id="stats-proyecto" aria-label="Proyecto" class="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 max-w-[16rem]"></select>
+          </div>
+        </div>
+        <div id="stats-view" class="space-y-4"></div>
       </div>
     </section>
 
