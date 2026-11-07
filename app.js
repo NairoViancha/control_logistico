@@ -25,16 +25,18 @@
    1. CONSTANTES DE NEGOCIO
    ========================================================================== */
 
-const PRODUCTION_PHASES = ['Recepción', 'Asignación', 'Armado', 'Presentación', 'Embalaje', 'Instalación'];
+const PRODUCTION_PHASES = ['Recepción', 'Armado', 'Presentación', 'Embalaje', 'Instalación'];
 /* MÓDULO CONTABLE (finanzas del proyecto + carpeta financiera de documentos).
    Apagado por decisión de Gerencia (nov 2026): no se muestra, no se consulta y
    no se suscribe a cambios. Los datos y las tablas siguen intactos en la base;
    para volver a activarlo basta con poner true. */
 const MODULO_CONTABLE = false;
 
-/* "Despacho" se renombró a "Instalación" (v10). Los datos viejos se traducen al leer. */
+/* "Despacho" se renombró a "Instalación" (v10) y "Asignación" se quitó (v12):
+   los datos viejos se traducen al leer. */
+const FASES_ANTERIORES = { Despacho: 'Instalación', 'Asignación': 'Recepción' };
 function faseValida(fase, porDefecto) {
-  const f = fase === 'Despacho' ? 'Instalación' : fase;
+  const f = FASES_ANTERIORES[fase] || fase;
   return PRODUCTION_PHASES.includes(f) ? f : porDefecto;
 }
 
@@ -43,7 +45,7 @@ const EST_PRODUCCION = { EN_PROCESO: 'En proceso', DETENIDO: 'Detenido', COMPLET
 const ETAPAS_COMERCIAL = ['Prospectos', 'Cotizaciones', 'Aprobados', 'En Fabricación', 'Instalaciones', 'Garantías', 'Prospecto No Continuado'];
 
 /* Personal de planta y actividades que puede estar haciendo cada persona.
-   (Las fases Recepción/Asignación/Instalación son del proyecto, no del operario.) */
+   (Las fases Recepción/Instalación son del proyecto, no del operario.) */
 const CARGOS_PERSONAL = ['Carpintero', 'Auxiliar de carpintería', 'Eléctrico'];
 /* Estado del trabajo de cada tarea o mueble asignado (solo estos 3) */
 const ESTADOS_TRABAJO = ['En proceso', 'Detenido', 'Completado'];
@@ -75,6 +77,7 @@ const CATEGORIAS_DOC = {
   financiera: ['Cotización', 'Factura', 'Contrato', 'Otro'],
 };
 const MAX_DOC_MB = 25;
+const ICONO_CATEGORIA_DOC = { 'Planimetría': 'fa-ruler-combined', Renders: 'fa-cube', 'Presentación': 'fa-person-chalkboard', Trazos: 'fa-pen-ruler', Otros: 'fa-folder' };
 
 /* Compras de material (tabla compras, v6) */
 const ESTADOS_COMPRA = ['Solicitado', 'Confirmado', 'En tránsito', 'Recibido parcial', 'Recibido', 'Cancelado'];
@@ -720,7 +723,7 @@ function filaDesdeTarea(t, carpintero) {
     carpintero_id: idCarpinteroPorNombre(carpintero),
     proyecto_id: dbIdProyecto(t.projectId),
     nombre_mueble: t.text,
-    fase_manual: faseValida(t.phase, 'Asignación'),
+    fase_manual: faseValida(t.phase, 'Armado'),
     estado_tarea: estadoTrabajoValido(t.estado),
     actividad: ACTIVIDAD_POR_NOMBRE[t.actividad] ? t.actividad : 'Otra',
     detalle: t.detalle || null,
@@ -978,7 +981,7 @@ function construirEstado(proyectos, pendientes, carpinteros, tareas, finanzasRow
       id: esUUID(t.id) ? t.id : nuevoUUID(),
       text: t.nombre_mueble || 'Tarea sin descripción',
       projectId: codigoPorDbId.get(t.proyecto_id) || null,
-      phase: faseValida(t.fase_manual, 'Asignación'),
+      phase: faseValida(t.fase_manual, 'Armado'),
       actividad: ACTIVIDAD_POR_NOMBRE[t.actividad] ? t.actividad : 'Otra',
       detalle: t.detalle || '',
       grupoId: t.grupo_id || null,
@@ -2434,7 +2437,7 @@ function cambiarFaseTarea(carpenter, tareaId, delta) {
   if (!puedeAsignar()) { showToast('Tu rol no puede modificar fases de producción.'); return; }
   const t = (state.tareas[carpenter] || []).find((x) => x.id === tareaId);
   if (!t) return;
-  const actual = Math.max(0, PRODUCTION_PHASES.indexOf(t.phase || 'Asignación'));
+  const actual = Math.max(0, PRODUCTION_PHASES.indexOf(faseValida(t.phase, 'Armado')));
   const nuevo = clampFase(actual + delta);
   if (nuevo === actual) return;
   t.phase = PRODUCTION_PHASES[nuevo];
@@ -2864,11 +2867,32 @@ function tarjetaTareaHTML(task) {
     </div>`;
 }
 
+/* Vista en lista de Equipo: una fila por tarea, agrupadas por persona */
+function filaTareaHTML(task, persona, cargo) {
+  const datos = `data-task-kind="${task.kind}" data-project="${esc(task.projectId || '')}" data-mueble="${esc(task.muebleId || '')}" data-task="${esc(task.taskId || '')}" data-carpenter="${esc(task.carpenter)}"`;
+  const dur = duracionTrabajo(task);
+  const tiempo = !task.inicio ? '<span class="text-slate-300">—</span>'
+    : task.estado === 'Completado' ? `<span class="text-emerald-700 font-bold">Hecha en ${esc(formatoDuracion(dur))}</span>`
+      : `<span class="${task.estado === 'Detenido' ? 'text-red-700' : 'text-slate-700'} font-bold">Hace ${esc(formatoDuracion(dur))}</span>`;
+  return `
+    <tr class="${task.estado === 'Completado' ? 'opacity-70' : ''}">
+      <td><p class="font-bold text-slate-900">${esc(persona)}</p><p class="text-[10px] text-slate-400">${esc(cargo || '')}</p></td>
+      <td><p class="font-bold text-slate-900">${esc(task.text)}</p><p class="text-[10px] text-slate-400 truncate max-w-[14rem]">${esc(task.projectName)}${task.detalle ? ` · ${esc(task.detalle)}` : ''}</p></td>
+      <td>${badgeActividad(task.actividad)}</td>
+      <td><span class="inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-black ${ESTILO_ESTADO_TRABAJO[task.estado] || ESTILO_ESTADO_TRABAJO['En proceso']}">${esc(task.estado || 'En proceso')}</span></td>
+      <td>${tiempo}</td>
+      <td class="text-right whitespace-nowrap">${puedeAsignar() ? `
+        <button type="button" class="task-icon-btn" data-task-edit ${datos} title="Editar" aria-label="Editar"><i class="fas fa-pen" aria-hidden="true"></i></button>
+        <button type="button" class="task-icon-btn task-icon-btn--danger" data-task-del ${datos} title="${task.kind === 'tarea' ? 'Eliminar tarea' : 'Quitar asignación'}" aria-label="${task.kind === 'tarea' ? 'Eliminar tarea' : 'Quitar asignación'}"><i class="fas ${task.kind === 'tarea' ? 'fa-trash' : 'fa-user-minus'}" aria-hidden="true"></i></button>` : ''}</td>
+    </tr>`;
+}
+
 function renderEquipo() {
   const contenedor = document.getElementById('equipo-grid');
   if (!contenedor) return;
   contenedor.innerHTML = '';
   document.getElementById('equipo-personal')?.classList.toggle('hidden', !puedeGestionarPersonal());
+  const vista = prepararContenedorVista(contenedor, 'equipo');
 
   const assignments = asignacionesPorPersona();
   /* Una tarjeta por cada persona activa, aunque no tenga tareas */
@@ -2885,6 +2909,25 @@ function renderEquipo() {
   }
 
   personas.sort((a, b) => (CARGOS_PERSONAL.indexOf(a.cargo) - CARGOS_PERSONAL.indexOf(b.cargo)) || a.nombre.localeCompare(b.nombre));
+
+  if (vista === 'lista') {
+    const filas = personas.flatMap(({ nombre, cargo }) => (assignments[nombre] || []).slice()
+      .sort((a, b) => Number(a.estado === 'Completado') - Number(b.estado === 'Completado'))
+      .map((t) => filaTareaHTML(t, nombre, cargo)));
+    const sinTareas = personas.filter((x) => !(assignments[x.nombre] || []).length).map((x) => x.nombre);
+    contenedor.innerHTML = `
+      <div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        <div class="stat-scroll">
+          <table class="stat-tabla equipo-tabla">
+            <thead><tr><th>Persona</th><th>Tarea / mueble</th><th>Actividad</th><th>Estado</th><th>Tiempo</th><th class="text-right">Acciones</th></tr></thead>
+            <tbody>${filas.join('') || '<tr><td colspan="6" class="text-center text-slate-400 py-6">Sin tareas asignadas.</td></tr>'}</tbody>
+          </table>
+        </div>
+        ${sinTareas.length ? `<p class="text-[11px] text-slate-500 border-t border-slate-100 px-4 py-3"><strong>Sin tareas:</strong> ${sinTareas.map(esc).join(', ')}</p>` : ''}
+      </div>`;
+    return;
+  }
+
   personas.forEach(({ nombre, cargo, registrado }) => {
     const tasks = (assignments[nombre] || []).slice()
       .sort((a, b) => Number(a.estado === 'Completado') - Number(b.estado === 'Completado'));
@@ -3009,14 +3052,14 @@ function guardarTarea() {
     if (actividad === 'Instalación') {
       const apoyo = Array.from(document.querySelectorAll('#tarea-equipo input:checked')).map((i) => i.value).filter((n) => n !== persona);
       const grupoId = nuevoUUID();
-      agregar(persona, { id: uid(), text: texto, projectId, phase: 'Asignación', actividad, detalle, grupoId, esLider: true, estado });
-      apoyo.forEach((n) => agregar(n, { id: uid(), text: texto, projectId, phase: 'Asignación', actividad, detalle, grupoId, esLider: false, estado }));
+      agregar(persona, { id: uid(), text: texto, projectId, phase: 'Armado', actividad, detalle, grupoId, esLider: true, estado });
+      apoyo.forEach((n) => agregar(n, { id: uid(), text: texto, projectId, phase: 'Armado', actividad, detalle, grupoId, esLider: false, estado }));
       commit();
       cerrarModalTarea();
       showToast(`Instalación asignada: ${persona} (líder)${apoyo.length ? ` + ${apoyo.length} persona${apoyo.length === 1 ? '' : 's'}` : ''}.`);
       return;
     }
-    agregar(persona, { id: uid(), text: texto, projectId, phase: 'Asignación', actividad, detalle, grupoId: null, esLider: false, estado });
+    agregar(persona, { id: uid(), text: texto, projectId, phase: 'Armado', actividad, detalle, grupoId: null, esLider: false, estado });
   } else if (ctx.kind === 'mueble') {
     const p = state.proyectos.find((x) => x.id === ctx.projectId);
     const m = (p?.muebles || []).find((x) => x.id === ctx.muebleId);
@@ -3179,29 +3222,21 @@ async function eliminarPersonal(id) {
   if (!window.confirm(aviso)) return;
   if (!sbListo) { showToast('Sin conexión con la base de datos.'); return; }
 
-  /* Se quita del estado local antes de borrar, para que el guardado no lo recree */
+  /* Al instante en pantalla; la base se actualiza en segundo plano (en orden,
+     así varias eliminaciones seguidas no se estorban ni recargan todo). */
   delete state.tareas[c.nombre];
   state.proyectos.forEach((p) => (p.muebles || []).forEach((m) => { if (m.carpenter === c.nombre) m.carpenter = ''; }));
-  let fallo = null;
-  await encolarSync(async () => {
-    const t = await supabaseClient.from('tareas_carpintero').delete().eq('carpintero_id', id);
-    if (t.error) { fallo = t.error; return; }
-    if (mueblesEnTabla) {
-      const m1 = await supabaseClient.from('proyecto_muebles').update({ responsable_id: null, responsable_nombre: null }).eq('responsable_id', id);
-      const m2 = await supabaseClient.from('proyecto_muebles').update({ responsable_id: null, responsable_nombre: null }).eq('responsable_nombre', c.nombre);
-      if (m1.error || m2.error) { fallo = m1.error || m2.error; return; }
-    }
-    const r = await supabaseClient.from('carpinteros').delete().eq('id', id).select('id');
-    if (r.error || !(r.data || []).length) fallo = r.error || { message: 'sin permiso' };
-  });
-  if (fallo) {
-    showToast(`No se pudo eliminar a ${c.nombre}: ${fallo.message}`);
-  } else {
-    state.carpinteros = state.carpinteros.filter((x) => x.id !== id);
-    showToast(`${c.nombre} eliminado del personal.`);
-  }
-  await recargarDesdeBase();
+  state.carpinteros = state.carpinteros.filter((x) => x.id !== id);
   renderPersonal();
+  commit(); // el guardado borra sus tareas y deja los muebles sin responsable
+  showToast(`${c.nombre} eliminado del personal.`);
+  encolarSync(async () => {
+    const r = await supabaseClient.from('carpinteros').delete().eq('id', id).select('id');
+    if (r.error || !(r.data || []).length) {
+      showToast(`No se pudo eliminar a ${c.nombre}: ${r.error?.message || 'sin permiso'}. Se recargan los datos.`);
+      setTimeout(() => recargarDesdeBase().then(renderPersonal), 0);
+    }
+  });
 }
 
 function bindEquipoEvents() {
@@ -3559,7 +3594,7 @@ function guardarProspecto(e) {
   commit();
   document.getElementById('prospecto-form').reset();
   document.getElementById('prospecto-modal').classList.add('is-hidden');
-  showToast('Prospecto creado y visible en el pipeline.');
+  showToast('Prospecto creado y visible en el flujo comercial.');
 }
 /* ==========================================================================
    12. CENTRO DE CONTROL LOGÍSTICO
@@ -4626,8 +4661,19 @@ function renderDocumentos(p) {
   const delProyecto = docs.filter((d) => d.carpeta === 'proyecto');
   const financieros = docs.filter((d) => d.carpeta === 'financiera');
 
-  document.getElementById('docs-proyecto-list').innerHTML = delProyecto.map(documentoHTML).join('')
-    || '<p class="text-xs text-slate-400 p-3 text-center border border-dashed border-slate-300 rounded-xl">Aún no hay documentos del proyecto.</p>';
+  /* Subcarpetas: Planimetría, Renders, Presentación, Trazos (+ Otros para lo anterior) */
+  const grupos = CATEGORIAS_DOC.proyecto.map((cat) => ({ cat, docs: delProyecto.filter((d) => d.categoria === cat) }));
+  const otros = delProyecto.filter((d) => !CATEGORIAS_DOC.proyecto.includes(d.categoria));
+  if (otros.length) grupos.push({ cat: 'Otros', docs: otros });
+  const puedeSubirAqui = puedeSubirDocumento('proyecto');
+  document.getElementById('docs-proyecto-list').innerHTML = grupos.map((g) => `
+    <section class="doc-grupo" aria-label="${esc(g.cat)}">
+      <header class="doc-grupo__cab">
+        <h6><i class="fas ${ICONO_CATEGORIA_DOC[g.cat] || 'fa-folder'}" aria-hidden="true"></i>${esc(g.cat)} <span class="doc-contador">${g.docs.length}</span></h6>
+        ${puedeSubirAqui && g.cat !== 'Otros' ? `<button type="button" class="doc-btn" data-doc-subir-a="${esc(g.cat)}">+ Subir</button>` : ''}
+      </header>
+      <div class="space-y-2">${g.docs.map(documentoHTML).join('') || `<p class="doc-grupo__vacio">Sin archivos de ${esc(g.cat.toLowerCase())}.</p>`}</div>
+    </section>`).join('');
   document.getElementById('docs-proyecto-count').textContent = delProyecto.length;
 
   const finBox = document.getElementById('docs-financiera-box');
@@ -4875,6 +4921,7 @@ function abrirProyectoModal(id, focus) {
   state.proyectoModalMode = p ? 'editar' : 'crear';
   state.proyectoModalId = p?.id || null;
   state.proyectoModalFocus = focus || null;
+  limpiarErroresProyecto();
 
   document.getElementById('proyecto-modal-title').textContent = p ? 'Editar Ficha del Proyecto' : 'Nuevo Proyecto';
   document.getElementById('proyecto-modal-sub').textContent = p
@@ -4886,7 +4933,7 @@ function abrirProyectoModal(id, focus) {
   set('proyecto-cliente', p?.client || '');
   set('proyecto-barrio', p?.neighborhood || '');
   set('proyecto-direccion', p?.address || '');
-  set('proyecto-telefono', p?.phone || '');
+  set('proyecto-telefono', telefonoParaCampo(p?.phone));
   set('proyecto-arquitecto', p?.arquitecto || state.user?.nombre || 'Felipe Mora');
   document.getElementById('proyecto-carpintero').innerHTML = opcionesPersonal(p?.leadCarpenter || '', 'Sin asignar');
   set('proyecto-operador', p?.logisticOperator || 'Wilyer');
@@ -5003,7 +5050,12 @@ async function guardarProyecto(e) {
   if (!puedeCrearProyecto() && !puedeEditarFicha()) { showToast('Tu rol no puede guardar proyectos.'); return; }
   const nombre = document.getElementById('proyecto-nombre').value.trim();
   const cliente = document.getElementById('proyecto-cliente').value.trim();
-  if (!nombre || !cliente) { showToast('Nombre y cliente son obligatorios.'); return; }
+  limpiarErroresProyecto();
+  const errores = validarFormularioProyecto();
+  if (errores.length) {
+    document.getElementById(errores[0].campo)?.focus();
+    return;
+  }
 
   /* Cambiar la fecha prometida exige un motivo (queda en el historial) */
   const editando = state.proyectoModalMode === 'editar' && state.proyectoModalId;
@@ -5011,17 +5063,14 @@ async function guardarProyecto(e) {
   const fechaInicio = textoDesdeInputFecha(document.getElementById('proyecto-fecha-inicio').value);
   const dIni = parseFecha(fechaInicio);
   const dFin = parseFecha(nuevaFecha);
-  if (dIni && dFin && dFin < dIni) {
-    showToast('La fecha de entrega no puede ser anterior a la fecha de inicio.');
-    document.getElementById('proyecto-fecha-entrega')?.focus();
-    return;
-  }
+  void dIni; void dFin; /* ya validadas arriba */
   const cambiaFecha = editando && state.fechaEntregaOriginal !== null && nuevaFecha !== state.fechaEntregaOriginal;
   const motivoFecha = document.getElementById('proyecto-motivo')?.value.trim() || '';
   if (cambiaFecha && !motivoFecha) {
     document.getElementById('proyecto-motivo-wrap')?.classList.remove('hidden');
     document.getElementById('proyecto-motivo')?.focus();
     showToast('Escribe el motivo del cambio de fecha de entrega.');
+    mostrarErroresFormulario('proyecto-errores', [{ campo: 'proyecto-motivo', mensaje: 'Cambiaste la fecha de entrega: escribe el motivo (queda en el historial).' }]);
     return;
   }
 
@@ -5051,7 +5100,7 @@ async function guardarProyecto(e) {
     city: document.getElementById('proyecto-ciudad').value,
     neighborhood: document.getElementById('proyecto-barrio').value.trim(),
     address: document.getElementById('proyecto-direccion').value.trim() || 'Por definir',
-    phone: document.getElementById('proyecto-telefono').value.trim(),
+    phone: telefonoParaGuardar(document.getElementById('proyecto-telefono').value),
     arquitecto: document.getElementById('proyecto-arquitecto').value.trim() || 'Felipe Mora',
     leadCarpenter: document.getElementById('proyecto-carpintero').value.trim(),
     logisticOperator: document.getElementById('proyecto-operador').value.trim() || 'Por asignar',
@@ -5255,6 +5304,152 @@ function isoParaInput(textoFecha) {
 function textoDesdeInputFecha(valorIso) {
   const d = parseFecha(valorIso);
   return d ? formatFechaLarga(d) : 'Por definir';
+}
+
+/* ==========================================================================
+   16c. FORMULARIOS · mayúscula inicial, teléfono de Colombia y validación
+   ========================================================================== */
+
+/* Mayúscula inicial al escribir ("a" → "A"), sin forzar el resto. La búsqueda
+   y los filtros no distinguen mayúsculas, así que se encuentra igual. */
+function capitalizarInicial(el) {
+  const v = el.value;
+  const i = v.search(/\S/);
+  if (i < 0) return;
+  const c = v[i];
+  const mayus = c.toLocaleUpperCase('es-CO');
+  if (c === mayus || c.toLocaleLowerCase('es-CO') === mayus) return;
+  const ini = el.selectionStart;
+  const fin = el.selectionEnd;
+  el.value = v.slice(0, i) + mayus + v.slice(i + 1);
+  try { el.setSelectionRange(ini, fin); } catch (e) { /* noop */ }
+}
+
+/* Teléfono colombiano: 10 dígitos (celular 3XX… o fijo 60X…). El +57 lo pone la app. */
+function digitosTelefonoCO(valor) {
+  let d = String(valor || '').replace(/\D/g, '');
+  /* En Colombia ningún número empieza por 57 (celulares 3…, fijos 60…): si
+     empieza así es el indicativo del país escrito o pegado. */
+  if (d.startsWith('57')) d = d.slice(2);
+  return d.slice(0, 10);
+}
+
+function agruparTelefonoCO(d) {
+  return [d.slice(0, 3), d.slice(3, 6), d.slice(6, 10)].filter(Boolean).join(' ');
+}
+
+function telefonoCOValido(d) {
+  return /^(3\d{9}|60\d{8})$/.test(d);
+}
+
+/* Lo que se guarda: "+57 300 123 4567" (o vacío) */
+function telefonoParaGuardar(valorCampo) {
+  const d = digitosTelefonoCO(valorCampo);
+  return d ? `+57 ${agruparTelefonoCO(d)}` : '';
+}
+
+function telefonoParaCampo(guardado) {
+  return agruparTelefonoCO(digitosTelefonoCO(guardado));
+}
+
+function iniciarCampoTelefono(input) {
+  if (!input) return;
+  input.addEventListener('input', () => {
+    const tecleado = input.value;
+    const traeLetras = /[^\d\s+()-]/.test(tecleado);
+    input.value = agruparTelefonoCO(digitosTelefonoCO(tecleado));
+    if (traeLetras) marcarCampoError(input, 'Este campo solo permite números. Ej. 300 123 4567');
+    else limpiarCampoError(input);
+  });
+  input.addEventListener('blur', () => {
+    const d = digitosTelefonoCO(input.value);
+    if (d && !telefonoCOValido(d)) {
+      marcarCampoError(input, d.length < 10
+        ? `Faltan ${10 - d.length} dígito${10 - d.length === 1 ? '' : 's'}: el número tiene 10 (ej. 300 123 4567).`
+        : 'Debe empezar por 3 (celular) o por 60 (fijo).');
+    }
+  });
+}
+
+/* Mensaje en rojo debajo del campo */
+function marcarCampoError(el, mensaje) {
+  el.classList.add('campo-invalido');
+  el.setAttribute('aria-invalid', 'true');
+  const contenedor = el.closest('.campo-telefono') || el;
+  let p = contenedor.parentElement.querySelector(`.campo-error[data-para="${el.id}"]`);
+  if (!p) {
+    p = document.createElement('p');
+    p.className = 'campo-error';
+    p.dataset.para = el.id;
+    p.id = `${el.id}-error`;
+    contenedor.insertAdjacentElement('afterend', p);
+  }
+  p.textContent = mensaje;
+  el.setAttribute('aria-errormessage', p.id);
+}
+
+function limpiarCampoError(el) {
+  el.classList.remove('campo-invalido');
+  el.removeAttribute('aria-invalid');
+  const contenedor = el.closest('.campo-telefono') || el;
+  contenedor.parentElement?.querySelector(`.campo-error[data-para="${el.id}"]`)?.remove();
+}
+
+/* Resumen de errores junto al botón Guardar */
+function mostrarErroresFormulario(boxId, errores) {
+  const box = document.getElementById(boxId);
+  if (!box) return;
+  if (!errores.length) { box.classList.add('hidden'); box.innerHTML = ''; return; }
+  box.innerHTML = `<p class="font-black"><i class="fas fa-circle-exclamation mr-1" aria-hidden="true"></i>No se pudo guardar. Corrige ${errores.length === 1 ? 'esto' : `estos ${errores.length} puntos`}:</p>
+    <ul>${errores.map((e) => `<li><button type="button" data-ir-campo="${esc(e.campo)}">${esc(e.mensaje)}</button></li>`).join('')}</ul>`;
+  box.classList.remove('hidden');
+}
+
+function validarFormularioProyecto() {
+  const errores = [];
+  const campo = (id) => document.getElementById(id);
+  const req = (id, mensaje) => {
+    if (!campo(id).value.trim()) { errores.push({ campo: id, mensaje }); marcarCampoError(campo(id), mensaje); }
+  };
+  req('proyecto-nombre', 'Escribe el nombre del proyecto (ej. Cocina Martha Pinos).');
+  req('proyecto-cliente', 'Escribe el nombre del cliente.');
+  const tel = digitosTelefonoCO(campo('proyecto-telefono').value);
+  if (/[^\d\s]/.test(campo('proyecto-telefono').value)) {
+    const m = 'Teléfono: este campo solo permite números (ej. 300 123 4567).';
+    errores.push({ campo: 'proyecto-telefono', mensaje: m }); marcarCampoError(campo('proyecto-telefono'), m);
+  } else if (tel && !telefonoCOValido(tel)) {
+    const m = 'Teléfono: ingresa un número colombiano de 10 dígitos (celular 300 123 4567 o fijo 601 234 5678). Si es de otro país, escríbelo en las notas.';
+    errores.push({ campo: 'proyecto-telefono', mensaje: m }); marcarCampoError(campo('proyecto-telefono'), m);
+  }
+  const dIni = parseFecha(campo('proyecto-fecha-inicio').value);
+  const dFin = parseFecha(campo('proyecto-fecha-entrega').value);
+  if (dIni && dFin && dFin < dIni) {
+    const m = 'La fecha de entrega no puede ser anterior a la fecha de inicio.';
+    errores.push({ campo: 'proyecto-fecha-entrega', mensaje: m }); marcarCampoError(campo('proyecto-fecha-entrega'), m);
+  }
+  mostrarErroresFormulario('proyecto-errores', errores);
+  return errores;
+}
+
+function iniciarValidacionFormularios() {
+  document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (el.matches?.('[data-capitalizar]')) capitalizarInicial(el);
+    if (el.classList?.contains('campo-invalido') && el.id !== 'proyecto-telefono') limpiarCampoError(el);
+  });
+  iniciarCampoTelefono(document.getElementById('proyecto-telefono'));
+  document.getElementById('proyecto-errores')?.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-ir-campo]');
+    if (!b) return;
+    const el = document.getElementById(b.dataset.irCampo);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el?.focus();
+  });
+}
+
+function limpiarErroresProyecto() {
+  document.querySelectorAll('#proyecto-form .campo-invalido').forEach(limpiarCampoError);
+  mostrarErroresFormulario('proyecto-errores', []);
 }
 
 /* ==========================================================================
@@ -5514,6 +5709,7 @@ function bindProduccionEvents() {
       state.vistas[clave] = btn.dataset.vista === 'lista' ? 'lista' : 'tarjetas';
       try { localStorage.setItem(VISTAS_KEY, JSON.stringify(state.vistas)); } catch (err) { /* noop */ }
       if (clave === 'produccion') renderProduccion();
+      else if (clave === 'equipo') renderEquipo();
       else renderProyectos();
     });
   });
@@ -5627,6 +5823,10 @@ function bindFichaEvents() {
 
   document.getElementById('doc-carpeta')?.addEventListener('change', llenarCategoriasDoc);
   document.getElementById('doc-subir')?.addEventListener('click', subirDocumentos);
+  /* Desde "+ Subir" de una subcarpeta: al elegir los archivos se suben de una vez */
+  document.getElementById('doc-archivo')?.addEventListener('change', (e) => {
+    if (e.target.dataset.autoSubir === '1' && e.target.files.length) { delete e.target.dataset.autoSubir; subirDocumentos(); }
+  });
 
   document.getElementById('archivo-add')?.addEventListener('click', () => document.getElementById('archivo-input')?.click());
   document.getElementById('archivo-input')?.addEventListener('change', (e) => {
@@ -5802,6 +6002,16 @@ function bindGlobalDelegation() {
     if (docBajar) { abrirDocumento(docBajar.dataset.docDescargar, true); return; }
     const docBorrar = e.target.closest('[data-doc-eliminar]');
     if (docBorrar) { eliminarDocumento(docBorrar.dataset.docEliminar); return; }
+    const subirA = e.target.closest('[data-doc-subir-a]');
+    if (subirA) {
+      const selC = document.getElementById('doc-carpeta');
+      if (selC) { selC.value = 'proyecto'; llenarCategoriasDoc(); }
+      document.getElementById('doc-categoria').value = subirA.dataset.docSubirA;
+      document.getElementById('docs-subir-box')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      const inp = document.getElementById('doc-archivo');
+      if (inp) { inp.dataset.autoSubir = '1'; inp.click(); }
+      return;
+    }
     const docCerrar = e.target.closest('[data-doc-cerrar-visor]');
     if (docCerrar) { cerrarVisorDocumento(); return; }
 
@@ -6696,6 +6906,7 @@ async function init() {
   bindFinanzasEvents();
   iniciarAppMovil();
   iniciarComboCiudad();
+  iniciarValidacionFormularios();
   /* Filtros de Estadísticas */
   [['stats-anio', 'anio'], ['stats-q', 'q'], ['stats-proyecto', 'proyecto']].forEach(([id, clave]) => {
     document.getElementById(id)?.addEventListener('change', (e) => {

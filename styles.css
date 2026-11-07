@@ -654,3 +654,30 @@ body:has([id$="-modal"].fixed:not(.is-hidden)) .chat-fab { display: none; }
 html.tema-oscuro .stat-etapa__num, html.tema-oscuro .stat-barra { background: #334155; }
 html.tema-oscuro .stat-barra span { background: #cbd5e1; }
 html.tema-oscuro .stat-tabla td { border-bottom-color: #1e293b; }
+
+/* ============================================================
+   FORMULARIOS: teléfono +57, ayudas y errores
+   ============================================================ */
+.campo-telefono { position: relative; }
+.campo-telefono__prefijo { position: absolute; left: 0.85rem; top: 50%; transform: translateY(-50%); font-weight: 800; color: #475569; font-size: 0.8rem; pointer-events: none; }
+.campo-ayuda { font-size: 0.65rem; color: #94a3b8; margin-top: 0.25rem; }
+.campo-error { font-size: 0.68rem; color: #b91c1c; font-weight: 700; margin-top: 0.25rem; }
+.campo-invalido { border-color: #dc2626 !important; background: #fef2f2 !important; box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12); }
+.form-errores { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 0.75rem; padding: 0.75rem 0.9rem; font-size: 0.72rem; }
+.form-errores ul { margin-top: 0.35rem; padding-left: 1.1rem; list-style: disc; }
+.form-errores li + li { margin-top: 0.2rem; }
+.form-errores button { text-align: left; text-decoration: underline; text-underline-offset: 2px; color: inherit; }
+html.tema-oscuro .form-errores { background: #3f1d1d; border-color: #7f1d1d; color: #fecaca; }
+html.tema-oscuro .campo-invalido { background: #3f1d1d !important; }
+
+/* Documentos agrupados por subcarpeta */
+.doc-grupo { border: 1px solid var(--border); border-radius: 0.9rem; padding: 0.75rem; background: #f8fafc; }
+.doc-grupo + .doc-grupo { margin-top: 0.75rem; }
+.doc-grupo__cab { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
+.doc-grupo__cab h6 { display: flex; align-items: center; gap: 0.45rem; font-weight: 900; color: var(--text); font-size: 0.8rem; }
+.doc-grupo__cab h6 i { color: var(--brand); }
+.doc-grupo__vacio { font-size: 0.7rem; color: #94a3b8; padding: 0.4rem 0.2rem; }
+html.tema-oscuro .doc-grupo { background: #0f172a; }
+
+/* Equipo en lista */
+.equipo-tabla td { vertical-align: middle; }

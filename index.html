@@ -168,25 +168,17 @@
        ============================================================ -->
   <nav id="mg-tabs" class="bg-white border-t border-slate-100 sticky top-20 z-40" aria-label="Módulos MODUGAL">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <!-- Orden del flujo de trabajo: venta → proyecto → fabricación → equipo → material → seguimiento → reportes → administración -->
       <div class="mg-tabs-fila flex overflow-x-auto scrollbar-hide">
-        <button type="button" class="mg-tab active" data-tab="produccion">Producción
-        </button>
-        <button type="button" class="mg-tab" data-tab="equipo">Equipo
-        </button>
-        <button type="button" class="mg-tab" data-tab="comercial">Comercial
-        </button>
-        <button type="button" class="mg-tab" data-tab="tabla">Tabla General
-        </button>
-        <button type="button" class="mg-tab" data-tab="proyectos">Proyectos
-        </button>
-        <button type="button" class="mg-tab" data-tab="centro">Control
-        </button>
-        <button type="button" class="mg-tab" data-tab="stats">Estadísticas
-        </button>
-        <button type="button" class="mg-tab hidden" data-tab="usuarios">Usuarios
-        </button>
-        <button type="button" class="mg-tab" data-tab="new-order">Compras
-        </button>
+        <button type="button" class="mg-tab" data-tab="comercial">Comercial</button>
+        <button type="button" class="mg-tab" data-tab="proyectos">Proyectos</button>
+        <button type="button" class="mg-tab active" data-tab="produccion">Producción</button>
+        <button type="button" class="mg-tab" data-tab="equipo">Equipo</button>
+        <button type="button" class="mg-tab" data-tab="new-order">Compras</button>
+        <button type="button" class="mg-tab" data-tab="centro">Control</button>
+        <button type="button" class="mg-tab" data-tab="tabla">Tabla General</button>
+        <button type="button" class="mg-tab" data-tab="stats">Estadísticas</button>
+        <button type="button" class="mg-tab hidden" data-tab="usuarios">Usuarios</button>
       </div>
     </div>
   </nav>
@@ -278,7 +270,11 @@
           <h2 class="text-xl font-black text-slate-900 tracking-wide">Carga Laboral y Asignaciones</h2>
           <p class="text-xs text-slate-500 mt-0.5">Qué está haciendo cada persona: trazado, material, armado, luces, embalaje o instalación</p>
         </div>
-        <div class="flex flex-wrap gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="vista-toggle" role="group" aria-label="Tipo de vista" data-vista-para="equipo">
+            <button type="button" data-vista="tarjetas" title="Vista en tarjetas" aria-label="Vista en tarjetas"><i class="fas fa-grip" aria-hidden="true"></i></button>
+            <button type="button" data-vista="lista" title="Vista en lista" aria-label="Vista en lista"><i class="fas fa-list" aria-hidden="true"></i></button>
+          </div>
           <button type="button" class="hidden bg-white hover:bg-slate-50 text-slate-800 font-bold px-3.5 py-2 rounded-xl text-xs shadow-sm border border-slate-200" id="equipo-personal">
             <i class="fas fa-id-badge mr-1" aria-hidden="true"></i>Personal
           </button>
@@ -294,7 +290,7 @@
     <section id="tab-comercial" class="tab-panel p-4">
       <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4 border-b border-slate-200 pb-4">
         <div>
-          <h2 class="text-xl font-black text-slate-900 tracking-wide">Pipeline Comercial</h2>
+          <h2 class="text-xl font-black text-slate-900 tracking-wide">Flujo comercial</h2>
           <p class="text-xs text-slate-500 mt-0.5">Arrastra las tarjetas o cambia la etapa manualmente · sin visualización de presupuestos</p>
         </div>
         <div class="flex flex-wrap items-center gap-2">
@@ -488,7 +484,7 @@
             </div>
             <div>
               <label for="pedido-item" class="block font-bold text-slate-700 uppercase mb-1">Material</label>
-              <input id="pedido-item" type="text" maxlength="160" placeholder="Ej. Tira LED cálida 3000K con transformador" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+              <input id="pedido-item" data-capitalizar type="text" maxlength="160" placeholder="Ej. Tira LED cálida 3000K con transformador" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
             </div>
             <div class="grid grid-cols-[1fr_auto] gap-3">
               <div>
@@ -873,15 +869,15 @@
           <i class="fas fa-xmark w-5 h-5" aria-hidden="true"></i>
         </button>
       </div>
-      <form id="proyecto-form" class="p-6 space-y-4 text-xs max-h-[72vh] overflow-y-auto">
+      <form id="proyecto-form" novalidate class="p-6 space-y-4 text-xs max-h-[72vh] overflow-y-auto">
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label for="proyecto-nombre" class="block font-bold text-slate-700 uppercase mb-1">Nombre del proyecto</label>
-            <input id="proyecto-nombre" type="text" required placeholder="Ej. Cocina Martha Pinos" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-bold" />
+            <input id="proyecto-nombre" type="text" data-capitalizar autocapitalize="sentences" required placeholder="Ej. Cocina Martha Pinos" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-bold" />
           </div>
           <div>
             <label for="proyecto-cliente" class="block font-bold text-slate-700 uppercase mb-1">Cliente</label>
-            <input id="proyecto-cliente" type="text" required placeholder="Nombre del cliente" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
+            <input id="proyecto-cliente" type="text" data-capitalizar autocapitalize="sentences" required placeholder="Nombre del cliente" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
           </div>
           <div>
             <label for="proyecto-ciudad" class="block font-bold text-slate-700 uppercase mb-1">Ciudad</label>
@@ -895,19 +891,23 @@
           </div>
           <div>
             <label for="proyecto-barrio" class="block font-bold text-slate-700 uppercase mb-1">Barrio / Sector</label>
-            <input id="proyecto-barrio" type="text" placeholder="Ej. Ruitoque Condominio" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
+            <input id="proyecto-barrio" type="text" data-capitalizar autocapitalize="sentences" placeholder="Ej. Ruitoque Condominio" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
           </div>
           <div class="sm:col-span-2">
             <label for="proyecto-direccion" class="block font-bold text-slate-700 uppercase mb-1">Dirección de obra</label>
-            <input id="proyecto-direccion" type="text" placeholder="Calle, carrera, casa/apartamento" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
+            <input id="proyecto-direccion" type="text" data-capitalizar autocapitalize="sentences" placeholder="Calle, carrera, casa/apartamento" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
           </div>
           <div>
             <label for="proyecto-telefono" class="block font-bold text-slate-700 uppercase mb-1">Teléfono</label>
-            <input id="proyecto-telefono" type="text" placeholder="+57 300 000 0000" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
+            <div class="campo-telefono">
+              <span class="campo-telefono__prefijo" aria-hidden="true">+57</span>
+              <input id="proyecto-telefono" type="tel" inputmode="numeric" autocomplete="tel-national" placeholder="300 123 4567" aria-describedby="proyecto-telefono-ayuda" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 pl-12 text-slate-900" />
+            </div>
+            <p id="proyecto-telefono-ayuda" class="campo-ayuda">Solo números: celular 3XX XXX XXXX o fijo 60X XXX XXXX. Si es de otro país, escríbelo en las notas de abajo.</p>
           </div>
           <div>
             <label for="proyecto-arquitecto" class="block font-bold text-slate-700 uppercase mb-1">Arquitecto</label>
-            <input id="proyecto-arquitecto" type="text" placeholder="Ej. Felipe Mora" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
+            <input id="proyecto-arquitecto" type="text" data-capitalizar autocapitalize="sentences" placeholder="Ej. Felipe Mora" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
           </div>
           <div>
             <label for="proyecto-carpintero" class="block font-bold text-slate-700 uppercase mb-1">Carpintero líder</label>
@@ -915,7 +915,7 @@
           </div>
           <div>
             <label for="proyecto-operador" class="block font-bold text-slate-700 uppercase mb-1">Operador logístico</label>
-            <input id="proyecto-operador" type="text" placeholder="Ej. Wilyer" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
+            <input id="proyecto-operador" type="text" data-capitalizar autocapitalize="sentences" placeholder="Ej. Wilyer" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
           </div>
           <div>
             <label for="proyecto-trimestre" class="block font-bold text-slate-700 uppercase mb-1">Trimestre</label>
@@ -930,7 +930,6 @@
             <label for="proyecto-fase" class="block font-bold text-slate-700 uppercase mb-1">Fase de producción</label>
             <select id="proyecto-fase" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900">
               <option value="Recepción">Recepción</option>
-              <option value="Asignación">Asignación</option>
               <option value="Armado">Armado</option>
               <option value="Presentación">Presentación</option>
               <option value="Embalaje">Embalaje</option>
@@ -984,11 +983,12 @@
             <input id="proyecto-imagen" type="hidden" />
           </div>
           <div class="sm:col-span-2">
-            <label for="proyecto-detalle" class="block font-bold text-slate-700 uppercase mb-1">Desglose escrito del pedido</label>
-            <textarea id="proyecto-detalle" rows="3" placeholder="Ej. Cliente: COCINA - ISLA + ALACENA + MUEBLE BAÑO MÁSTER" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900"></textarea>
+            <label for="proyecto-detalle" class="block font-bold text-slate-700 uppercase mb-1">Desglose del pedido y notas</label>
+            <textarea id="proyecto-detalle" data-capitalizar autocapitalize="sentences" rows="3" placeholder="Ej. Cliente: COCINA - ISLA + ALACENA + MUEBLE BAÑO MÁSTER" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900"></textarea>
           </div>
         </div>
         <p id="proyecto-permiso-nota" class="hidden text-[10px] font-bold text-amber-700 bg-amber-50 border border-amber-100 rounded-lg p-3"></p>
+        <div id="proyecto-errores" class="form-errores hidden" role="alert" aria-live="assertive"></div>
         <div class="flex space-x-2 pt-2">
           <button type="submit" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl text-sm" id="proyecto-guardar">Guardar Proyecto</button>
           <button type="button" id="proyecto-cancelar" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-3 rounded-xl text-sm">Cancelar</button>
@@ -1007,7 +1007,7 @@
       <form id="prospecto-form" class="space-y-3 text-xs">
         <div>
           <label for="prospecto-cliente" class="block font-bold text-slate-700 uppercase mb-1">Cliente</label>
-          <input id="prospecto-cliente" type="text" required placeholder="Ej. Dr. Fernando López" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-bold" />
+          <input id="prospecto-cliente" data-capitalizar type="text" required placeholder="Ej. Dr. Fernando López" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 font-bold" />
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
@@ -1032,7 +1032,7 @@
         </div>
         <div>
           <label for="prospecto-alerta" class="block font-bold text-slate-700 uppercase mb-1">Nota / Requerimiento inicial</label>
-          <input id="prospecto-alerta" type="text" placeholder="Ej. Visita técnica programada" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
+          <input id="prospecto-alerta" data-capitalizar type="text" placeholder="Ej. Visita técnica programada" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900" />
         </div>
         <div class="flex space-x-2 pt-2">
           <button type="submit" class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-xl text-sm">Crear Prospecto</button>
@@ -1228,7 +1228,7 @@
         </div>
         <div>
           <label for="incidente-descripcion" class="block font-bold text-slate-500 uppercase mb-1">¿Qué pasó?</label>
-          <textarea id="incidente-descripcion" rows="2" maxlength="500" placeholder="Ej. Llegaron 2 láminas RH rayadas" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white"></textarea>
+          <textarea id="incidente-descripcion" data-capitalizar rows="2" maxlength="500" placeholder="Ej. Llegaron 2 láminas RH rayadas" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white"></textarea>
         </div>
         <label class="flex items-center gap-2 p-2.5 rounded-xl border border-red-200 bg-red-50 font-bold text-red-900 cursor-pointer">
           <input id="incidente-detiene" type="checkbox" class="accent-red-600" />
@@ -1313,7 +1313,7 @@
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
             <div class="sm:col-span-2">
               <label for="compra-material" class="block font-bold text-slate-500 uppercase mb-1">Material</label>
-              <input id="compra-material" type="text" maxlength="160" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
+              <input id="compra-material" data-capitalizar type="text" maxlength="160" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-slate-900 focus:ring-2 focus:ring-red-600 focus:bg-white" />
             </div>
             <div>
               <label for="compra-cantidad" class="block font-bold text-slate-500 uppercase mb-1">Cantidad pedida</label>
@@ -1386,7 +1386,7 @@
       </div>
       <div class="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2 text-xs bg-slate-50 border border-slate-200 rounded-xl p-3">
         <label for="personal-nombre" class="sr-only">Nombre</label>
-        <input id="personal-nombre" type="text" placeholder="Nombre completo" class="bg-white border border-slate-200 rounded-lg p-2.5 text-slate-900" />
+        <input id="personal-nombre" data-capitalizar type="text" placeholder="Nombre completo" class="bg-white border border-slate-200 rounded-lg p-2.5 text-slate-900" />
         <label for="personal-cargo" class="sr-only">Cargo</label>
         <select id="personal-cargo" class="bg-white border border-slate-200 rounded-lg p-2.5 font-bold text-slate-900"></select>
         <button type="button" id="personal-agregar" class="bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2.5 rounded-lg"><i class="fas fa-user-plus mr-1" aria-hidden="true"></i>Registrar</button>
